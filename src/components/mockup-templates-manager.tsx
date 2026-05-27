@@ -25,6 +25,12 @@ type DeleteTemplateResponse = {
   requires_confirmation?: boolean;
 };
 
+type TemplatesResponse = {
+  error?: string;
+  templates?: MockupTemplate[];
+};
+
+
 type CreateTemplateResponse = {
   error?: string;
   template?: MockupTemplate;
@@ -54,12 +60,6 @@ type PreviewResponse = {
   previews?: PreviewResult[];
 };
 
-type DeleteTemplateResponse = {
-  error?: string;
-  ok?: boolean;
-  output_count?: number;
-  requires_confirmation?: boolean;
-};
 
 type MockupTemplatesManagerProps = {
   initialError?: string | null;
@@ -290,59 +290,10 @@ export function MockupTemplatesManager({
     }
   }
 
- async function deleteTemplate(template: MockupTemplate) {
-  setDeletingTemplateId(template.id);
-  setError(null);
-  setMessage(null);
-
-  try {
-    const checkResponse = await fetch(`/api/mockup-templates/${template.id}`, {
-      body: JSON.stringify({ dry_run: true }),
-      headers: {
-        "Content-Type": "application/json",
-      },
-      method: "DELETE",
-    });
-    const checkData = (await checkResponse.json()) as DeleteTemplateResponse;
-
-    if (!checkResponse.ok) {
-      throw new Error(checkData.error ?? "删除检查失败");
-    }
-
-    const confirmed = window.confirm(
-      checkData.requires_confirmation
-        ? "该模板已有套图生成记录，删除可能影响历史套图。是否继续？"
-        : "确定要删除这个套图模板吗？删除后不可恢复。",
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    const response = await fetch(`/api/mockup-templates/${template.id}`, {
-      body: JSON.stringify({
-        force: checkData.requires_confirmation === true,
-      }),
-      headers: {
-        "Content-Type": "application/json",
-      },
-      method: "DELETE",
-    });
-    const data = (await response.json()) as DeleteTemplateResponse;
-
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error ?? "模板删除失败");
-    }
-
-    setMessage("模板删除成功");
-    setPreviewResults([]);
-    await refreshTemplates();
-  } catch (requestError) {
-    setError(requestError instanceof Error ? requestError.message : "模板删除失败");
-  } finally {
-    setDeletingTemplateId(null);
-  }
-}
+  async function deleteTemplate(template: MockupTemplate) {
+    setDeletingTemplateId(template.id);
+    setError(null);
+    setMessage(null);
 
     try {
       const checkResponse = await fetch(`/api/mockup-templates/${template.id}`, {
