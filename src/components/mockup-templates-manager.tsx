@@ -18,9 +18,11 @@ export type MockupTemplate = {
   updated_at: string;
 };
 
-type TemplatesResponse = {
+type DeleteTemplateResponse = {
   error?: string;
-  templates?: MockupTemplate[];
+  ok?: boolean;
+  output_count?: number;
+  requires_confirmation?: boolean;
 };
 
 type CreateTemplateResponse = {
@@ -288,10 +290,59 @@ export function MockupTemplatesManager({
     }
   }
 
-  async function deleteTemplate(template: MockupTemplate) {
-    setDeletingTemplateId(template.id);
-    setError(null);
-    setMessage(null);
+ async function deleteTemplate(template: MockupTemplate) {
+  setDeletingTemplateId(template.id);
+  setError(null);
+  setMessage(null);
+
+  try {
+    const checkResponse = await fetch(`/api/mockup-templates/${template.id}`, {
+      body: JSON.stringify({ dry_run: true }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    });
+    const checkData = (await checkResponse.json()) as DeleteTemplateResponse;
+
+    if (!checkResponse.ok) {
+      throw new Error(checkData.error ?? "删除检查失败");
+    }
+
+    const confirmed = window.confirm(
+      checkData.requires_confirmation
+        ? "该模板已有套图生成记录，删除可能影响历史套图。是否继续？"
+        : "确定要删除这个套图模板吗？删除后不可恢复。",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await fetch(`/api/mockup-templates/${template.id}`, {
+      body: JSON.stringify({
+        force: checkData.requires_confirmation === true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    });
+    const data = (await response.json()) as DeleteTemplateResponse;
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error ?? "模板删除失败");
+    }
+
+    setMessage("模板删除成功");
+    setPreviewResults([]);
+    await refreshTemplates();
+  } catch (requestError) {
+    setError(requestError instanceof Error ? requestError.message : "模板删除失败");
+  } finally {
+    setDeletingTemplateId(null);
+  }
+}
 
     try {
       const checkResponse = await fetch(`/api/mockup-templates/${template.id}`, {
@@ -343,8 +394,8 @@ export function MockupTemplatesManager({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <div className="order-2 space-y-6 xl:order-1">
+   <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+     <div className="order-1 space-y-6 xl:order-2">
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -521,15 +572,15 @@ export function MockupTemplatesManager({
                       </div>
                     </button>
                     <div className="flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => void deleteTemplate(template)}
-                        disabled={deletingTemplateId !== null}
-                        className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
-                      >
-                        {deletingTemplateId === template.id ? "删除中..." : "删除"}
-                      </button>
-                    </div>
+  <button
+    type="button"
+    onClick={() => void deleteTemplate(template)}
+    disabled={deletingTemplateId !== null}
+    className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+  >
+    {deletingTemplateId === template.id ? "删除中..." : "删除"}
+  </button>
+</div>
                   </div>
                 );
               })}
@@ -546,15 +597,15 @@ export function MockupTemplatesManager({
               </p>
             </div>
             {selectedTemplate ? (
-              <button
-                type="button"
-                onClick={() => void deleteTemplate(selectedTemplate)}
-                disabled={deletingTemplateId !== null}
-                className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
-              >
-                {deletingTemplateId === selectedTemplate.id ? "删除中..." : "删除当前模板"}
-              </button>
-            ) : null}
+  <button
+    type="button"
+    onClick={() => void deleteTemplate(selectedTemplate)}
+    disabled={deletingTemplateId !== null}
+    className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+  >
+    {deletingTemplateId === selectedTemplate.id ? "删除中..." : "删除当前模板"}
+  </button>
+) : null}
           </div>
 
           {!selectedTemplate ? (
