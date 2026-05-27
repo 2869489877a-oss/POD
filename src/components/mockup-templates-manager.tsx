@@ -344,7 +344,7 @@ export function MockupTemplatesManager({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-      <div className="space-y-6">
+      <div className="order-2 space-y-6 xl:order-1">
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -476,7 +476,7 @@ export function MockupTemplatesManager({
         </section>
       </div>
 
-      <div className="space-y-6">
+      <div className="order-1 space-y-6 xl:order-2">
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-5 py-4">
             <h3 className="text-base font-semibold text-zinc-950">模板列表</h3>
@@ -538,11 +538,23 @@ export function MockupTemplatesManager({
         </section>
 
         <section className="rounded-md border border-zinc-200 bg-white">
-          <div className="border-b border-zinc-200 px-5 py-4">
-            <h3 className="text-base font-semibold text-zinc-950">模板详情</h3>
-            <p className="mt-1 text-sm text-zinc-500">
-              {selectedTemplate ? selectedTemplate.name : "请选择一个模板"}
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-950">模板详情</h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                {selectedTemplate ? selectedTemplate.name : "请选择一个模板"}
+              </p>
+            </div>
+            {selectedTemplate ? (
+              <button
+                type="button"
+                onClick={() => void deleteTemplate(selectedTemplate)}
+                disabled={deletingTemplateId !== null}
+                className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+              >
+                {deletingTemplateId === selectedTemplate.id ? "删除中..." : "删除当前模板"}
+              </button>
+            ) : null}
           </div>
 
           {!selectedTemplate ? (
