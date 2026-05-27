@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   const templateId = getTemplateId(request);
 
   if (!templateId) {
-    return NextResponse.json({ error: "缂哄皯妯℃澘 ID" }, { status: 400 });
+    return NextResponse.json({ error: "缺少模板 ID" }, { status: 400 });
   }
 
   const supabase = createSupabaseServiceRoleClient();
@@ -60,7 +60,7 @@ export async function DELETE(request: Request) {
   const templateId = getTemplateId(request);
 
   if (!templateId) {
-    return NextResponse.json({ error: "缂哄皯妯℃澘 ID" }, { status: 400 });
+    return NextResponse.json({ error: "缺少模板 ID" }, { status: 400 });
   }
 
   let body: { dry_run?: unknown; force?: unknown } = {};
@@ -85,7 +85,7 @@ export async function DELETE(request: Request) {
     }
 
     if (!template) {
-      return NextResponse.json({ error: "妯℃澘涓嶅瓨鍦紝璇峰埛鏂板悗閲嶈瘯" }, { status: 404 });
+      return NextResponse.json({ error: "模板不存在，请刷新后重试" }, { status: 404 });
     }
 
     const outputCount = await getTemplateUsageCount(supabase, templateId);
@@ -101,7 +101,7 @@ export async function DELETE(request: Request) {
     if (requiresConfirmation && body.force !== true) {
       return NextResponse.json(
         {
-          error: "璇ユā鏉垮凡鏈夊鍥剧敓鎴愯褰曪紝鍒犻櫎鍙兘褰卞搷鍘嗗彶濂楀浘銆傛槸鍚︾户缁紵",
+          error: "该模板已有套图生成记录，删除可能影响历史套图。是否继续？",
           output_count: outputCount,
           requires_confirmation: true,
         },
@@ -124,7 +124,7 @@ export async function DELETE(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "鍒犻櫎妯℃澘澶辫触" },
+      { error: error instanceof Error ? error.message : "删除模板失败" },
       { status: 500 },
     );
   }
