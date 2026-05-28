@@ -15,6 +15,7 @@
 - 素材库列表、筛选、多选和详情弹窗
 - 素材库批量改尺寸，生成 POD 标准尺寸图片
 - 图片任务中心，查看任务列表和子任务明细
+- 印花提取和一键抠图 MVP，基于 Sharp + TypeScript 像素算法批量生成透明底结果
 - 简单版套图模板，支持 JSON 坐标配置和预览生成
 - 批量商品套图，根据模板为多张素材生成商品图
 - AI 生成商品上架信息，支持 qwen 和 doubao
@@ -29,6 +30,8 @@
 - `/assets` 素材库管理
 - `/upload` 上传图片
 - `/image-jobs` 批量图片处理
+- `/print-extraction` 印花提取
+- `/cutout` 一键抠图
 - `/mockup-templates` 固定商品套图
 - `/mockup-jobs` 套图任务
 - `/products` 商品草稿管理
@@ -110,7 +113,9 @@ supabase/migrations/20260524093000_create_pod_core_tables.sql
 supabase/migrations/20260524094500_create_assets_storage_bucket.sql
 supabase/migrations/20260524101600_make_ai_generations_product_draft_nullable.sql
 supabase/migrations/20260524113000_create_export_records.sql
+supabase/migrations/20260527091000_allow_delete_used_mockup_templates.sql
 supabase/migrations/20260527103000_create_image_derivatives.sql
+supabase/migrations/20260528123000_archive_mockup_templates.sql
 ```
 
 这些 migration 会创建 POD 系统第一版需要的基础表：
@@ -242,6 +247,33 @@ supabase db push
 
 当前不支持删除任务和队列系统；cutout、enhance 类型仍是预留任务类型，暂不支持重试执行。
 
+## 印花提取与一键抠图
+
+印花提取页面：
+
+```text
+/print-extraction
+```
+
+一键抠图页面：
+
+```text
+/cutout
+```
+
+当前已完成本地图像处理 MVP：
+
+- 页面可选择多张素材，设置处理模式和基础参数，批量创建处理任务。
+- 一键抠图支持自动背景、白底、黑底、纯色背景、边缘泛洪移除和主体抠图。
+- 印花提取支持自动、浅色衣服、深色衣服、高对比图案、彩色卡通图案、3D/主体图案和手动框选区域模式。
+- 后端使用 `sharp` 和 TypeScript 像素算法，不调用外部图像 API。
+- 生成的透明 PNG、白底预览图和 mask 图会上传到 Supabase Storage 的 `assets` bucket。
+- 处理结果写入 `image_derivatives`，同时更新 `assets.print_extract_url`、`assets.cutout_url` 和 `assets.preferred_design_url`。
+- 当前接口同步批量处理，单张失败不会影响其他图片，失败项会在接口结果中返回明确原因和建议。
+- `/api/image-derivatives/[derivativeId]/set-preferred` 可将某个处理结果设置为套图优先使用的设计图。
+
+当前不使用 remove.bg、Replicate、OpenAI、豆包、千问、OpenCV 或 ONNX。复杂背景、低对比印花和衣服褶皱场景仍可能需要调整参数或手动框选。
+
 ## 套图模板
 
 套图模板页面：
@@ -257,6 +289,8 @@ supabase db push
 - 上传场景底图到 Supabase Storage
 - 将上传后的底图插入为场景配置
 - 查看模板详情和场景配置
+- 归档套图模板；归档后默认列表不显示，但可切换到已归档模板并恢复
+- 归档模板不会删除 Supabase Storage 中的底图，也不会删除历史 `mockup_outputs`
 - 上传一张测试印花生成预览图
 
 `scenes` JSON 示例：
@@ -274,7 +308,13 @@ supabase db push
       "height": 600
     },
     "output_width": 2000,
-    "output_height": 2000
+    "output_height": 2000,
+    "fit": "contain",
+    "anchor": "center",
+    "offset_x": 0,
+    "offset_y": 0,
+    "scale": 1,
+    "rotation": 0
   },
   {
     "name": "尺码图",
@@ -290,6 +330,8 @@ supabase db push
 
 - `need_print = true` 时，将测试印花按 `print_area` 放到底图上。
 - `need_print = false` 时，直接输出固定底图。
+- `print_area` 坐标基于 `output_width / output_height`，预览和批量生成共用同一套放置计算。
+- `fit` 默认 `contain`，`anchor` 默认 `center`，旧模板未填写这些字段时会自动使用默认值。
 - 当前使用 Sharp 合成图片，不做复杂透视变形，也不做拖拽编辑器。
 
 ## 批量商品套图
@@ -307,6 +349,7 @@ supabase db push
 - 点击“生成套图”后创建 `image_jobs`，`job_type = mockup`
 - 每张素材创建一条 `image_job_items`
 - 使用 Sharp 按模板 scenes 批量合成商品图
+- 生成时优先使用 `assets.preferred_design_url`，其次使用 `print_extract_url`、`cutout_url`、`processed_url`，最后使用 `original_url`
 - 每张素材生成一组商品图并保存到 `mockup_outputs`
 - `mockup_outputs.output_images` 使用 JSON 数组保存图片 URL 列表
 - 失败时记录 `image_job_items.error_message` 和 `mockup_outputs.error_message`
@@ -404,13 +447,14 @@ AI 输出会被校验为严格 JSON：
 - 导出失败时在页面显示失败原因。
 - 导出成功或失败都会写入 `export_records`，导出中心展示最近 30 条记录。
 
-导出文件会写入本地运行时目录：
+导出文件会上传到 Supabase Storage 的 `assets` bucket：
 
 ```text
-public/exports
+exports/{yyyy-mm-dd}/{uuid}.xlsx
+exports/{yyyy-mm-dd}/{uuid}.zip
 ```
 
-该目录下生成的文件已加入 `.gitignore`，不要提交导出的业务文件。
+下载链接会写入 `export_records.download_url`。Vercel 线上环境不会写入 `public` 目录。
 
 当前不做 SDS 自动推送和多平台自动上架。
 

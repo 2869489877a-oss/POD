@@ -24,7 +24,7 @@ npm run build
 - `.env`
 - `.env.local`
 - 任何真实 API Key
-- `public/exports` 下的导出文件
+- 手工下载或临时生成的业务导出文件
 
 第一版仅内部使用。当前项目没有复杂团队权限和登录系统，部署后不要把生产地址公开传播；建议在 Vercel 上启用团队访问、部署保护、密码保护或其他内部访问控制。
 
@@ -45,7 +45,7 @@ npm run build
    - `.env.local`
    - `.next`
    - `node_modules`
-   - `public/exports` 下的实际导出文件
+   - 手工下载或临时生成的 Excel、ZIP 等业务导出文件
 
 推荐生产分支使用 `main`。后续所有数据库结构变更必须通过 `supabase/migrations` 提交，不要直接在远程数据库手工改表后忘记补 migration。
 
@@ -74,7 +74,7 @@ assets
 
 - bucket 名称：`assets`
 - public：`true`
-- 用途：保存上传原图、处理后图片、套图背景图、套图输出图。
+- 用途：保存上传原图、处理后图片、印花提取/抠图结果、套图背景图、套图输出图、导出文件。
 
 如果 migration 没有自动创建 bucket，可以在 Supabase Dashboard 手动检查：
 
@@ -94,7 +94,9 @@ supabase/migrations/20260524093000_create_pod_core_tables.sql
 supabase/migrations/20260524094500_create_assets_storage_bucket.sql
 supabase/migrations/20260524101600_make_ai_generations_product_draft_nullable.sql
 supabase/migrations/20260524113000_create_export_records.sql
+supabase/migrations/20260527091000_allow_delete_used_mockup_templates.sql
 supabase/migrations/20260527103000_create_image_derivatives.sql
+supabase/migrations/20260528123000_archive_mockup_templates.sql
 ```
 
 推荐使用 Supabase CLI 执行：
@@ -115,6 +117,7 @@ supabase db push
 - `product_drafts`
 - `ai_generations`
 - `export_records`
+- `image_derivatives`
 
 同时检查：
 
@@ -223,8 +226,9 @@ DOUBAO_BASE_URL=
 - AI 错误是否能显示给用户。
 - Excel 是否能下载并正常打开。
 - ZIP 是否能下载，内部图片结构是否正确。
+- `export_records.download_url` 是否写入 Supabase Storage 的公开 URL。
 
-注意：当前导出文件写入运行时的 `public/exports` 目录。Vercel serverless 运行环境不适合作为长期持久文件存储，部署后必须重点测试 Excel 和 ZIP 下载。如果导出在 Vercel 上失败，后续应把导出文件迁移到 Supabase Storage 或其他持久文件存储。
+注意：导出文件应上传到 Supabase Storage 的 `assets` bucket，路径形如 `exports/{yyyy-mm-dd}/{uuid}.xlsx` 或 `exports/{yyyy-mm-dd}/{uuid}.zip`。Vercel serverless 运行环境不能依赖写入 `public` 目录保存导出文件。
 
 ## 10. 常见错误和解决方法
 
@@ -341,7 +345,7 @@ supabase db push
 - 检查 Vercel Function Logs。
 - 先测试单个商品套图 ZIP。
 - 确认商品草稿 `images` 字段有图片 URL。
-- 后续生产化建议把导出文件保存到 Supabase Storage。
+- 后续生产化如需限制导出文件访问权限，建议改为 private bucket 和签名 URL。
 
 ### Supabase migration 状态不一致
 
