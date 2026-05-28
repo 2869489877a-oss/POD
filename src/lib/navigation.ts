@@ -21,6 +21,11 @@ export const navItems: NavItem[] = [
     description: "上传待处理原图",
   },
   {
+    title: "图片采集",
+    href: "/image-collector",
+    description: "配置网站来源并批量采集图片",
+  },
+  {
     title: "图片任务",
     href: "/image-jobs",
     description: "批量图片处理任务",

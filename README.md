@@ -12,6 +12,7 @@
 - Supabase 数据库 migration
 - 图片批量上传到 Supabase Storage
 - 上传成功后写入 `assets` 表
+- 图片采集模块第一阶段，支持采集模板 CRUD、网站来源配置和手动运行记录
 - 素材库列表、筛选、多选和详情弹窗
 - 素材库批量改尺寸，生成 POD 标准尺寸图片
 - 图片任务中心，查看任务列表和子任务明细
@@ -29,6 +30,7 @@
 - `/dashboard` 仪表盘
 - `/assets` 素材库管理
 - `/upload` 上传图片
+- `/image-collector` 图片采集
 - `/image-jobs` 批量图片处理
 - `/print-extraction` 印花提取
 - `/cutout` 一键抠图
@@ -116,6 +118,7 @@ supabase/migrations/20260524113000_create_export_records.sql
 supabase/migrations/20260527091000_allow_delete_used_mockup_templates.sql
 supabase/migrations/20260527103000_create_image_derivatives.sql
 supabase/migrations/20260528123000_archive_mockup_templates.sql
+supabase/migrations/20260528170000_create_image_collector.sql
 ```
 
 这些 migration 会创建 POD 系统第一版需要的基础表：
@@ -129,6 +132,10 @@ supabase/migrations/20260528123000_archive_mockup_templates.sql
 - `ai_generations`
 - `export_records`
 - `image_derivatives`
+- `image_collection_templates`
+- `image_collection_sources`
+- `image_collection_runs`
+- `image_collection_items`
 
 同时会创建 Supabase Storage bucket：
 
@@ -200,6 +207,45 @@ supabase db push
 - 只会删除该素材对应的 Storage 文件，不会删除无关文件。
 
 当前暂不支持编辑素材和 AI 生成。
+
+## 图片采集
+
+图片采集页面：
+
+```text
+/image-collector
+```
+
+当前支持：
+
+- 创建、编辑和归档采集模板
+- 配置多个网站来源：网站名称、起始页面 URL、文件夹名称和启用状态
+- 配置关键词、下载数量、主文件夹名称和 Supabase Storage 逻辑上层目录路径
+- 保存自动运行开关、运行频率和 `cron_expression`
+- 自动运行频率支持：手动、每小时、每天、每周和自定义 5 段 cron
+- 手动运行采集模板
+- 从公开页面 HTML 中提取 `img`、`data-src`、`data-original` 和 `srcset` 图片
+- 按 `max_images` 限制本次下载数量，最多 3 个并发下载
+- 采集图片上传到 Supabase Storage 的 `assets` bucket
+- 采集成功后写入 `assets` 表，并进入素材库
+- 单张图片失败不会影响其他图片，失败原因写入采集明细
+- 查看最近采集运行历史
+- 通过 Vercel Cron 定时触发 `/api/image-collector/cron`，到期模板会自动运行并更新 `last_run_at`、`next_run_at`
+
+当前只处理公开可访问页面，不使用 Puppeteer、Playwright 或浏览器自动化，不绕过登录、验证码、付费墙或目标网站权限限制。
+
+Web 版本不会写入用户本地文件夹，也不会写入 `public` 目录。采集结果会保存到 Supabase Storage 的 `assets` bucket，路径规则为：
+
+```text
+collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.jpg
+```
+
+自动运行说明：
+
+- `vercel.json` 已配置每 30 分钟触发一次 `/api/image-collector/cron`。
+- 如果配置了环境变量 `CRON_SECRET`，Cron API 会校验请求头 `Authorization: Bearer ${CRON_SECRET}`。
+- 如果未配置 `CRON_SECRET`，生产环境会校验 Vercel Cron 的 `user-agent` 是否包含 `vercel-cron/1.0`。
+- 本地开发环境允许直接访问 Cron API 方便测试。
 
 ## 批量改尺寸
 
