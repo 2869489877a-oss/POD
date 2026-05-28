@@ -3,10 +3,11 @@
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
 
 import {
-  parseScenesJson,
   sampleScenes,
   type MockupScene,
+  type PrintArea,
 } from "@/lib/mockups/scenes";
+import { SceneEditor } from "@/components/scene-editor";
 
 export type MockupTemplate = {
   created_at: string;
@@ -73,20 +74,72 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function createSceneFromBackground(url: string, name: string) {
+type SceneDraft = {
+  background_url: string;
+  local_id: string;
+  name: string;
+  need_print: boolean;
+  output_height: number;
+  output_width: number;
+  print_area: PrintArea;
+};
+
+function createLocalId() {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createBlankScene(): SceneDraft {
+  return {
+    background_url: "",
+    local_id: createLocalId(),
+    name: "",
+    need_print: true,
+    output_height: 2000,
+    output_width: 2000,
+    print_area: { x: 400, y: 300, width: 500, height: 600 },
+  };
+}
+
+function createSceneFromBackground(url: string, name: string): SceneDraft {
   return {
     background_url: url,
+    local_id: createLocalId(),
     name,
     need_print: true,
     output_height: 2000,
     output_width: 2000,
-    print_area: {
-      height: 600,
-      width: 500,
-      x: 400,
-      y: 300,
-    },
+    print_area: { x: 400, y: 300, width: 500, height: 600 },
   };
+}
+
+function scenesToPayload(scenes: SceneDraft[]): MockupScene[] {
+  return scenes.map((s) => {
+    const base: MockupScene = {
+      background_url: s.background_url,
+      name: s.name,
+      need_print: s.need_print,
+      output_height: s.output_height,
+      output_width: s.output_width,
+    };
+    if (s.need_print) {
+      base.print_area = { ...s.print_area };
+    }
+    return base;
+  });
+}
+
+function sampleToDrafts(): SceneDraft[] {
+  return sampleScenes.map((s) => ({
+    background_url: s.background_url,
+    local_id: createLocalId(),
+    name: s.name,
+    need_print: s.need_print,
+    output_height: s.output_height,
+    output_width: s.output_width,
+    print_area: s.print_area ?? { x: 400, y: 300, width: 500, height: 600 },
+  }));
 }
 
 export function MockupTemplatesManager({
@@ -99,7 +152,7 @@ export function MockupTemplatesManager({
   );
   const [name, setName] = useState("");
   const [productType, setProductType] = useState("");
-  const [scenesText, setScenesText] = useState(JSON.stringify(sampleScenes, null, 2));
+  const [scenes, setScenes] = useState<SceneDraft[]>(sampleToDrafts());
   const [backgroundFiles, setBackgroundFiles] = useState<File[]>([]);
   const [backgroundResults, setBackgroundResults] = useState<UploadBackgroundResult[]>([]);
   const [previewFile, setPreviewFile] = useState<File | null>(null);
@@ -187,23 +240,11 @@ export function MockupTemplatesManager({
   }
 
   function insertBackgroundScene(result: UploadBackgroundResult) {
-    if (!result.url) {
-      return;
-    }
-
-    try {
-      const scenes = parseScenesJson(scenesText);
-      const nextScenes = [
-        ...scenes,
-        createSceneFromBackground(result.url, result.filename.replace(/\.[^.]+$/, "")),
-      ];
-      setScenesText(JSON.stringify(nextScenes, null, 2));
-      setError(null);
-    } catch {
-      const nextScenes = [createSceneFromBackground(result.url, result.filename.replace(/\.[^.]+$/, ""))];
-      setScenesText(JSON.stringify(nextScenes, null, 2));
-      setError(null);
-    }
+    if (!result.url) return;
+    setScenes((current) => [
+      ...current,
+      createSceneFromBackground(result.url!, result.filename.replace(/\.[^.]+$/, "")),
+    ]);
   }
 
   async function saveTemplate(event: FormEvent<HTMLFormElement>) {
@@ -212,12 +253,9 @@ export function MockupTemplatesManager({
     setError(null);
     setMessage(null);
 
-    let scenes: MockupScene[];
-
-    try {
-      scenes = parseScenesJson(scenesText);
-    } catch (validationError) {
-      setError(validationError instanceof Error ? validationError.message : "scenes JSON 不合法");
+    const validScenes = scenes.filter((s) => s.name.trim() && s.background_url.trim());
+    if (validScenes.length === 0) {
+      setError("请至少添加一个有效场景（需要名称和底图 URL）");
       setIsSaving(false);
       return;
     }
@@ -227,7 +265,7 @@ export function MockupTemplatesManager({
         body: JSON.stringify({
           name,
           product_type: productType,
-          scenes,
+          scenes: scenesToPayload(validScenes),
         }),
         headers: {
           "Content-Type": "application/json",
@@ -244,7 +282,7 @@ export function MockupTemplatesManager({
       setSelectedTemplate(data.template);
       setName("");
       setProductType("");
-      setScenesText(JSON.stringify(sampleScenes, null, 2));
+      setScenes(sampleToDrafts());
       setMessage("模板保存成功");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "模板保存失败");
@@ -351,7 +389,7 @@ export function MockupTemplatesManager({
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-zinc-950">创建套图模板</h3>
-              <p className="mt-1 text-sm text-zinc-500">使用 JSON 配置场景和印花坐标。</p>
+              <p className="mt-1 text-sm text-zinc-500">可视化配置场景和印花坐标，拖拽调整位置。</p>
             </div>
             <button
               type="button"
@@ -390,17 +428,101 @@ export function MockupTemplatesManager({
               />
             </div>
 
-            <div>
-              <label htmlFor="scenes-json" className="block text-sm font-medium text-zinc-950">
-                scenes JSON
-              </label>
-              <textarea
-                id="scenes-json"
-                value={scenesText}
-                onChange={(event) => setScenesText(event.target.value)}
-                rows={18}
-                className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs leading-5 text-zinc-900"
-              />
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-zinc-950">场景列表</span>
+                <button
+                  type="button"
+                  onClick={() => setScenes((c) => [...c, createBlankScene()])}
+                  className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                >
+                  添加场景
+                </button>
+              </div>
+
+              {scenes.map((scene, index) => (
+                <div key={scene.local_id} className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-zinc-950">场景 {index + 1}</span>
+                    <button
+                      type="button"
+                      onClick={() => setScenes((c) => c.filter((_, i) => i !== index))}
+                      disabled={scenes.length === 1}
+                      className="text-sm font-medium text-red-600 disabled:cursor-not-allowed disabled:text-zinc-400"
+                    >
+                      删除
+                    </button>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm font-medium text-zinc-700">
+                      场景名称
+                      <input
+                        value={scene.name}
+                        onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, name: e.target.value } : s))}
+                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+                        placeholder="例如：主图"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-zinc-700">
+                      底图 URL
+                      <input
+                        value={scene.background_url}
+                        onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, background_url: e.target.value } : s))}
+                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+                        placeholder="上传底图后自动填入"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="block text-sm font-medium text-zinc-700">
+                      输出宽度
+                      <input
+                        type="number"
+                        value={scene.output_width}
+                        onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, output_width: Number(e.target.value) || 2000 } : s))}
+                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="block text-sm font-medium text-zinc-700">
+                      输出高度
+                      <input
+                        type="number"
+                        value={scene.output_height}
+                        onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, output_height: Number(e.target.value) || 2000 } : s))}
+                        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 self-end text-sm font-medium text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={scene.need_print}
+                        onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, need_print: e.target.checked } : s))}
+                        className="h-4 w-4 rounded border-zinc-300"
+                      />
+                      需要叠加印花
+                    </label>
+                  </div>
+
+                  {scene.need_print && scene.background_url && (
+                    <div>
+                      <p className="mb-2 text-xs text-zinc-500">拖拽蓝色框调整印花位置和大小</p>
+                      <SceneEditor
+                        backgroundUrl={scene.background_url}
+                        outputWidth={scene.output_width}
+                        outputHeight={scene.output_height}
+                        printArea={scene.print_area}
+                        onPrintAreaChange={(area) => setScenes((c) => c.map((s, i) => i === index ? { ...s, print_area: area } : s))}
+                      />
+                    </div>
+                  )}
+
+                  {scene.need_print && !scene.background_url && (
+                    <p className="text-xs text-amber-600">请先填入底图 URL 或上传底图，即可可视化编辑印花区域</p>
+                  )}
+                </div>
+              ))}
             </div>
 
             {error ? (
