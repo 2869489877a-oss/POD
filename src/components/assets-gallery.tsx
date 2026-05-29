@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { fetchAssetsAction } from "@/lib/actions/assets";
 import {
   resizePresets,
   type ResizePresetKey,
@@ -209,23 +210,20 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     setError(null);
 
     try {
-      const response = await fetch(buildAssetQuery(nextStatus, nextCopyrightStatus), {
-        cache: "no-store",
-      });
-      const data = (await response.json()) as AssetsResponse;
+      const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus);
 
-      if (!response.ok) {
-        throw new Error(data.error ?? "读取素材失败");
+      if (data.error) {
+        throw new Error(data.error);
       }
 
-      setAssets(data.assets ?? []);
+      const nextAssets = data.assets as Asset[];
+      setAssets(nextAssets);
       setSelectedIds((current) => {
-        const visibleIds = new Set((data.assets ?? []).map((asset) => asset.id));
+        const visibleIds = new Set(nextAssets.map((asset) => asset.id));
         return new Set(Array.from(current).filter((id) => visibleIds.has(id)));
       });
     } catch (requestError) {
-      const msg = requestError instanceof Error ? requestError.message : "读取素材失败";
-      setError(msg.includes("fetch") ? "网络请求失败，请检查代理设置是否排除了 localhost" : msg);
+      setError(requestError instanceof Error ? requestError.message : "读取素材失败");
       setAssets([]);
       setSelectedIds(new Set());
     } finally {

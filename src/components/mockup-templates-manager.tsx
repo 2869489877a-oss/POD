@@ -2,6 +2,7 @@
 
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
 
+import { deleteTemplateAction, fetchTemplatesAction, saveTemplateAction } from "@/lib/actions/mockup-templates";
 import {
   sampleScenes,
   type MockupScene,
@@ -182,14 +183,13 @@ export function MockupTemplatesManager({
     setError(null);
 
     try {
-      const response = await fetch("/api/mockup-templates", { cache: "no-store" });
-      const data = (await response.json()) as TemplatesResponse;
+      const data = await fetchTemplatesAction();
 
-      if (!response.ok) {
-        throw new Error(data.error ?? "读取模板失败");
+      if (data.error) {
+        throw new Error(data.error);
       }
 
-      const nextTemplates = data.templates ?? [];
+      const nextTemplates = (data.templates ?? []) as MockupTemplate[];
       setTemplates(nextTemplates);
       setSelectedTemplate((current) => {
         if (!current) {
@@ -199,7 +199,7 @@ export function MockupTemplatesManager({
         return nextTemplates.find((template) => template.id === current.id) ?? nextTemplates[0] ?? null;
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "读取模板失败");
+      setError(requestError instanceof Error ? requestError.message : "读取模板失败");
     } finally {
       setIsRefreshing(false);
     }
@@ -261,31 +261,25 @@ export function MockupTemplatesManager({
     }
 
     try {
-      const response = await fetch("/api/mockup-templates", {
-        body: JSON.stringify({
-          name,
-          product_type: productType,
-          scenes: scenesToPayload(validScenes),
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        method: "POST",
+      const data = await saveTemplateAction({
+        name,
+        product_type: productType,
+        scenes: scenesToPayload(validScenes),
       });
-      const data = (await response.json()) as CreateTemplateResponse;
 
-      if (!response.ok || !data.template) {
+      if (data.error || !data.template) {
         throw new Error(data.error ?? "模板保存失败");
       }
 
-      setTemplates((current) => [data.template!, ...current]);
-      setSelectedTemplate(data.template);
+      const saved = data.template as MockupTemplate;
+      setTemplates((current) => [saved, ...current]);
+      setSelectedTemplate(saved);
       setName("");
       setProductType("");
       setScenes(sampleToDrafts());
       setMessage("模板保存成功");
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "模板保存失败");
+      setError(requestError instanceof Error ? requestError.message : "模板保存失败");
     } finally {
       setIsSaving(false);
     }
@@ -334,17 +328,10 @@ export function MockupTemplatesManager({
     setMessage(null);
 
     try {
-      const checkResponse = await fetch(`/api/mockup-templates/${template.id}`, {
-        body: JSON.stringify({ dry_run: true }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        method: "DELETE",
-      });
-      const checkData = (await checkResponse.json()) as DeleteTemplateResponse;
+      const checkData = await deleteTemplateAction(template.id, { dry_run: true });
 
-      if (!checkResponse.ok) {
-        throw new Error(checkData.error ?? "删除检查失败");
+      if (checkData.error) {
+        throw new Error(checkData.error);
       }
 
       const confirmed = window.confirm(
@@ -357,18 +344,11 @@ export function MockupTemplatesManager({
         return;
       }
 
-      const response = await fetch(`/api/mockup-templates/${template.id}`, {
-        body: JSON.stringify({
-          force: checkData.requires_confirmation === true,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        method: "DELETE",
+      const data = await deleteTemplateAction(template.id, {
+        force: checkData.requires_confirmation === true,
       });
-      const data = (await response.json()) as DeleteTemplateResponse;
 
-      if (!response.ok || !data.ok) {
+      if (!data.ok) {
         throw new Error(data.error ?? "模板删除失败");
       }
 
@@ -376,7 +356,7 @@ export function MockupTemplatesManager({
       setPreviewResults([]);
       await refreshTemplates();
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "模板删除失败");
+      setError(requestError instanceof Error ? requestError.message : "模板删除失败");
     } finally {
       setDeletingTemplateId(null);
     }
