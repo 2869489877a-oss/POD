@@ -1,10 +1,10 @@
 import { PageShell } from "@/components/page-shell";
 
 const summaryCards = [
-  { label: "今日上传", value: "0", note: "等待接入上传流程" },
-  { label: "素材总数", value: "0", note: "等待接入素材库" },
-  { label: "处理任务", value: "0", note: "等待接入批处理" },
-  { label: "商品草稿", value: "0", note: "等待接入草稿管理" },
+  { label: "今日上传", value: "0", note: "等待接入上传流程", color: "from-blue-500 to-blue-600" },
+  { label: "素材总数", value: "0", note: "等待接入素材库", color: "from-emerald-500 to-teal-600" },
+  { label: "处理任务", value: "0", note: "等待接入批处理", color: "from-violet-500 to-purple-600" },
+  { label: "商品草稿", value: "0", note: "等待接入草稿管理", color: "from-amber-500 to-orange-600" },
 ];
 
 const workflowItems = [
@@ -25,34 +25,35 @@ export default function DashboardPage() {
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <div key={card.label} className="rounded-md border border-zinc-200 bg-white p-5">
-            <p className="text-sm text-zinc-500">{card.label}</p>
-            <p className="mt-3 text-3xl font-semibold text-zinc-950">{card.value}</p>
-            <p className="mt-2 text-xs text-zinc-500">{card.note}</p>
+          <div key={card.label} className="relative overflow-hidden rounded-xl border border-slate-200/60 bg-white p-5 shadow-sm">
+            <div className={`absolute left-0 top-0 h-1 w-full bg-gradient-to-r ${card.color}`} />
+            <p className="text-sm font-medium text-slate-500">{card.label}</p>
+            <p className="mt-3 text-3xl font-bold text-slate-900">{card.value}</p>
+            <p className="mt-2 text-xs text-slate-400">{card.note}</p>
           </div>
         ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-md border border-zinc-200 bg-white p-6">
-          <h3 className="text-base font-semibold text-zinc-950">批处理流程</h3>
+        <section className="rounded-xl border border-slate-200/60 bg-white p-6 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900">批处理流程</h3>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {workflowItems.map((item, index) => (
-              <div key={item} className="flex items-center gap-3 rounded-md bg-zinc-50 p-3">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-sm font-semibold text-emerald-700">
+              <div key={item} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 transition hover:bg-slate-100">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-xs font-bold text-white shadow-sm">
                   {index + 1}
                 </span>
-                <span className="text-sm font-medium text-zinc-800">{item}</span>
+                <span className="text-sm font-medium text-slate-700">{item}</span>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-md border border-zinc-200 bg-white p-6">
-          <h3 className="text-base font-semibold text-zinc-950">第一版边界</h3>
-          <div className="mt-5 space-y-3 text-sm leading-6 text-zinc-600">
-            <p>当前仅搭建前端项目骨架和页面入口。</p>
-            <p>暂不接入数据库、AI 服务、爬虫、支付、权限和自动上架流程。</p>
+        <section className="rounded-xl border border-slate-200/60 bg-white p-6 shadow-sm">
+          <h3 className="text-base font-bold text-slate-900">系统说明</h3>
+          <div className="mt-5 space-y-3 text-sm leading-6 text-slate-500">
+            <p>内部 POD 商品图批量处理系统。</p>
+            <p>支持图片上传、批量处理、套图生成、AI 文案和导出功能。</p>
           </div>
         </section>
       </div>

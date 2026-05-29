@@ -9,10 +9,12 @@ type PageShellProps = {
 export function PageShell({ title, description, children }: PageShellProps) {
   return (
     <section className="space-y-6">
-      <div className="border-b border-zinc-200 pb-5">
-        <p className="text-sm font-medium text-emerald-600">POD 工作台</p>
-        <h2 className="mt-2 text-2xl font-semibold text-zinc-950">{title}</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">{description}</p>
+      <div className="pb-5">
+        <span className="inline-flex items-center rounded-full bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200/60">
+          POD 工作台
+        </span>
+        <h2 className="mt-3 text-2xl font-bold text-slate-900">{title}</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{description}</p>
       </div>
       {children}
     </section>

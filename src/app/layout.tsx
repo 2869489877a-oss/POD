@@ -14,7 +14,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
   return (
     <html lang="zh-CN">
       <body className="antialiased">
-        <div className="flex min-h-screen bg-zinc-100 text-zinc-950">
+        <div className="flex min-h-screen bg-slate-50 text-slate-900">
           <Sidebar />
           <main className="min-w-0 flex-1 px-8 py-6">
             <div className="mx-auto max-w-7xl">{children}</div>
