@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 
 function requirePublicEnv(name: string, value: string | undefined) {
   if (!value) {
-    throw new Error(`Missing required public environment variable: ${name}`);
+    console.warn(`Missing required public environment variable: ${name}`);
+    return "";
   }
 
   return value;

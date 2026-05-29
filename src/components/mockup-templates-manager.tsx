@@ -383,9 +383,9 @@ export function MockupTemplatesManager({
   }
 
   return (
-   <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
-     <div className="space-y-6">
-        <section className="rounded-md border border-zinc-200 bg-white p-5">
+   <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+     <div className="space-y-4 xl:max-h-[calc(100vh-10rem)] xl:overflow-y-auto">
+        <section className="rounded-md border border-zinc-200 bg-white p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-zinc-950">创建套图模板</h3>
@@ -401,34 +401,36 @@ export function MockupTemplatesManager({
             </button>
           </div>
 
-          <form onSubmit={saveTemplate} className="mt-5 space-y-4">
-            <div>
-              <label htmlFor="template-name" className="block text-sm font-medium text-zinc-950">
-                模板名称
-              </label>
-              <input
-                id="template-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
-                placeholder="例如：T恤白底套图"
-              />
+          <form onSubmit={saveTemplate} className="mt-4 space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="template-name" className="block text-sm font-medium text-zinc-950">
+                  模板名称
+                </label>
+                <input
+                  id="template-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900"
+                  placeholder="例如：T恤白底套图"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="product-type" className="block text-sm font-medium text-zinc-950">
+                  产品类型
+                </label>
+                <input
+                  id="product-type"
+                  value={productType}
+                  onChange={(event) => setProductType(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900"
+                  placeholder="例如：T恤"
+                />
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="product-type" className="block text-sm font-medium text-zinc-950">
-                产品类型
-              </label>
-              <input
-                id="product-type"
-                value={productType}
-                onChange={(event) => setProductType(event.target.value)}
-                className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
-                placeholder="例如：T恤"
-              />
-            </div>
-
-            <div className="space-y-3">
+            <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-zinc-950">场景列表</span>
                 <button
@@ -441,7 +443,7 @@ export function MockupTemplatesManager({
               </div>
 
               {scenes.map((scene, index) => (
-                <div key={scene.local_id} className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+                <div key={scene.local_id} className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-zinc-950">场景 {index + 1}</span>
                     <button
@@ -547,10 +549,10 @@ export function MockupTemplatesManager({
           </form>
         </section>
 
-        <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <section className="rounded-md border border-zinc-200 bg-white p-4">
           <h3 className="text-base font-semibold text-zinc-950">上传场景底图</h3>
           <p className="mt-1 text-sm text-zinc-500">上传后可插入为 scenes JSON 中的新场景。</p>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <input
               type="file"
               accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
@@ -600,9 +602,9 @@ export function MockupTemplatesManager({
         </section>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-4 xl:max-h-[calc(100vh-10rem)] xl:overflow-y-auto">
         <section className="rounded-md border border-zinc-200 bg-white">
-          <div className="border-b border-zinc-200 px-5 py-4">
+          <div className="border-b border-zinc-200 px-5 py-3">
             <h3 className="text-base font-semibold text-zinc-950">模板列表</h3>
             <p className="mt-1 text-sm text-zinc-500">共 {templates.length} 个模板</p>
           </div>
@@ -727,7 +729,7 @@ export function MockupTemplatesManager({
           )}
         </section>
 
-        <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <section className="rounded-md border border-zinc-200 bg-white p-4">
           <h3 className="text-base font-semibold text-zinc-950">测试印花预览</h3>
           <p className="mt-1 text-sm text-zinc-500">
             上传一张测试印花，按当前模板生成预览图。

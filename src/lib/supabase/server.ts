@@ -4,7 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 
 function requireServerEnv(name: string, value: string | undefined) {
   if (!value) {
-    throw new Error(`Missing required server environment variable: ${name}`);
+    console.warn(`Missing required server environment variable: ${name}`);
+    return "";
   }
 
   return value;

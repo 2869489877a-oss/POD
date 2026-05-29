@@ -57,7 +57,7 @@ export function SceneEditor({
   }, []);
 
   const scale = containerSize.width > 0 ? containerSize.width / outputWidth : 1;
-  const displayHeight = outputHeight * scale;
+  const displayHeight = Math.min(outputHeight * scale, 220);
 
   const toDisplay = useCallback(
     (area: PrintArea) => ({
