@@ -36,10 +36,9 @@ export function SceneEditor({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragMode, setDragMode] = useState<DragMode>(null);
-  const [imgError, setImgError] = useState(false);
+  const [failedBackgroundUrl, setFailedBackgroundUrl] = useState<string | null>(null);
   const dragStart = useRef({ mouseX: 0, mouseY: 0, area: printArea });
-
-  useEffect(() => { setImgError(false); }, [backgroundUrl]);
+  const imgError = Boolean(backgroundUrl && failedBackgroundUrl === backgroundUrl);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -180,7 +179,7 @@ export function SceneEditor({
           alt="场景底图"
           className="absolute inset-0 h-full w-full object-cover"
           draggable={false}
-          onError={() => setImgError(true)}
+          onError={() => setFailedBackgroundUrl(backgroundUrl)}
         />
       )}
       {backgroundUrl && imgError && (

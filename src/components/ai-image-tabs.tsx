@@ -23,16 +23,16 @@ export function AiImageTabs({ generateTab, backgroundTab, patternTab, extractTab
 
   return (
     <div>
-      <div className="flex gap-1 rounded-lg bg-slate-100 p-1 mb-6">
+      <div className="flex gap-1 rounded-xl bg-[#12122a] p-1.5 mb-6 border border-violet-500/10">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActive(tab.key)}
             className={[
-              "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-all",
+              "flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-all duration-200",
               active === tab.key
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700",
+                ? "bg-gradient-to-r from-violet-600 to-cyan-600 text-white shadow-lg shadow-violet-500/20"
+                : "text-slate-400 hover:text-white hover:bg-white/5",
             ].join(" ")}
           >
             {tab.label}
@@ -40,10 +40,12 @@ export function AiImageTabs({ generateTab, backgroundTab, patternTab, extractTab
         ))}
       </div>
 
-      {active === "generate" && generateTab}
-      {active === "background" && backgroundTab}
-      {active === "extract" && extractTab}
-      {active === "pattern" && patternTab}
+      <div className="rounded-xl border border-violet-500/10 bg-[#12122a]/50 p-6 backdrop-blur-sm">
+        {active === "generate" && generateTab}
+        {active === "background" && backgroundTab}
+        {active === "extract" && extractTab}
+        {active === "pattern" && patternTab}
+      </div>
     </div>
   );
 }

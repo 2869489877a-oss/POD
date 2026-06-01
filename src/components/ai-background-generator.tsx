@@ -6,6 +6,8 @@ type Props = {
   cutoutUrls?: Array<{ url: string; asset_id: string; filename?: string }>;
 };
 
+const inputClass = "w-full rounded-lg border border-violet-500/20 bg-[#1a1a3e] px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500";
+
 export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
   const [cutoutUrl, setCutoutUrl] = useState(cutoutUrls[0]?.url ?? "");
   const [assetId, setAssetId] = useState(cutoutUrls[0]?.asset_id ?? "");
@@ -17,20 +19,14 @@ export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
     if (!cutoutUrl.trim() || !scene.trim()) return;
-
     setGenerating(true);
     setError(null);
     setResult(null);
-
     try {
       const res = await fetch("/api/ai/generate-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cutout_url: cutoutUrl.trim(),
-          asset_id: assetId || undefined,
-          scene_description: scene.trim(),
-        }),
+        body: JSON.stringify({ cutout_url: cutoutUrl.trim(), asset_id: assetId || undefined, scene_description: scene.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -44,73 +40,47 @@ export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
 
   return (
     <div className="space-y-4">
-      <h4 className="text-sm font-semibold text-slate-700">抠图 + AI 背景合成</h4>
-      <p className="text-xs text-slate-500">提供抠图后的透明底图 URL，AI 生成场景背景并自动合成</p>
+      <div>
+        <h4 className="text-base font-semibold text-white">抠图 + AI 背景合成</h4>
+        <p className="mt-1 text-xs text-slate-400">提供抠图后的透明底图，AI 生成场景背景并自动合成产品图</p>
+      </div>
 
       <form onSubmit={handleGenerate} className="space-y-3">
         {cutoutUrls.length > 0 ? (
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">选择抠图结果</label>
-            <select
-              value={cutoutUrl}
-              onChange={(e) => {
-                setCutoutUrl(e.target.value);
-                const match = cutoutUrls.find((c) => c.url === e.target.value);
-                setAssetId(match?.asset_id ?? "");
-              }}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
-              {cutoutUrls.map((c, i) => (
-                <option key={i} value={c.url}>{c.filename || c.url.slice(-30)}</option>
-              ))}
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">选择抠图结果</label>
+            <select value={cutoutUrl} onChange={(e) => { setCutoutUrl(e.target.value); const m = cutoutUrls.find((c) => c.url === e.target.value); setAssetId(m?.asset_id ?? ""); }} className={inputClass}>
+              {cutoutUrls.map((c, i) => (<option key={i} value={c.url}>{c.filename || c.url.slice(-30)}</option>))}
             </select>
           </div>
         ) : (
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">抠图图片 URL</label>
-            <input
-              type="url"
-              value={cutoutUrl}
-              onChange={(e) => setCutoutUrl(e.target.value)}
-              placeholder="https://... 透明底 PNG"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              required
-            />
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">抠图图片 URL</label>
+            <input type="url" value={cutoutUrl} onChange={(e) => setCutoutUrl(e.target.value)} placeholder="https://... 透明底 PNG" className={inputClass} required />
           </div>
         )}
 
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">场景描述</label>
-          <input
-            type="text"
-            value={scene}
-            onChange={(e) => setScene(e.target.value)}
-            placeholder="如: 白色大理石桌面，柔和自然光，极简风格"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            required
-          />
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">场景描述</label>
+          <input type="text" value={scene} onChange={(e) => setScene(e.target.value)} placeholder="如: 白色大理石桌面，柔和自然光，极简风格" className={inputClass} required />
         </div>
 
-        <button
-          type="submit"
-          disabled={generating}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={generating} className="rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 transition-all">
           {generating ? "生成中..." : "生成背景并合成"}
         </button>
       </form>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {result && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-slate-500 mb-1">AI 背景</p>
-            <img src={result.background_url} alt="background" className="rounded-lg border" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
+            <p className="text-xs text-slate-500 mb-2">AI 背景</p>
+            <img src={result.background_url} alt="background" className="rounded-lg" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-1">合成结果</p>
-            <img src={result.composite_url} alt="composite" className="rounded-lg border" />
+          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
+            <p className="text-xs text-slate-500 mb-2">合成结果</p>
+            <img src={result.composite_url} alt="composite" className="rounded-lg" />
           </div>
         </div>
       )}

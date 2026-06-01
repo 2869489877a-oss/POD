@@ -8,6 +8,8 @@ const BG_OPTIONS = [
   { value: "black", label: "黑底" },
 ];
 
+const inputClass = "w-full rounded-lg border border-violet-500/20 bg-[#1a1a3e] px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500";
+
 export function AiPrintExtractor() {
   const [imageUrl, setImageUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -24,27 +26,22 @@ export function AiPrintExtractor() {
     formData.append("files", file);
     const res = await fetch("/api/upload", { method: "POST", body: formData });
     const data = await res.json();
-    if (!res.ok || !data.results?.[0]?.success) {
-      throw new Error(data.results?.[0]?.error || "上传失败");
-    }
+    if (!res.ok || !data.results?.[0]?.success) throw new Error(data.results?.[0]?.error || "上传失败");
     return data.results[0].asset_id as string;
   }
 
   async function handleExtract(e: FormEvent) {
     e.preventDefault();
     if (!imageUrl.trim() && !file) return;
-
     setExtracting(true);
     setError(null);
     setResult(null);
 
     try {
       let assetId: string | null = null;
-
       if (file) {
         assetId = await uploadFileFirst();
       }
-
       if (!assetId && imageUrl.trim()) {
         const importRes = await fetch("/api/import-urls", {
           method: "POST",
@@ -54,39 +51,19 @@ export function AiPrintExtractor() {
         const importData = await importRes.json();
         assetId = importData.results?.[0]?.asset_id ?? null;
       }
-
       if (!assetId) throw new Error("无法获取图片素材");
 
       const outputMode = bgMode === "transparent" ? "transparent" : bgMode === "white" ? "white_preview" : "black_preview";
-
       const res = await fetch("/api/print-extraction/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          asset_ids: [assetId],
-          mode: "auto",
-          options: {
-            tolerance,
-            refineEdges,
-            outputMode,
-          },
-          set_preferred: true,
-        }),
+        body: JSON.stringify({ asset_ids: [assetId], mode: "auto", options: { tolerance, refineEdges, outputMode }, set_preferred: true }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "提取失败");
-
       const item = data.results?.[0];
-      if (!item || item.status === "failed") {
-        throw new Error(item?.error_message || "提取失败");
-      }
-
-      setResult({
-        final_url: item.final_url,
-        preview_url: item.preview_url,
-        raw_url: item.raw_url,
-      });
+      if (!item || item.status === "failed") throw new Error(item?.error_message || "提取失败");
+      setResult({ final_url: item.final_url, preview_url: item.preview_url, raw_url: item.raw_url });
     } catch (err) {
       setError(err instanceof Error ? err.message : "提取失败");
     } finally {
@@ -96,92 +73,61 @@ export function AiPrintExtractor() {
 
   return (
     <div className="space-y-4">
-      <h4 className="text-sm font-semibold text-slate-700">AI 抠印花</h4>
-      <p className="text-xs text-slate-500">上传衣服照片，自动识别并提取印花图案，可选择输出底色</p>
+      <div>
+        <h4 className="text-base font-semibold text-white">AI 抠印花</h4>
+        <p className="mt-1 text-xs text-slate-400">上传衣服照片，自动识别并提取印花图案，可选择输出底色</p>
+      </div>
 
       <form onSubmit={handleExtract} className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">上传图片</label>
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">上传图片</label>
           <input
             type="file"
             accept="image/*"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null);
-              if (e.target.files?.[0]) setImageUrl("");
-            }}
-            className="w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-emerald-700 hover:file:bg-emerald-100"
+            onChange={(e) => { setFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setImageUrl(""); }}
+            className="w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/10 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/20 file:cursor-pointer"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">或输入图片 URL</label>
-          <input
-            type="url"
-            value={imageUrl}
-            onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setFile(null); }}
-            placeholder="https://..."
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            disabled={!!file}
-          />
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">或输入图片 URL</label>
+          <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setFile(null); }} placeholder="https://..." className={inputClass} disabled={!!file} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">输出底色</label>
-            <select
-              value={bgMode}
-              onChange={(e) => setBgMode(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-            >
-              {BG_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">输出底色</label>
+            <select value={bgMode} onChange={(e) => setBgMode(e.target.value)} className={inputClass}>
+              {BG_OPTIONS.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">容差 ({tolerance})</label>
-            <input
-              type="range"
-              min={5}
-              max={150}
-              value={tolerance}
-              onChange={(e) => setTolerance(Number(e.target.value))}
-              className="w-full"
-            />
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">容差 ({tolerance})</label>
+            <input type="range" min={5} max={150} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} className="w-full mt-2 accent-violet-500" />
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="refine-edges"
-            checked={refineEdges}
-            onChange={(e) => setRefineEdges(e.target.checked)}
-            className="rounded border-slate-300"
-          />
-          <label htmlFor="refine-edges" className="text-sm text-slate-700">边缘优化（去噪点、平滑边缘）</label>
+          <input type="checkbox" id="refine-edges-dark" checked={refineEdges} onChange={(e) => setRefineEdges(e.target.checked)} className="rounded border-violet-500/30 bg-[#1a1a3e] text-violet-500 focus:ring-violet-500" />
+          <label htmlFor="refine-edges-dark" className="text-sm text-slate-300">边缘优化（去噪点、平滑边缘）</label>
         </div>
 
-        <button
-          type="submit"
-          disabled={extracting || (!imageUrl.trim() && !file)}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
+        <button type="submit" disabled={extracting || (!imageUrl.trim() && !file)} className="rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 transition-all">
           {extracting ? "提取中..." : "提取印花"}
         </button>
       </form>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {result && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <p className="text-xs text-slate-500 mb-1">提取结果</p>
-            <img src={result.final_url} alt="extracted" className="rounded-lg border bg-[repeating-conic-gradient(#e2e8f0_0%_25%,transparent_0%_50%)] bg-[length:16px_16px]" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
+            <p className="text-xs text-slate-500 mb-2">提取结果</p>
+            <img src={result.final_url} alt="extracted" className="rounded-lg bg-[repeating-conic-gradient(#1a1a3e_0%_25%,#0d0d24_0%_50%)] bg-[length:16px_16px]" />
           </div>
-          <div>
-            <p className="text-xs text-slate-500 mb-1">预览</p>
-            <img src={result.preview_url} alt="preview" className="rounded-lg border" />
+          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
+            <p className="text-xs text-slate-500 mb-2">预览</p>
+            <img src={result.preview_url} alt="preview" className="rounded-lg" />
           </div>
         </div>
       )}

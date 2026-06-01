@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  background: #f8fafc;
-  color: #0f172a;
+  --bg-primary: #0a0a1a;
+  --bg-secondary: #12122a;
+  --bg-card: #1a1a3e;
+  --bg-card-hover: #222255;
+  --border-subtle: rgba(139, 92, 246, 0.15);
+  --border-glow: rgba(139, 92, 246, 0.4);
+  --accent-start: #8b5cf6;
+  --accent-end: #06b6d4;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
 }
 
 * {
@@ -12,9 +21,18 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f8fafc;
+  background: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 a {
   text-decoration: none;
+}
+
+::selection {
+  background: rgba(139, 92, 246, 0.3);
+}
+
+input, textarea, select {
+  color-scheme: dark;
 }
