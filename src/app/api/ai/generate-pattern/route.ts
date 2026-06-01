@@ -1,0 +1,108 @@
+import { randomUUID } from "crypto";
+import { NextResponse } from "next/server";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+
+export const runtime = "nodejs";
+export const maxDuration = 120;
+
+type GeneratePatternRequest = {
+  reference_url?: unknown;
+  asset_id?: unknown;
+  style_description?: unknown;
+  provider_id?: unknown;
+  width?: unknown;
+  height?: unknown;
+};
+
+export async function POST(request: Request) {
+  let body: GeneratePatternRequest;
+
+  try {
+    body = (await request.json()) as GeneratePatternRequest;
+  } catch {
+    return NextResponse.json({ error: "无法解析请求" }, { status: 400 });
+  }
+
+  const referenceUrl = typeof body.reference_url === "string" ? body.reference_url.trim() : "";
+  const assetId = typeof body.asset_id === "string" ? body.asset_id.trim() : null;
+  const styleDescription = typeof body.style_description === "string" ? body.style_description.trim() : "";
+  const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
+  const width = typeof body.width === "number" && body.width > 0 ? body.width : 1024;
+  const height = typeof body.height === "number" && body.height > 0 ? body.height : 1024;
+
+  if (!styleDescription) {
+    return NextResponse.json({ error: "请描述想要的印花风格 (style_description)" }, { status: 400 });
+  }
+
+  try {
+    const resolved = await resolveProvider(providerId);
+
+    let prompt = `Generate a seamless print pattern design for clothing/apparel: ${styleDescription}. The pattern should have a transparent or solid color background, suitable for printing on fabric. High quality, clean edges, vector-like quality.`;
+
+    if (referenceUrl) {
+      prompt += ` Style reference: the pattern should be similar in style to an existing extracted print pattern.`;
+    }
+
+    const result = await generateImage(resolved, {
+      prompt,
+      width,
+      height,
+    });
+
+    const supabase = createSupabaseServiceRoleClient();
+    const buffer = Buffer.from(result.imageBase64, "base64");
+    const datePath = new Date().toISOString().slice(0, 10);
+    const storagePath = `derivatives/${datePath}/${randomUUID()}-ai-pattern.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("assets")
+      .upload(storagePath, buffer, { contentType: "image/png", upsert: false });
+
+    if (uploadError) throw new Error(`上传失败: ${uploadError.message}`);
+
+    const patternUrl = supabase.storage.from("assets").getPublicUrl(storagePath).data.publicUrl;
+
+    if (assetId) {
+      await supabase.from("image_derivatives").insert({
+        asset_id: assetId,
+        derivative_type: "ai_pattern",
+        output_url: patternUrl,
+        preview_url: patternUrl,
+        source_url: referenceUrl || null,
+        status: "completed",
+        width,
+        height,
+        options: { style_description: styleDescription, provider: resolved.providerType },
+      });
+    }
+
+    const { data: newAsset } = await supabase
+      .from("assets")
+      .insert({
+        original_url: patternUrl,
+        filename: `ai-pattern-${randomUUID().slice(0, 8)}.png`,
+        file_size: buffer.length,
+        width,
+        height,
+        format: "png",
+        source: "ai",
+        status: "uploaded",
+        copyright_status: "owned",
+      })
+      .select("id")
+      .single();
+
+    return NextResponse.json({
+      pattern_url: patternUrl,
+      asset_id: newAsset?.id ?? null,
+      provider: resolved.providerType,
+      model: resolved.modelId,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "印花生成失败" },
+      { status: 500 },
+    );
+  }
+}

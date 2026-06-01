@@ -14,6 +14,7 @@ type GenerateImageRequest = {
   style?: unknown;
   provider_id?: unknown;
   save_to_assets?: unknown;
+  product_draft_id?: unknown;
 };
 
 export async function POST(request: Request) {
@@ -36,6 +37,9 @@ export async function POST(request: Request) {
   const style = typeof body.style === "string" ? body.style.trim() : undefined;
   const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
   const saveToAssets = body.save_to_assets !== false;
+  const productDraftId = typeof body.product_draft_id === "string" && body.product_draft_id.trim().length > 0
+    ? body.product_draft_id.trim()
+    : null;
 
   const supabase = createSupabaseServiceRoleClient();
 
@@ -126,6 +130,23 @@ export async function POST(request: Request) {
         .eq("id", jobId);
     }
 
+    if (productDraftId && assetId) {
+      const { data: draft } = await supabase
+        .from("product_drafts")
+        .select("images")
+        .eq("id", productDraftId)
+        .single();
+
+      if (draft) {
+        const images = Array.isArray(draft.images) ? draft.images : [];
+        images.push({ url: resultUrl, asset_id: assetId, source: "ai", created_at: new Date().toISOString() });
+        await supabase
+          .from("product_drafts")
+          .update({ images })
+          .eq("id", productDraftId);
+      }
+    }
+
     return NextResponse.json({
       job_id: jobId,
       asset_id: assetId,
@@ -134,6 +155,7 @@ export async function POST(request: Request) {
       mime_type: result.mimeType,
       provider: resolved.providerType,
       model: resolved.modelId,
+      product_draft_id: productDraftId,
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "生图失败";
