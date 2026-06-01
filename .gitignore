@@ -34,6 +34,7 @@ pnpm-debug.log*
 .env.local
 .env*
 !.env.example
+rembg-local.env
 
 # typescript
 *.tsbuildinfo

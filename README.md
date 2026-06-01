@@ -59,6 +59,63 @@ npm run dev
 http://localhost:3000
 ```
 
+## 本地 Rembg / OpenCV 工具箱
+
+本地图片重处理不要压到 Web 服务上跑。当前根目录的 `app.py` 是一个本地 Gradio 工具箱，包含：
+
+- 抠图：基于 rembg，适合主体/衣服抠图。
+- 贴印花：把透明 PNG 印花贴到衣服模板上做预览。
+- 摘印花：基于 OpenCV 从衣服照片中粗提取印花。
+
+已有虚拟环境时，直接运行：
+
+```powershell
+E:\rembg-server\start-rembg-local.ps1
+```
+
+或双击：
+
+```text
+E:\rembg-server\start-rembg-local.bat
+```
+
+启动后默认访问：
+
+```text
+http://127.0.0.1:7860
+```
+
+本地配置文件：
+
+```text
+rembg-local.env
+```
+
+首次运行启动脚本会自动从 `rembg-local.env.example` 复制一份。默认配置只监听本机：
+
+```env
+REMBG_LOCAL_HOST=127.0.0.1
+REMBG_LOCAL_PORT=7860
+REMBG_LOCAL_OPEN_BROWSER=true
+REMBG_LOCAL_SHARE=false
+REMBG_LOCAL_MAX_CONCURRENT=1
+REMBG_LOCAL_QUEUE_MAX_SIZE=8
+REMBG_LOCAL_MAX_FILE_SIZE=50mb
+```
+
+说明：
+
+- `REMBG_LOCAL_HOST=127.0.0.1`：只允许本机访问，避免暴露到局域网或公网。
+- `REMBG_LOCAL_MAX_CONCURRENT=1`：一次只处理一张图，避免 rembg/OpenCV 占满 CPU 和内存。
+- `REMBG_LOCAL_SHARE=false`：不生成 Gradio 公网分享链接。
+- rembg 模型会缓存到项目根目录的 `.u2net/`，该目录不会提交。
+
+如果需要重装本地依赖：
+
+```powershell
+E:\rembg-server\venv\Scripts\python.exe -m pip install -r E:\rembg-server\requirements-rembg-local.txt
+```
+
 ## 部署文档
 
 部署到 Vercel + Supabase 前，请先阅读：

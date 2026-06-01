@@ -1,0 +1,24 @@
+export type ImageProviderType = "gemini" | "openai" | "doubao" | "tongyi";
+
+export type ImageGenParams = {
+  prompt: string;
+  negativePrompt?: string;
+  width?: number;
+  height?: number;
+  style?: string;
+};
+
+export type ImageGenResult = {
+  imageBase64: string;
+  mimeType: string;
+};
+
+export type ProviderConfig = {
+  apiKey: string;
+  baseUrl?: string | null;
+  modelId: string;
+};
+
+export interface ImageProvider {
+  generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult>;
+}

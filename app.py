@@ -1,6 +1,71 @@
 import os
 os.environ["no_proxy"] = "localhost,127.0.0.1,0.0.0.0"
 
+from pathlib import Path
+
+
+APP_DIR = Path(__file__).resolve().parent
+
+
+def _load_local_env():
+    env_path = APP_DIR / "rembg-local.env"
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _get_int(name, default):
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是整数") from exc
+
+    if value <= 0:
+        raise ValueError(f"{name} 必须大于 0")
+
+    return value
+
+
+def _get_bool(name, default):
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return default
+
+    normalized = raw_value.lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+
+    raise ValueError(f"{name} 必须是 true 或 false")
+
+
+_load_local_env()
+
+SERVER_NAME = os.getenv("REMBG_LOCAL_HOST", "127.0.0.1").strip() or "127.0.0.1"
+SERVER_PORT = _get_int("REMBG_LOCAL_PORT", 7860)
+OPEN_BROWSER = _get_bool("REMBG_LOCAL_OPEN_BROWSER", True)
+SHARE = _get_bool("REMBG_LOCAL_SHARE", False)
+MAX_CONCURRENT_REQUESTS = _get_int("REMBG_LOCAL_MAX_CONCURRENT", 1)
+QUEUE_MAX_SIZE = _get_int("REMBG_LOCAL_QUEUE_MAX_SIZE", 8)
+MAX_FILE_SIZE = os.getenv("REMBG_LOCAL_MAX_FILE_SIZE", "50mb").strip() or "50mb"
+
+os.environ.setdefault("U2NET_HOME", str(APP_DIR / ".u2net"))
+
 import gradio as gr
 import numpy as np
 from PIL import Image, ImageFilter, ImageChops, ImageEnhance
@@ -332,4 +397,16 @@ with gr.Blocks(title="Rembg 智能抠图") as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, theme=gr.themes.Soft())
+    demo.queue(
+        max_size=QUEUE_MAX_SIZE,
+        default_concurrency_limit=MAX_CONCURRENT_REQUESTS,
+    )
+    demo.launch(
+        server_name=SERVER_NAME,
+        server_port=SERVER_PORT,
+        inbrowser=OPEN_BROWSER,
+        share=SHARE,
+        max_threads=max(2, MAX_CONCURRENT_REQUESTS),
+        max_file_size=MAX_FILE_SIZE,
+        theme=gr.themes.Soft(),
+    )
