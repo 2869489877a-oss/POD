@@ -70,24 +70,30 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "无法读取商品草稿参数" }, { status: 400 });
   }
 
-  if (typeof body.status !== "string" || !allowedStatuses.has(body.status)) {
+  if (body.status !== undefined && (typeof body.status !== "string" || !allowedStatuses.has(body.status))) {
     return NextResponse.json({ error: "请选择有效的商品状态" }, { status: 400 });
   }
 
   try {
     const supabase = createSupabaseServiceRoleClient();
+
+    const updateData: Record<string, unknown> = {};
+    if (body.status !== undefined) updateData.status = body.status;
+    if (body.title !== undefined) updateData.title = nullableString(body.title);
+    if (body.description !== undefined) updateData.description = nullableString(body.description);
+    if (body.price !== undefined) updateData.price = nullablePrice(body.price);
+    if (body.product_type !== undefined) updateData.product_type = nullableString(body.product_type);
+    if (body.sku !== undefined) updateData.sku = nullableString(body.sku);
+    if (body.bullet_points !== undefined) updateData.bullet_points = stringList(body.bullet_points, "bullet_points");
+    if (body.tags !== undefined) updateData.tags = stringList(body.tags, "tags");
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "没有需要更新的字段" }, { status: 400 });
+    }
+
     const { error } = await supabase
       .from("product_drafts")
-      .update({
-        bullet_points: stringList(body.bullet_points, "bullet_points"),
-        description: nullableString(body.description),
-        price: nullablePrice(body.price),
-        product_type: nullableString(body.product_type),
-        sku: nullableString(body.sku),
-        status: body.status,
-        tags: stringList(body.tags, "tags"),
-        title: nullableString(body.title),
-      })
+      .update(updateData)
       .eq("id", productId);
 
     if (error) {

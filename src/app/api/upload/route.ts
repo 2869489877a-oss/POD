@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const ASSETS_BUCKET = "assets";
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB per file
 const CONTENT_TYPES: Record<string, "image/jpeg" | "image/png" | "image/webp"> = {
   jpeg: "image/jpeg",
   png: "image/png",
@@ -42,6 +43,10 @@ function sanitizeFilename(filename: string) {
 
 async function uploadImage(file: File): Promise<UploadResult> {
   try {
+    if (file.size > MAX_FILE_SIZE) {
+      throw new Error(`文件大小超过限制（最大 20MB）`);
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const metadata = await sharp(buffer).metadata();
 
