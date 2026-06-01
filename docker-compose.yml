@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  rembg:
+    build: .
+    ports:
+      - "7860:7860"
+      - "7861:7861"
+    environment:
+      - REMBG_LOCAL_HOST=0.0.0.0
+      - REMBG_LOCAL_PORT=7860
+      - REMBG_LOCAL_OPEN_BROWSER=false
+    volumes:
+      - model-cache:/app/.u2net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+volumes:
+  model-cache:

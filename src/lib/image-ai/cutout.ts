@@ -2,16 +2,23 @@ import { downloadImageBuffer } from "@/lib/image-ai/image-buffer";
 import type { CutoutImageInput, CutoutImageResult } from "@/lib/image-ai/types";
 
 const REMBG_API_URL = process.env.REMBG_API_URL || "http://localhost:7861";
+const REMBG_API_SECRET = process.env.REMBG_API_SECRET || "";
+
+function getAuthHeaders(): Record<string, string> {
+  if (!REMBG_API_SECRET) return {};
+  return { Authorization: `Bearer ${REMBG_API_SECRET}` };
+}
 
 export async function cutoutImage(input: CutoutImageInput): Promise<CutoutImageResult> {
   const imageBuffer = await downloadImageBuffer(input.imageUrl);
 
   const formData = new FormData();
   formData.append("file", new Blob([new Uint8Array(imageBuffer)], { type: "image/png" }), "input.png");
-  formData.append("model", "birefnet-general");
+  formData.append("model", "isnet-general-use");
 
   const response = await fetch(`${REMBG_API_URL}/api/remove`, {
     method: "POST",
+    headers: getAuthHeaders(),
     body: formData,
   });
 
@@ -44,7 +51,7 @@ export async function cutoutImage(input: CutoutImageInput): Promise<CutoutImageR
     height,
     maskPng,
     metrics: {
-      model: "birefnet-general",
+      model: "isnet-general-use",
       mode: input.mode,
       source: "rembg",
     },

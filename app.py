@@ -402,11 +402,24 @@ if __name__ == "__main__":
     from http.server import HTTPServer, BaseHTTPRequestHandler
     import io
 
+    API_SECRET = os.getenv("REMBG_API_SECRET", "")
+
     class RembgAPIHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass
 
+        def _check_auth(self):
+            if not API_SECRET:
+                return True
+            auth = self.headers.get("Authorization", "")
+            return auth == f"Bearer {API_SECRET}"
+
         def do_POST(self):
+            if not self._check_auth():
+                self.send_response(401)
+                self.end_headers()
+                self.wfile.write(b"unauthorized")
+                return
             if self.path == "/api/remove":
                 self._handle_remove()
             elif self.path == "/api/extract-print":

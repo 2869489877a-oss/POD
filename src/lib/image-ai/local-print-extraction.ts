@@ -2,6 +2,12 @@ import { downloadImageBuffer } from "@/lib/image-ai/image-buffer";
 import type { PrintExtractionResult } from "@/lib/image-ai/types";
 
 const REMBG_API_URL = process.env.REMBG_API_URL || "http://localhost:7861";
+const REMBG_API_SECRET = process.env.REMBG_API_SECRET || "";
+
+function getAuthHeaders(): Record<string, string> {
+  if (!REMBG_API_SECRET) return {};
+  return { Authorization: `Bearer ${REMBG_API_SECRET}` };
+}
 
 export async function extractPrintViaLocalWorker(
   imageUrl: string,
@@ -21,6 +27,7 @@ export async function extractPrintViaLocalWorker(
 
   const response = await fetch(`${REMBG_API_URL}/api/extract-print`, {
     method: "POST",
+    headers: getAuthHeaders(),
     body: formData,
   });
 
