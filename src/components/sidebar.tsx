@@ -53,7 +53,7 @@ export function Sidebar() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
               </svg>
-              <span className="font-medium">{item.title}</span>
+              <span className="font-medium">{t(item.titleZh, item.titleEn)}</span>
             </Link>
           );
         })}
