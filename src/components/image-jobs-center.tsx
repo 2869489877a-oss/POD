@@ -16,7 +16,7 @@ export type ImageJob = {
   error_message: string | null;
   failed_count: number;
   id: string;
-  job_type: "resize" | "cutout" | "enhance" | "mockup";
+  job_type: "resize" | "cutout" | "print_extraction" | "enhance" | "mockup";
   status: ImageJobStatus;
   success_count: number;
   total_count: number;
@@ -71,6 +71,7 @@ const jobTypeLabels: Record<ImageJob["job_type"], string> = {
   cutout: "抠图",
   enhance: "清晰化",
   mockup: "套图",
+  print_extraction: "印花提取",
   resize: "改尺寸",
 };
 

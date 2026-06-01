@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { cutoutImage } from "@/lib/image-ai/cutout";
 import type { CutoutMode } from "@/lib/image-ai/types";
+import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,6 +22,9 @@ type AssetRecord = {
 type CutoutJobRequest = {
   assetIds?: unknown;
   asset_ids?: unknown;
+  execution?: unknown;
+  localWorker?: unknown;
+  local_worker?: unknown;
   mode?: unknown;
   options?: unknown;
   setPreferred?: unknown;
@@ -87,6 +91,15 @@ function optionalNumber(value: unknown, fallback: number): number {
 
 function optionalBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function shouldQueueForLocalWorker(body: CutoutJobRequest): boolean {
+  return (
+    process.env.LOCAL_IMAGE_WORKER_ENABLED === "true" ||
+    body.execution === "local_worker" ||
+    body.localWorker === true ||
+    body.local_worker === true
+  );
 }
 
 function dateFolder(): string {
@@ -254,6 +267,35 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createSupabaseServiceRoleClient();
+    const normalizedOptions = {
+      cropToContent: optionalBoolean(options.cropToContent, true),
+      featherRadius: optionalNumber(options.featherRadius, 1),
+      maxSize: optionalNumber(options.maxSize, 1800),
+      padding: optionalNumber(options.padding, 20),
+      tolerance: optionalNumber(options.tolerance, 35),
+    };
+
+    if (shouldQueueForLocalWorker(body)) {
+      const job = await createLocalWorkerImageJob(supabase, {
+        assetIds,
+        jobType: "cutout",
+        mode,
+        options: normalizedOptions,
+        setPreferred,
+      });
+
+      return NextResponse.json({
+        failed: 0,
+        job,
+        job_id: (job as { id: string }).id,
+        ok: true,
+        queued: true,
+        results: [],
+        success: 0,
+        total: assetIds.length,
+      });
+    }
+
     const { data, error } = await supabase
       .from("assets")
       .select("id,filename,original_url")

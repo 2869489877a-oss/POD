@@ -6,17 +6,19 @@ type Props = {
   generateTab: ReactNode;
   backgroundTab: ReactNode;
   patternTab: ReactNode;
+  extractTab: ReactNode;
 };
 
 const tabs = [
   { key: "generate", label: "自由生图" },
   { key: "background", label: "抠图换背景" },
-  { key: "pattern", label: "AI 印花" },
+  { key: "extract", label: "AI 抠印花" },
+  { key: "pattern", label: "AI 生成印花" },
 ] as const;
 
 type TabKey = (typeof tabs)[number]["key"];
 
-export function AiImageTabs({ generateTab, backgroundTab, patternTab }: Props) {
+export function AiImageTabs({ generateTab, backgroundTab, patternTab, extractTab }: Props) {
   const [active, setActive] = useState<TabKey>("generate");
 
   return (
@@ -40,6 +42,7 @@ export function AiImageTabs({ generateTab, backgroundTab, patternTab }: Props) {
 
       {active === "generate" && generateTab}
       {active === "background" && backgroundTab}
+      {active === "extract" && extractTab}
       {active === "pattern" && patternTab}
     </div>
   );

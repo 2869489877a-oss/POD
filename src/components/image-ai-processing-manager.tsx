@@ -56,7 +56,9 @@ type ProcessingSummary = {
 type ProcessingResponse = {
   error?: string;
   failed?: number;
+  job_id?: string;
   ok?: boolean;
+  queued?: boolean;
   results?: ApiResultItem[];
   success?: number;
   total?: number;
@@ -253,6 +255,17 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
 
       if (!response.ok || !data.ok) {
         throw new Error(data.error ?? "处理失败");
+      }
+
+      if (data.queued) {
+        setSummary(null);
+        setMessage(
+          `已提交到本地 worker 队列：共 ${data.total ?? assetIds.length} 张。请启动本地 worker，任务 ID：${
+            data.job_id ?? "未知"
+          }`,
+        );
+        await refreshAssets();
+        return;
       }
 
       const assetMap = new Map(assets.map((asset) => [asset.id, asset]));

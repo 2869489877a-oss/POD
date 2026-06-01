@@ -116,6 +116,101 @@ REMBG_LOCAL_MAX_FILE_SIZE=50mb
 E:\rembg-server\venv\Scripts\python.exe -m pip install -r E:\rembg-server\requirements-rembg-local.txt
 ```
 
+## 本地 Worker 主动拉任务
+
+生产或准生产环境不建议让服务器通过内网穿透直接访问本地电脑。推荐使用本地 worker 主动拉任务：
+
+```text
+POD 主系统
+  创建 image_jobs / image_job_items
+  提供 worker 领取任务和回写结果接口
+
+本地 worker
+  轮询待处理任务
+  下载原图
+  本地 rembg / OpenCV 处理
+  上传结果到 POD 主系统
+  POD 主系统再写入 Supabase Storage 和数据库
+```
+
+### 服务器环境变量
+
+在 POD 主系统环境变量中配置：
+
+```env
+LOCAL_IMAGE_WORKER_ENABLED=true
+LOCAL_WORKER_SECRET=your-worker-secret
+```
+
+说明：
+
+- `LOCAL_IMAGE_WORKER_ENABLED=true` 后，`/api/cutout/jobs` 和 `/api/print-extraction/jobs` 只创建任务，不在服务器同步处理图片。
+- `LOCAL_WORKER_SECRET` 用于本地 worker 调用服务器接口认证。不要提交到 Git。
+
+### 本地 worker 配置
+
+复制配置模板：
+
+```powershell
+Copy-Item E:\rembg-server\local-worker.env.example E:\rembg-server\local-worker.env
+```
+
+编辑 `local-worker.env`：
+
+```env
+POD_API_URL=http://127.0.0.1:3000
+LOCAL_WORKER_SECRET=your-worker-secret
+LOCAL_WORKER_ID=bruce-local-worker
+LOCAL_WORKER_JOB_TYPES=cutout,print_extraction
+POLL_INTERVAL_SECONDS=5
+LOCAL_WORKER_REQUEST_TIMEOUT_SECONDS=120
+LOCAL_WORKER_MAX_IMAGE_SIZE_MB=50
+LOCAL_REMBG_MODEL=isnet-general-use
+LOCAL_PRINT_TOLERANCE=25
+```
+
+`LOCAL_WORKER_SECRET` 必须和服务器环境变量保持一致。
+
+启动 worker：
+
+```powershell
+E:\rembg-server\start-local-worker.ps1
+```
+
+或双击：
+
+```text
+E:\rembg-server\start-local-worker.bat
+```
+
+worker 会串行处理任务。没有任务时按 `POLL_INTERVAL_SECONDS` 间隔等待。
+
+### Worker 接口
+
+本地 worker 使用以下接口：
+
+```text
+POST /api/local-worker/jobs/claim
+POST /api/local-worker/jobs/:itemId/complete
+POST /api/local-worker/jobs/:itemId/fail
+```
+
+这些接口都要求：
+
+```http
+Authorization: Bearer <LOCAL_WORKER_SECRET>
+```
+
+### 数据库迁移
+
+本地 worker 需要执行迁移：
+
+```text
+supabase/migrations/20260601143000_add_local_worker_image_jobs.sql
+```
+
+该迁移会让 `image_jobs.job_type` 支持 `print_extraction`，并增加待处理子任务索引。
+
 ## 部署文档
 
 部署到 Vercel + Supabase 前，请先阅读：

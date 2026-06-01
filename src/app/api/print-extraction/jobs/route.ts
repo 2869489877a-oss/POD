@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { extractPrintFromImage } from "@/lib/image-ai/print-extraction";
 import type { PrintExtractionMode, ProcessingBBox } from "@/lib/image-ai/types";
+import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,6 +22,9 @@ type AssetRecord = {
 type PrintExtractionJobRequest = {
   assetIds?: unknown;
   asset_ids?: unknown;
+  execution?: unknown;
+  localWorker?: unknown;
+  local_worker?: unknown;
   manualRects?: unknown;
   manual_rect?: unknown;
   mode?: unknown;
@@ -90,6 +94,15 @@ function optionalNumber(value: unknown, fallback: number): number {
 
 function optionalBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function shouldQueueForLocalWorker(body: PrintExtractionJobRequest): boolean {
+  return (
+    process.env.LOCAL_IMAGE_WORKER_ENABLED === "true" ||
+    body.execution === "local_worker" ||
+    body.localWorker === true ||
+    body.local_worker === true
+  );
 }
 
 function dateFolder(): string {
@@ -306,6 +319,37 @@ export async function POST(request: Request) {
 
   try {
     const supabase = createSupabaseServiceRoleClient();
+    const normalizedOptions = {
+      featherRadius: optionalNumber(options.featherRadius, 1),
+      maxSize: optionalNumber(options.maxSize, 1800),
+      minComponentArea: optionalNumber(options.minComponentArea, 80),
+      padding: optionalNumber(options.padding, 40),
+      preserveBlackInk: optionalBoolean(options.preserveBlackInk, true),
+      preserveWhiteInk: optionalBoolean(options.preserveWhiteInk, true),
+    };
+
+    if (shouldQueueForLocalWorker(body)) {
+      const job = await createLocalWorkerImageJob(supabase, {
+        assetIds,
+        jobType: "print_extraction",
+        manualRects,
+        mode,
+        options: normalizedOptions,
+        setPreferred,
+      });
+
+      return NextResponse.json({
+        failed: 0,
+        job,
+        job_id: (job as { id: string }).id,
+        ok: true,
+        queued: true,
+        results: [],
+        success: 0,
+        total: assetIds.length,
+      });
+    }
+
     const { data, error } = await supabase
       .from("assets")
       .select("id,filename,original_url")

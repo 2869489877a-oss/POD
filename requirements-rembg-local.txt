@@ -1,4 +1,5 @@
 gradio
+httpx
 numpy
 pillow
 rembg[cpu]
