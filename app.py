@@ -71,6 +71,7 @@ import numpy as np
 from PIL import Image, ImageFilter, ImageChops, ImageEnhance
 from rembg import remove, new_session
 import cv2
+import json
 
 MODELS = [
     "u2net",
@@ -397,6 +398,216 @@ with gr.Blocks(title="Rembg 智能抠图") as demo:
     )
 
 if __name__ == "__main__":
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import io
+
+    class RembgAPIHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def do_POST(self):
+            if self.path == "/api/remove":
+                self._handle_remove()
+            elif self.path == "/api/extract-print":
+                self._handle_extract_print()
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def _read_image_from_body(self):
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            import cgi
+            content_type = self.headers.get("Content-Type", "")
+            if "multipart/form-data" in content_type:
+                environ = {
+                    "REQUEST_METHOD": "POST",
+                    "CONTENT_TYPE": content_type,
+                    "CONTENT_LENGTH": str(content_length),
+                }
+                fs = cgi.FieldStorage(fp=io.BytesIO(body), environ=environ, keep_blank_values=True)
+                file_item = fs["file"] if "file" in fs else None
+                model_name = fs.getvalue("model", "isnet-general-use")
+                options_raw = fs.getvalue("options", "{}")
+                if file_item is None:
+                    return None, None, None
+                img_bytes = file_item.file.read()
+            else:
+                img_bytes = body
+                model_name = "isnet-general-use"
+                options_raw = "{}"
+            try:
+                options = json.loads(options_raw) if isinstance(options_raw, str) else {}
+            except Exception:
+                options = {}
+            return img_bytes, model_name, options
+
+        def _handle_remove(self):
+            img_bytes, model_name, _ = self._read_image_from_body()
+            if img_bytes is None:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"missing file")
+                return
+            try:
+                input_img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                session = get_session(model_name)
+                result = remove(input_img, session=session)
+                buf = io.BytesIO()
+                result.save(buf, format="PNG")
+                png_data = buf.getvalue()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png_data)))
+                self.end_headers()
+                self.wfile.write(png_data)
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+
+        def _handle_extract_print(self):
+            """7-step print extraction pipeline:
+            1. rembg remove garment background
+            2. OpenCV find print region contours
+            3. Perspective correction
+            4. Denoise + sharpen + edge enhance
+            5. (AI inpaint placeholder - returns mask for client)
+            6. Quality metrics for human review
+            7. Output PNG
+            """
+            img_bytes, model_name, options = self._read_image_from_body()
+            if img_bytes is None:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"missing file")
+                return
+
+            tolerance = int(options.get("tolerance", 60))
+            sharpen = bool(options.get("sharpen", True))
+            denoise = bool(options.get("denoise", True))
+            correct_perspective = bool(options.get("correct_perspective", True))
+
+            try:
+                # Step 1: rembg isolate garment from background
+                input_img = Image.open(io.BytesIO(img_bytes)).convert("RGBA")
+                session = get_session(model_name)
+                isolated = remove(input_img, session=session)
+                isolated_np = np.array(isolated)
+
+                # Step 2: Find print region via color difference
+                rgb = isolated_np[:, :, :3]
+                alpha = isolated_np[:, :, 3]
+                # Only consider pixels with alpha > 128
+                valid_mask = alpha > 128
+                if not np.any(valid_mask):
+                    raise ValueError("No valid pixels after background removal")
+
+                # Sample edge colors as base fabric color
+                lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
+                h, w = lab.shape[:2]
+                edge_pixels = []
+                margin = max(5, min(h, w) // 20)
+                for y in range(h):
+                    for x in range(w):
+                        if valid_mask[y, x] and (y < margin or y >= h - margin or x < margin or x >= w - margin):
+                            edge_pixels.append(lab[y, x])
+                if len(edge_pixels) < 10:
+                    edge_pixels = lab[valid_mask].tolist()[:500]
+                base_color = np.median(edge_pixels, axis=0)
+
+                # Color difference mask
+                diff = np.sqrt(np.sum((lab - base_color) ** 2, axis=-1))
+                print_mask = ((diff > tolerance) & valid_mask).astype(np.uint8) * 255
+
+                # Morphological cleanup
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+                print_mask = cv2.morphologyEx(print_mask, cv2.MORPH_OPEN, kernel)
+                print_mask = cv2.morphologyEx(print_mask, cv2.MORPH_CLOSE, kernel)
+
+                # Find largest contour as print region
+                contours, _ = cv2.findContours(print_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if not contours:
+                    raise ValueError("No print region detected")
+
+                largest = max(contours, key=cv2.contourArea)
+                x_r, y_r, w_r, h_r = cv2.boundingRect(largest)
+
+                # Step 3: Perspective correction
+                region = rgb[y_r:y_r+h_r, x_r:x_r+w_r]
+                region_mask = print_mask[y_r:y_r+h_r, x_r:x_r+w_r]
+
+                if correct_perspective and len(largest) >= 4:
+                    epsilon = 0.02 * cv2.arcLength(largest, True)
+                    approx = cv2.approxPolyDP(largest, epsilon, True)
+                    if len(approx) == 4:
+                        pts = approx.reshape(4, 2).astype(np.float32)
+                        pts = pts - np.array([x_r, y_r], dtype=np.float32)
+                        rect = np.array([[0, 0], [w_r-1, 0], [w_r-1, h_r-1], [0, h_r-1]], dtype=np.float32)
+                        # Order points
+                        s = pts.sum(axis=1)
+                        d = np.diff(pts, axis=1).flatten()
+                        ordered = np.zeros((4, 2), dtype=np.float32)
+                        ordered[0] = pts[np.argmin(s)]
+                        ordered[2] = pts[np.argmax(s)]
+                        ordered[1] = pts[np.argmin(d)]
+                        ordered[3] = pts[np.argmax(d)]
+                        M = cv2.getPerspectiveTransform(ordered, rect)
+                        region = cv2.warpPerspective(region, M, (w_r, h_r))
+                        region_mask = cv2.warpPerspective(region_mask, M, (w_r, h_r))
+
+                # Step 4: Denoise + sharpen
+                if denoise:
+                    region = cv2.fastNlMeansDenoisingColored(region, None, 6, 6, 7, 21)
+
+                if sharpen:
+                    blur = cv2.GaussianBlur(region, (0, 0), 3)
+                    region = cv2.addWeighted(region, 1.5, blur, -0.5, 0)
+
+                # Edge enhance on mask
+                region_mask = cv2.GaussianBlur(region_mask, (3, 3), 0)
+
+                # Step 5: Build output with alpha (AI inpaint would go here)
+                rgba = np.dstack([region, region_mask])
+                result_img = Image.fromarray(rgba, "RGBA")
+
+                # Step 6: Quality metrics
+                non_zero = np.count_nonzero(region_mask)
+                total = region_mask.shape[0] * region_mask.shape[1]
+                coverage = non_zero / total if total > 0 else 0
+                metrics = {
+                    "width": w_r,
+                    "height": h_r,
+                    "coverage": round(coverage, 3),
+                    "contour_area": int(cv2.contourArea(largest)),
+                    "steps_applied": ["rembg", "contour_detect", "perspective" if correct_perspective else "skip", "denoise" if denoise else "skip", "sharpen" if sharpen else "skip"],
+                }
+
+                # Step 7: Output PNG
+                buf = io.BytesIO()
+                result_img.save(buf, format="PNG")
+                png_data = buf.getvalue()
+
+                self.send_response(200)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(png_data)))
+                self.send_header("X-Metrics", json.dumps(metrics))
+                self.end_headers()
+                self.wfile.write(png_data)
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(str(e).encode())
+
+    def run_api_server():
+        api_port = SERVER_PORT + 1
+        server = HTTPServer(("0.0.0.0", api_port), RembgAPIHandler)
+        print(f"* Rembg API running on http://0.0.0.0:{api_port}/api/remove")
+        server.serve_forever()
+
+    threading.Thread(target=run_api_server, daemon=True).start()
+
     demo.queue(
         max_size=QUEUE_MAX_SIZE,
         default_concurrency_limit=MAX_CONCURRENT_REQUESTS,

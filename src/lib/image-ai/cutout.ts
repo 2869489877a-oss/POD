@@ -1,7 +1,7 @@
 import { downloadImageBuffer } from "@/lib/image-ai/image-buffer";
 import type { CutoutImageInput, CutoutImageResult } from "@/lib/image-ai/types";
 
-const REMBG_API_URL = process.env.REMBG_API_URL || "http://localhost:5000";
+const REMBG_API_URL = process.env.REMBG_API_URL || "http://localhost:7861";
 
 export async function cutoutImage(input: CutoutImageInput): Promise<CutoutImageResult> {
   const imageBuffer = await downloadImageBuffer(input.imageUrl);
