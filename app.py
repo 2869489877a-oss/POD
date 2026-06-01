@@ -391,13 +391,20 @@ with gr.Blocks(title="Rembg 智能抠图") as demo:
             )
 
         with gr.TabItem("AI 智能处理"):
-            gr.Markdown("上传图片，AI 自动分析最佳处理方式，执行后评估质量，不合格自动调参重试。")
+            gr.Markdown(
+                "**完整管线**：AI识图分析 → rembg抠图 → OpenCV印花提取 → AI生图润色\n\n"
+                "上传衣服图片，AI 自动判断最佳策略并执行全流程。"
+            )
             with gr.Row():
                 with gr.Column(scale=1):
+                    ai_skip_polish = gr.Checkbox(
+                        value=False,
+                        label="跳过 AI 润色",
+                        info="勾选后不调用生图 AI，只做抠图+提取",
+                    )
                     ai_run_btn = gr.Button("一键智能处理", variant="primary", size="lg")
-                    ai_analysis_output = gr.JSON(label="AI 分析结果")
-                    ai_eval_output = gr.JSON(label="AI 质量评估")
-                    ai_log_output = gr.Textbox(label="处理日志", lines=12, interactive=False)
+                    ai_analysis_output = gr.JSON(label="Step 1: AI 识图分析结果")
+                    ai_log_output = gr.Textbox(label="处理日志", lines=15, interactive=False)
 
                 with gr.Column(scale=2):
                     ai_input_image = gr.Image(
@@ -406,24 +413,31 @@ with gr.Blocks(title="Rembg 智能抠图") as demo:
                         sources=["upload", "clipboard"],
                     )
                     with gr.Row():
-                        ai_cutout_output = gr.Image(label="抠图结果", type="pil", format="png")
-                        ai_print_output = gr.Image(label="印花提取结果", type="pil", format="png")
+                        ai_cutout_output = gr.Image(label="Step 2: rembg 抠图", type="pil", format="png")
+                        ai_print_output = gr.Image(label="Step 3: 印花提取", type="pil", format="png")
+                    with gr.Row():
+                        ai_polished_output = gr.Image(label="Step 4: AI 润色结果", type="pil", format="png")
 
-            def run_ai_smart_process(input_img):
+            def run_ai_smart_process(input_img, skip_polish):
                 if input_img is None:
-                    return None, None, {}, {}, "请先上传图片"
+                    return None, None, None, {}, "请先上传图片"
                 from ai_processor import smart_process, _image_to_bytes
                 img_bytes = _image_to_bytes(input_img.convert("RGBA"))
-                result = smart_process(img_bytes)
+                result = smart_process(img_bytes, skip_polish=skip_polish)
                 analysis_json = result.analysis.raw if result.analysis else {}
-                eval_json = result.evaluation.raw if result.evaluation else {}
                 log_text = "\n".join(result.log)
-                return result.cutout_image, result.print_image, analysis_json, eval_json, log_text
+                return (
+                    result.cutout_image,
+                    result.print_image,
+                    result.polished_image or result.print_image,
+                    analysis_json,
+                    log_text,
+                )
 
             ai_run_btn.click(
                 fn=run_ai_smart_process,
-                inputs=[ai_input_image],
-                outputs=[ai_cutout_output, ai_print_output, ai_analysis_output, ai_eval_output, ai_log_output],
+                inputs=[ai_input_image, ai_skip_polish],
+                outputs=[ai_cutout_output, ai_print_output, ai_polished_output, ai_analysis_output, ai_log_output],
             )
 
     gr.Markdown(
@@ -431,7 +445,7 @@ with gr.Blocks(title="Rembg 智能抠图") as demo:
         "**抠图**：上传图片 → 画框选区域 → 选模型 → 开始抠图\n\n"
         "**贴印花**：上传衣服模板 → 画框指定印花位置 → 上传印花图 → 调参数 → 生成效果图\n\n"
         "**摘印花**：上传衣服照片 → 画框圈住印花区域 → 调容差 → 提取印花\n\n"
-        "**AI 智能处理**：上传图片 → AI 自动分析 → 智能选择策略 → 处理 → AI 评估质量 → 自动优化"
+        "**AI 智能处理**：上传图片 → AI识图分析策略 → rembg抠图 → OpenCV提取印花 → AI生图润色"
     )
 
 if __name__ == "__main__":
@@ -653,8 +667,8 @@ if __name__ == "__main__":
                 self.wfile.write(str(e).encode())
 
         def _handle_smart_process(self):
-            """AI 智能处理：分析 → 处理 → 评估 → 重试。"""
-            img_bytes, _, _ = self._read_image_from_body()
+            """AI 智能处理：AI识图 → rembg抠图 → OpenCV提取 → AI生图润色。"""
+            img_bytes, _, options = self._read_image_from_body()
             if img_bytes is None:
                 self.send_response(400)
                 self.end_headers()
@@ -662,28 +676,28 @@ if __name__ == "__main__":
                 return
             try:
                 from ai_processor import smart_process, _image_to_bytes
-                result = smart_process(img_bytes)
+                skip_polish = bool(options.get("skip_polish", False)) if options else False
+                result = smart_process(img_bytes, skip_polish=skip_polish)
                 output = {
                     "success": result.success,
-                    "action": result.action,
                     "model_used": result.model_used,
                     "mode_used": result.mode_used,
                     "tolerance_used": result.tolerance_used,
-                    "attempts": result.attempts,
-                    "final_score": result.final_score,
                     "analysis": result.analysis.raw if result.analysis else None,
-                    "evaluation": result.evaluation.raw if result.evaluation else None,
                     "log": result.log,
                 }
+                import base64 as b64mod
                 if result.cutout_image:
-                    import base64
-                    output["cutout_base64"] = base64.b64encode(
+                    output["cutout_base64"] = b64mod.b64encode(
                         _image_to_bytes(result.cutout_image)
                     ).decode()
                 if result.print_image:
-                    import base64
-                    output["print_base64"] = base64.b64encode(
+                    output["print_base64"] = b64mod.b64encode(
                         _image_to_bytes(result.print_image)
+                    ).decode()
+                if result.polished_image:
+                    output["polished_base64"] = b64mod.b64encode(
+                        _image_to_bytes(result.polished_image)
                     ).decode()
                 response_data = json.dumps(output, ensure_ascii=False).encode("utf-8")
                 self.send_response(200)

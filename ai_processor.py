@@ -1,4 +1,4 @@
-"""AI 智能图像处理管线：分析 → 处理 → 评估 → 重试。"""
+"""AI 智能图像处理管线：AI识图分析 → rembg抠图 → OpenCV印花提取 → AI生图润色。"""
 
 import io
 import os
@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter, ImageEnhance
 from rembg import remove, new_session
 
 from qwen_vl_client import call_vision_json
+from ai_image_client import polish_image
 
-QUALITY_THRESHOLD = int(os.getenv("AI_QUALITY_THRESHOLD", "7"))
 MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "2"))
 
 ANALYZE_PROMPT = """你是一个专业的图像处理分析师。请分析这张图片，判断最佳的处理方式。
@@ -23,12 +23,15 @@ ANALYZE_PROMPT = """你是一个专业的图像处理分析师。请分析这张
 {
   "image_type": "garment_with_print / plain_garment / product_photo / pattern / other",
   "background_type": "white / light / dark / complex / transparent",
-  "has_print": true/false,
+  "garment_color": "浅色 / 深色 / 彩色 / 无法判断",
+  "has_print": true,
   "print_complexity": "simple / medium / complex / none",
-  "recommended_action": "cutout / print_extraction / both",
+  "print_description": "简短描述印花内容，如：卡通猫咪图案、几何线条、文字logo等",
   "recommended_model": "u2net / isnet-general-use / u2net_cloth_seg / u2net_human_seg / isnet-anime",
-  "recommended_mode": "auto / light_garment / dark_garment / high_contrast",
+  "recommended_mode": "light_garment / dark_garment / high_contrast",
   "tolerance": 25,
+  "sharpen": true,
+  "denoise": true,
   "reasoning": "简短说明判断理由"
 }
 ```
@@ -38,78 +41,49 @@ ANALYZE_PROMPT = """你是一个专业的图像处理分析师。请分析这张
 - 通用产品/物体用 isnet-general-use
 - 人物用 u2net_human_seg
 - 动漫/插画用 isnet-anime
-- 如果衣服上有印花图案，recommended_action 选 both
 - tolerance: 浅色底衣服建议 20-35，深色底建议 35-60，高对比建议 15-25
-- 浅色衣服用 light_garment，深色衣服用 dark_garment"""
+- 浅色衣服用 light_garment，深色衣服用 dark_garment，高对比用 high_contrast
+- 印花简单清晰时 sharpen=false，模糊或细节多时 sharpen=true
+- 有噪点或压缩痕迹时 denoise=true"""
 
-EVALUATE_PROMPT = """你是一个图像处理质量评估专家。我会给你两张图片：
-- 第一张是原始图片
-- 第二张是处理后的结果（{action}）
-
-请评估处理结果的质量，严格返回以下 JSON 格式：
-
-```json
-{{
-  "quality_score": 8,
-  "issues": ["问题1", "问题2"],
-  "pass": true,
-  "suggested_adjustments": {{
-    "model": "保持不变或建议更换的模型名",
-    "tolerance": 25,
-    "mode": "保持不变或建议更换的模式"
-  }}
-}}
-```
-
-评分标准：
-- 10分：完美，无瑕疵
-- 8-9分：优秀，细微瑕疵不影响使用
-- 7分：合格，有小问题但可接受
-- 5-6分：一般，有明显问题需要调整
-- 1-4分：差，需要重新处理
-
-常见问题：
-- 抠图：边缘锯齿、残留背景、主体被裁切、透明区域有噪点
-- 印花提取：底色残留、印花不完整、边缘模糊、颜色失真"""
+POLISH_PROMPT_TEMPLATE = """请优化这张提取出来的印花图案。
+原始印花描述：{description}
+要求：
+- 修复边缘毛糙和锯齿
+- 去除底色残留和噪点
+- 保持印花原有颜色和细节不变
+- 让图案边缘更加干净清晰
+- 保持透明背景
+请生成优化后的印花图片。"""
 
 
 @dataclass
 class AnalysisResult:
     image_type: str = "other"
     background_type: str = "complex"
+    garment_color: str = "无法判断"
     has_print: bool = False
     print_complexity: str = "none"
-    recommended_action: str = "cutout"
+    print_description: str = ""
     recommended_model: str = "isnet-general-use"
-    recommended_mode: str = "auto"
+    recommended_mode: str = "light_garment"
     tolerance: int = 25
+    sharpen: bool = True
+    denoise: bool = True
     reasoning: str = ""
-    raw: dict = field(default_factory=dict)
-
-
-@dataclass
-class EvaluationResult:
-    quality_score: int = 0
-    issues: list = field(default_factory=list)
-    passed: bool = False
-    suggested_adjustments: dict = field(default_factory=dict)
     raw: dict = field(default_factory=dict)
 
 
 @dataclass
 class ProcessingResult:
     success: bool = False
-    action: str = ""
     model_used: str = ""
     mode_used: str = ""
     tolerance_used: int = 25
-    attempts: int = 0
-    final_score: int = 0
     analysis: AnalysisResult | None = None
-    evaluation: EvaluationResult | None = None
-    result_image: Image.Image | None = None
     cutout_image: Image.Image | None = None
     print_image: Image.Image | None = None
+    polished_image: Image.Image | None = None
     log: list = field(default_factory=list)
 
 
@@ -133,76 +107,118 @@ def _bytes_to_image(data: bytes) -> Image.Image:
 
 
 def analyze_image(image_bytes: bytes) -> AnalysisResult:
-    """用 AI 分析图片，返回推荐的处理策略。"""
+    """Step 1: AI 识图分析，决定处理策略。"""
     data = call_vision_json(ANALYZE_PROMPT, image_bytes)
     return AnalysisResult(
         image_type=data.get("image_type", "other"),
         background_type=data.get("background_type", "complex"),
+        garment_color=data.get("garment_color", "无法判断"),
         has_print=bool(data.get("has_print", False)),
         print_complexity=data.get("print_complexity", "none"),
-        recommended_action=data.get("recommended_action", "cutout"),
+        print_description=data.get("print_description", ""),
         recommended_model=data.get("recommended_model", "isnet-general-use"),
-        recommended_mode=data.get("recommended_mode", "auto"),
+        recommended_mode=data.get("recommended_mode", "light_garment"),
         tolerance=int(data.get("tolerance", 25)),
+        sharpen=bool(data.get("sharpen", True)),
+        denoise=bool(data.get("denoise", True)),
         reasoning=data.get("reasoning", ""),
         raw=data,
     )
 
 
-def evaluate_result(original_bytes: bytes, result_bytes: bytes, action: str) -> EvaluationResult:
-    """用 AI 评估处理结果质量。"""
-    prompt = EVALUATE_PROMPT.format(action=action)
-    data = call_vision_json(prompt, original_bytes, result_bytes)
-    return EvaluationResult(
-        quality_score=int(data.get("quality_score", 0)),
-        issues=data.get("issues", []),
-        passed=bool(data.get("pass", False)),
-        suggested_adjustments=data.get("suggested_adjustments", {}),
-        raw=data,
-    )
-
-
-def _do_cutout(image_bytes: bytes, model: str) -> bytes:
-    """执行 rembg 抠图，返回 PNG bytes。"""
+def do_cutout(image_bytes: bytes, model: str) -> Image.Image:
+    """Step 2: rembg 抠图，去除背景保留衣服主体。"""
     img = _bytes_to_image(image_bytes)
     session = _get_session(model)
     result = remove(img, session=session)
-    return _image_to_bytes(result)
+    return result
 
 
-def _do_print_extraction(image_bytes: bytes, mode: str, tolerance: int) -> bytes:
-    """执行印花提取，返回 PNG bytes。"""
+def do_print_extraction(cutout_img: Image.Image, mode: str, tolerance: int,
+                        sharpen: bool = True, denoise: bool = True) -> Image.Image:
+    """Step 3: OpenCV 从抠出的衣服上提取印花。"""
     import cv2
 
-    img = _bytes_to_image(image_bytes)
-    arr = np.array(img.convert("RGB"))
+    arr = np.array(cutout_img)
+    rgb = arr[:, :, :3]
+    alpha = arr[:, :, 3]
 
-    lab = cv2.cvtColor(arr, cv2.COLOR_RGB2LAB).astype(np.float32)
+    valid_mask = alpha > 128
+    if not np.any(valid_mask):
+        raise ValueError("抠图结果无有效像素，无法提取印花")
+
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB).astype(np.float32)
     h, w = lab.shape[:2]
 
-    edge_samples = np.concatenate([lab[0, :], lab[-1, :], lab[:, 0], lab[:, -1]], axis=0)
-    base_color = np.median(edge_samples, axis=0)
+    # 采样衣服边缘区域的颜色作为底色
+    edge_pixels = []
+    margin = max(5, min(h, w) // 20)
+    for y in range(h):
+        for x in range(w):
+            if valid_mask[y, x] and (y < margin or y >= h - margin or x < margin or x >= w - margin):
+                edge_pixels.append(lab[y, x])
+    if len(edge_pixels) < 10:
+        edge_pixels = lab[valid_mask].tolist()[:500]
+    base_color = np.median(edge_pixels, axis=0)
 
+    # 根据模式调整阈值策略
     diff = np.sqrt(np.sum((lab - base_color) ** 2, axis=-1))
-    mask = (diff > tolerance).astype(np.uint8) * 255
 
+    if mode == "dark_garment":
+        # 深色衣服：亮色区域更可能是印花
+        luminance = lab[:, :, 0]
+        bright_boost = np.where(luminance > 60, 10, 0)
+        diff = diff + bright_boost
+    elif mode == "high_contrast":
+        # 高对比：直接用更低的容差
+        tolerance = max(tolerance - 5, 10)
+
+    print_mask = ((diff > tolerance) & valid_mask).astype(np.uint8) * 255
+
+    # 形态学清理
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.GaussianBlur(mask, (3, 3), 0)
+    print_mask = cv2.morphologyEx(print_mask, cv2.MORPH_OPEN, kernel)
+    print_mask = cv2.morphologyEx(print_mask, cv2.MORPH_CLOSE, kernel)
 
-    rgba = np.dstack([arr, mask])
+    # 去噪
+    if denoise:
+        small_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        print_mask = cv2.morphologyEx(print_mask, cv2.MORPH_OPEN, small_kernel)
+
+    # 边缘平滑
+    print_mask = cv2.GaussianBlur(print_mask, (3, 3), 0)
+
+    # 构建 RGBA 输出
+    rgba = np.dstack([rgb, print_mask])
     result = Image.fromarray(rgba, "RGBA")
-    return _image_to_bytes(result)
+
+    # 裁剪到印花区域
+    bbox = result.getbbox()
+    if bbox:
+        result = result.crop(bbox)
+
+    # 锐化
+    if sharpen:
+        result = result.filter(ImageFilter.SHARPEN)
+
+    return result
 
 
-def smart_process(image_bytes: bytes) -> ProcessingResult:
-    """完整 AI 管线：分析 → 处理 → 评估 → 重试。"""
+def do_polish(print_img: Image.Image, description: str) -> Image.Image:
+    """Step 4: AI 生图润色优化印花。"""
+    prompt = POLISH_PROMPT_TEMPLATE.format(description=description or "印花图案")
+    image_bytes = _image_to_bytes(print_img)
+    polished_bytes = polish_image(image_bytes, prompt)
+    return _bytes_to_image(polished_bytes)
+
+
+def smart_process(image_bytes: bytes, skip_polish: bool = False) -> ProcessingResult:
+    """完整 AI 管线：AI识图 → rembg抠图 → OpenCV提取印花 → AI生图润色。"""
     result = ProcessingResult()
-    result.log.append(f"[{_ts()}] 开始 AI 智能处理")
+    result.log.append(f"[{_ts()}] 开始 AI 智能处理管线")
 
-    # Step 1: AI 分析
-    result.log.append(f"[{_ts()}] 正在调用 AI 分析图片...")
+    # === Step 1: AI 识图分析 ===
+    result.log.append(f"[{_ts()}] Step 1: 调用通义千问 VL 分析图片...")
     try:
         analysis = analyze_image(image_bytes)
     except Exception as e:
@@ -211,90 +227,72 @@ def smart_process(image_bytes: bytes) -> ProcessingResult:
         return result
 
     result.analysis = analysis
+    result.model_used = analysis.recommended_model
+    result.mode_used = analysis.recommended_mode
+    result.tolerance_used = analysis.tolerance
     result.log.append(
-        f"[{_ts()}] AI 分析完成: 类型={analysis.image_type}, "
-        f"背景={analysis.background_type}, 有印花={analysis.has_print}, "
-        f"推荐动作={analysis.recommended_action}, 模型={analysis.recommended_model}, "
-        f"模式={analysis.recommended_mode}, 容差={analysis.tolerance}"
+        f"[{_ts()}] 分析结果: 类型={analysis.image_type}, "
+        f"衣服颜色={analysis.garment_color}, 有印花={analysis.has_print}"
     )
-    result.log.append(f"[{_ts()}] AI 理由: {analysis.reasoning}")
+    result.log.append(
+        f"[{_ts()}] 策略: 模型={analysis.recommended_model}, "
+        f"模式={analysis.recommended_mode}, 容差={analysis.tolerance}, "
+        f"锐化={analysis.sharpen}, 去噪={analysis.denoise}"
+    )
+    result.log.append(f"[{_ts()}] 理由: {analysis.reasoning}")
 
-    model = analysis.recommended_model
-    mode = analysis.recommended_mode
-    tolerance = analysis.tolerance
-    action = analysis.recommended_action
+    if not analysis.has_print:
+        result.log.append(f"[{_ts()}] AI 判断图片无印花，仅执行抠图")
 
-    for attempt in range(1, MAX_RETRIES + 2):
-        result.attempts = attempt
-        result.model_used = model
-        result.mode_used = mode
-        result.tolerance_used = tolerance
-        result.action = action
+    # === Step 2: rembg 抠图 ===
+    result.log.append(f"[{_ts()}] Step 2: rembg 抠图 (模型: {analysis.recommended_model})...")
+    try:
+        cutout = do_cutout(image_bytes, analysis.recommended_model)
+        result.cutout_image = cutout
+        result.log.append(f"[{_ts()}] 抠图完成，尺寸: {cutout.size}")
+    except Exception as e:
+        result.log.append(f"[{_ts()}] 抠图失败: {e}")
+        result.success = False
+        return result
 
-        result.log.append(f"[{_ts()}] 第 {attempt} 次处理: model={model}, mode={mode}, tolerance={tolerance}")
+    if not analysis.has_print:
+        result.success = True
+        result.log.append(f"[{_ts()}] 处理完成（无印花，仅抠图）")
+        return result
 
-        try:
-            if action in ("cutout", "both"):
-                cutout_bytes = _do_cutout(image_bytes, model)
-                result.cutout_image = _bytes_to_image(cutout_bytes)
-                result.result_image = result.cutout_image
-
-            if action in ("print_extraction", "both"):
-                print_bytes = _do_print_extraction(image_bytes, mode, tolerance)
-                result.print_image = _bytes_to_image(print_bytes)
-                if action == "print_extraction":
-                    result.result_image = result.print_image
-        except Exception as e:
-            result.log.append(f"[{_ts()}] 处理失败: {e}")
-            result.success = False
-            return result
-
-        # Step 3: AI 评估
-        eval_target = result.cutout_image if action in ("cutout", "both") else result.print_image
-        if eval_target is None:
-            result.log.append(f"[{_ts()}] 无处理结果可评估")
-            result.success = False
-            return result
-
-        eval_action = "抠图" if action in ("cutout", "both") else "印花提取"
-        result_bytes_for_eval = _image_to_bytes(eval_target)
-
-        result.log.append(f"[{_ts()}] 正在调用 AI 评估结果质量...")
-        try:
-            evaluation = evaluate_result(image_bytes, result_bytes_for_eval, eval_action)
-        except Exception as e:
-            result.log.append(f"[{_ts()}] AI 评估失败: {e}，视为通过")
-            evaluation = EvaluationResult(quality_score=7, passed=True)
-
-        result.evaluation = evaluation
-        result.final_score = evaluation.quality_score
-        result.log.append(
-            f"[{_ts()}] 评估结果: 分数={evaluation.quality_score}/10, "
-            f"通过={evaluation.passed}, 问题={evaluation.issues}"
+    # === Step 3: OpenCV 印花提取 ===
+    result.log.append(
+        f"[{_ts()}] Step 3: OpenCV 印花提取 "
+        f"(模式: {analysis.recommended_mode}, 容差: {analysis.tolerance})..."
+    )
+    try:
+        print_img = do_print_extraction(
+            cutout, analysis.recommended_mode, analysis.tolerance,
+            sharpen=analysis.sharpen, denoise=analysis.denoise,
         )
+        result.print_image = print_img
+        result.log.append(f"[{_ts()}] 印花提取完成，尺寸: {print_img.size}")
+    except Exception as e:
+        result.log.append(f"[{_ts()}] 印花提取失败: {e}")
+        result.success = True
+        return result
 
-        if evaluation.passed or evaluation.quality_score >= QUALITY_THRESHOLD:
-            result.success = True
-            result.log.append(f"[{_ts()}] 质量合格，处理完成")
-            return result
+    # === Step 4: AI 生图润色 ===
+    if skip_polish:
+        result.log.append(f"[{_ts()}] 跳过 AI 润色步骤")
+        result.success = True
+        return result
 
-        if attempt > MAX_RETRIES:
-            result.log.append(f"[{_ts()}] 已达最大重试次数，使用当前结果")
-            result.success = True
-            return result
-
-        # 根据 AI 建议调整参数
-        adj = evaluation.suggested_adjustments
-        if adj.get("model") and adj["model"] != model:
-            model = adj["model"]
-        if adj.get("tolerance") and adj["tolerance"] != tolerance:
-            tolerance = int(adj["tolerance"])
-        if adj.get("mode") and adj["mode"] != mode:
-            mode = adj["mode"]
-
-        result.log.append(f"[{_ts()}] AI 建议调整: model={model}, mode={mode}, tolerance={tolerance}")
+    result.log.append(f"[{_ts()}] Step 4: AI 生图润色优化印花...")
+    try:
+        polished = do_polish(print_img, analysis.print_description)
+        result.polished_image = polished
+        result.log.append(f"[{_ts()}] AI 润色完成，尺寸: {polished.size}")
+    except Exception as e:
+        result.log.append(f"[{_ts()}] AI 润色失败: {e}，使用原始提取结果")
 
     result.success = True
+    result.log.append(f"[{_ts()}] 管线处理完成")
     return result
 
 
