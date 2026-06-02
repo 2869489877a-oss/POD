@@ -31,7 +31,12 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     if (params.referenceUrl) {
-      body.image_urls = [params.referenceUrl];
+      const imgRes = await fetch(params.referenceUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!imgRes.ok) throw new Error("参考图下载失败");
+      const buf = await imgRes.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const mime = imgRes.headers.get("content-type") || "image/jpeg";
+      body.image = `data:${mime};base64,${b64}`;
     }
 
     return this.doRequest(url, config.apiKey, body);
