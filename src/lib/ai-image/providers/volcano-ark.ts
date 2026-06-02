@@ -15,10 +15,6 @@ export class VolcanoArkProvider implements ImageProvider {
       throw new Error(`${this.displayName}需要配置 base_url（火山方舟地址）`);
     }
 
-    if (params.referenceUrl) {
-      return this.generateWithReference(config, params);
-    }
-
     const url = `${config.baseUrl.replace(/\/+$/, "")}/api/v3/images/generations`;
 
     const body: Record<string, unknown> = {
@@ -34,34 +30,11 @@ export class VolcanoArkProvider implements ImageProvider {
       body.negative_prompt = params.negativePrompt;
     }
 
-    return this.doRequest(url, config.apiKey, body);
-  }
-
-  private async generateWithReference(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
-    const imageBase64 = await this.fetchImageAsBase64(params.referenceUrl!);
-    const url = `${config.baseUrl!.replace(/\/+$/, "")}/api/v3/images/edits`;
-
-    const body: Record<string, unknown> = {
-      model: config.modelId,
-      prompt: params.prompt,
-      image: imageBase64,
-      n: 1,
-      response_format: "b64_json",
-      watermark: false,
-    };
-
-    if (params.negativePrompt) {
-      body.negative_prompt = params.negativePrompt;
+    if (params.referenceUrl) {
+      body.image_urls = [params.referenceUrl];
     }
 
     return this.doRequest(url, config.apiKey, body);
-  }
-
-  private async fetchImageAsBase64(imageUrl: string): Promise<string> {
-    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
-    if (!res.ok) throw new Error("参考图下载失败");
-    const buffer = await res.arrayBuffer();
-    return Buffer.from(buffer).toString("base64");
   }
 
   private async doRequest(url: string, apiKey: string, body: Record<string, unknown>): Promise<ImageGenResult> {
