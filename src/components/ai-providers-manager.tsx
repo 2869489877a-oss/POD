@@ -22,6 +22,13 @@ const PROVIDER_TYPES = [
   { value: "tongyi", label: "通义万相 (阿里)" },
 ];
 
+const BASE_URL_DEFAULTS: Record<string, string> = {
+  doubao: "https://ark.cn-beijing.volces.com",
+  jimeng: "https://ark.cn-beijing.volces.com",
+};
+
+const REQUIRES_BASE_URL = new Set(["doubao", "jimeng"]);
+
 export function AiProvidersManager() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,7 +136,7 @@ export function AiProvidersManager() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("模型类型", "Provider Type")}</label>
-              <select value={formData.provider_type} onChange={(e) => setFormData({ ...formData, provider_type: e.target.value })} className={inputClass}>
+              <select value={formData.provider_type} onChange={(e) => { const pt = e.target.value; setFormData({ ...formData, provider_type: pt, base_url: BASE_URL_DEFAULTS[pt] || "" }); }} className={inputClass}>
                 {PROVIDER_TYPES.map((pt) => (<option key={pt.value} value={pt.value}>{pt.label}</option>))}
               </select>
             </div>
@@ -146,8 +153,8 @@ export function AiProvidersManager() {
               <input type="text" value={formData.model_id} onChange={(e) => setFormData({ ...formData, model_id: e.target.value })} placeholder="e.g. gemini-2.0-flash-exp" className={inputClass} required />
             </div>
             <div>
-              <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("Base URL (可选)", "Base URL (optional)")}</label>
-              <input type="text" value={formData.base_url} onChange={(e) => setFormData({ ...formData, base_url: e.target.value })} placeholder={t("留空使用默认", "Leave empty for default")} className={inputClass} />
+              <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{REQUIRES_BASE_URL.has(formData.provider_type) ? t("Base URL (必填)", "Base URL (required)") : t("Base URL (可选)", "Base URL (optional)")}</label>
+              <input type="text" value={formData.base_url} onChange={(e) => setFormData({ ...formData, base_url: e.target.value })} placeholder={BASE_URL_DEFAULTS[formData.provider_type] || t("留空使用默认", "Leave empty for default")} className={inputClass} required={REQUIRES_BASE_URL.has(formData.provider_type)} />
             </div>
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("优先级", "Priority")}</label>

@@ -1,4 +1,4 @@
-"""AI 生图客户端，用于润色优化印花图片。支持通义万相和豆包。"""
+"""AI 生图客户端，用于润色优化印花图片。支持通义万相、豆包和即梦。"""
 
 import base64
 import io
@@ -49,6 +49,17 @@ def _get_doubao_config():
     model = os.getenv("DOUBAO_IMAGE_MODEL", "").strip()
     if not model:
         raise ValueError("缺少环境变量 DOUBAO_IMAGE_MODEL")
+    return api_key, base_url, model
+
+
+def _get_jimeng_config():
+    api_key = os.getenv("JIMENG_IMAGE_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("缺少环境变量 JIMENG_IMAGE_API_KEY")
+    base_url = os.getenv("JIMENG_IMAGE_BASE_URL", "https://ark.cn-beijing.volces.com").strip().rstrip("/")
+    model = os.getenv("JIMENG_IMAGE_MODEL", "").strip()
+    if not model:
+        raise ValueError("缺少环境变量 JIMENG_IMAGE_MODEL")
     return api_key, base_url, model
 
 
@@ -165,9 +176,46 @@ def _polish_with_doubao(image_bytes: bytes, prompt: str) -> bytes:
     return base64.b64decode(image_data)
 
 
+def _polish_with_jimeng(image_bytes: bytes, prompt: str) -> bytes:
+    """即梦图片编辑/生成。"""
+    api_key, base_url, model = _get_jimeng_config()
+    image_b64 = base64.b64encode(image_bytes).decode()
+
+    url = f"{base_url}/v1/images/edits"
+    body = {
+        "model": model,
+        "prompt": prompt,
+        "image": image_b64,
+        "n": 1,
+        "response_format": "b64_json",
+    }
+
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        resp = client.post(
+            url,
+            json=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+
+    if resp.status_code != 200:
+        raise RuntimeError(f"即梦 API 失败 ({resp.status_code}): {resp.text[:300]}")
+
+    data = resp.json()
+    image_data = data.get("data", [{}])[0].get("b64_json")
+    if not image_data:
+        raise RuntimeError("即梦未返回图片数据")
+
+    return base64.b64decode(image_data)
+
+
 def polish_image(image_bytes: bytes, prompt: str) -> bytes:
     """根据配置的 provider 调用 AI 生图润色。"""
     provider = _PROVIDER.lower()
     if provider == "doubao":
         return _polish_with_doubao(image_bytes, prompt)
+    if provider == "jimeng":
+        return _polish_with_jimeng(image_bytes, prompt)
     return _polish_with_tongyi(image_bytes, prompt)

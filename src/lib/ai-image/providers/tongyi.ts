@@ -25,6 +25,7 @@ export class TongyiProvider implements ImageProvider {
         "X-DashScope-Async": "enable",
       },
       body: JSON.stringify(submitBody),
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!submitResponse.ok) {
@@ -54,6 +55,7 @@ export class TongyiProvider implements ImageProvider {
 
       const response = await fetch(statusUrl, {
         headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(30_000),
       });
 
       if (!response.ok) {

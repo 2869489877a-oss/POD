@@ -74,6 +74,16 @@ export async function resolveProvider(providerId?: string): Promise<ResolvedProv
   };
 }
 
+function isRetryable(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === "TimeoutError" || error.name === "AbortError") return true;
+    const msg = error.message;
+    if (/\b(500|502|503|504)\b/.test(msg)) return true;
+    if (/network|ECONNRESET|ETIMEDOUT/i.test(msg)) return true;
+  }
+  return false;
+}
+
 export async function generateImage(
   resolved: ResolvedProvider,
   params: ImageGenParams,
@@ -82,5 +92,14 @@ export async function generateImage(
   if (!provider) {
     throw new Error(`不支持的模型类型: ${resolved.providerType}`);
   }
-  return provider.generate(resolved.config, params);
+
+  try {
+    return await provider.generate(resolved.config, params);
+  } catch (error) {
+    if (isRetryable(error)) {
+      await new Promise((r) => setTimeout(r, 1000));
+      return provider.generate(resolved.config, params);
+    }
+    throw error;
+  }
 }
