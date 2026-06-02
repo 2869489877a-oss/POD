@@ -13,6 +13,7 @@ type GenerateImageRequest = {
   height?: unknown;
   style?: unknown;
   provider_id?: unknown;
+  reference_url?: unknown;
   save_to_assets?: unknown;
   product_draft_id?: unknown;
 };
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
   const height = typeof body.height === "number" && body.height > 0 ? body.height : 1024;
   const style = typeof body.style === "string" ? body.style.trim() : undefined;
   const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
+  const referenceUrl = typeof body.reference_url === "string" && body.reference_url.trim().length > 0 ? body.reference_url.trim() : undefined;
   const saveToAssets = body.save_to_assets !== false;
   const productDraftId = typeof body.product_draft_id === "string" && body.product_draft_id.trim().length > 0
     ? body.product_draft_id.trim()
@@ -78,6 +80,7 @@ export async function POST(request: Request) {
       width,
       height,
       style,
+      referenceUrl,
     });
 
     let resultUrl: string | null = null;

@@ -15,6 +15,10 @@ export class VolcanoArkProvider implements ImageProvider {
       throw new Error(`${this.displayName}需要配置 base_url（火山方舟地址）`);
     }
 
+    if (params.referenceUrl) {
+      return this.generateWithReference(config, params);
+    }
+
     const url = `${config.baseUrl.replace(/\/+$/, "")}/api/v3/images/generations`;
 
     const body: Record<string, unknown> = {
@@ -30,10 +34,41 @@ export class VolcanoArkProvider implements ImageProvider {
       body.negative_prompt = params.negativePrompt;
     }
 
+    return this.doRequest(url, config.apiKey, body);
+  }
+
+  private async generateWithReference(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
+    const imageBase64 = await this.fetchImageAsBase64(params.referenceUrl!);
+    const url = `${config.baseUrl!.replace(/\/+$/, "")}/api/v3/images/edits`;
+
+    const body: Record<string, unknown> = {
+      model: config.modelId,
+      prompt: params.prompt,
+      image: imageBase64,
+      n: 1,
+      response_format: "b64_json",
+      watermark: false,
+    };
+
+    if (params.negativePrompt) {
+      body.negative_prompt = params.negativePrompt;
+    }
+
+    return this.doRequest(url, config.apiKey, body);
+  }
+
+  private async fetchImageAsBase64(imageUrl: string): Promise<string> {
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) throw new Error("参考图下载失败");
+    const buffer = await res.arrayBuffer();
+    return Buffer.from(buffer).toString("base64");
+  }
+
+  private async doRequest(url: string, apiKey: string, body: Record<string, unknown>): Promise<ImageGenResult> {
     const response = await fetch(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -46,17 +81,20 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     const data = await response.json() as {
-      data?: Array<{ b64_json?: string }>;
+      data?: Array<{ b64_json?: string; url?: string }>;
     };
 
-    const imageData = data.data?.[0]?.b64_json;
-    if (!imageData) {
-      throw new Error(`${this.displayName}未返回图片数据`);
+    const first = data.data?.[0];
+    if (first?.b64_json) {
+      return { imageBase64: first.b64_json, mimeType: "image/png" };
+    }
+    if (first?.url) {
+      const imgRes = await fetch(first.url, { signal: AbortSignal.timeout(30_000) });
+      if (!imgRes.ok) throw new Error(`${this.displayName}图片下载失败`);
+      const buf = await imgRes.arrayBuffer();
+      return { imageBase64: Buffer.from(buf).toString("base64"), mimeType: "image/png" };
     }
 
-    return {
-      imageBase64: imageData,
-      mimeType: "image/png",
-    };
+    throw new Error(`${this.displayName}未返回图片数据`);
   }
 }
