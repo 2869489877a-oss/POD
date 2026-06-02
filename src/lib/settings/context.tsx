@@ -2,11 +2,12 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type ThemeMode = "dark" | "light";
+export type ThemeMode = "premium" | "dark" | "light";
 export type Language = "zh" | "en";
 export type AccentColor = "violet" | "blue" | "emerald" | "rose" | "amber" | "cyan";
 
 export type AppSettings = {
+  appearanceVersion: number;
   mode: ThemeMode;
   language: Language;
   accent: AccentColor;
@@ -19,7 +20,7 @@ type SettingsContextValue = AppSettings & {
   t: (zh: string, en: string) => string;
 };
 
-const defaults: AppSettings = { mode: "dark", language: "zh", accent: "violet" };
+const defaults: AppSettings = { appearanceVersion: 2, mode: "premium", language: "zh", accent: "emerald" };
 
 const SettingsContext = createContext<SettingsContextValue>({
   ...defaults,
@@ -37,7 +38,13 @@ function loadSettings(): AppSettings {
   if (typeof window === "undefined") return defaults;
   try {
     const raw = localStorage.getItem("pod-settings");
-    if (raw) return { ...defaults, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AppSettings>;
+      const next = { ...defaults, ...parsed };
+      if (!parsed.appearanceVersion) next.mode = "premium";
+      if (!["premium", "dark", "light"].includes(next.mode)) next.mode = "premium";
+      return next;
+    }
   } catch { /* ignore */ }
   return defaults;
 }
@@ -77,7 +84,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     document.documentElement.setAttribute("data-accent", settings.accent);
   }, [settings, mounted]);
 
-  function setMode(mode: ThemeMode) { setSettings((s) => ({ ...s, mode })); }
+  function setMode(mode: ThemeMode) { setSettings((s) => ({ ...s, appearanceVersion: defaults.appearanceVersion, mode })); }
   function setLanguage(language: Language) { setSettings((s) => ({ ...s, language })); }
   function setAccent(accent: AccentColor) { setSettings((s) => ({ ...s, accent })); }
   function t(zh: string, en: string) { return settings.language === "zh" ? zh : en; }

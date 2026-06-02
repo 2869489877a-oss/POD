@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { Sidebar } from "@/components/sidebar";
 import { ToastProvider } from "@/components/toast";
 import { SettingsProvider } from "@/lib/settings/context";
 import { LayoutShell } from "@/components/layout-shell";
@@ -20,10 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
         <SettingsProvider>
           <ToastProvider>
             <LayoutShell>
-              <Sidebar />
-              <main className="min-w-0 flex-1 px-8 py-6">
-                <div className="mx-auto max-w-7xl">{children}</div>
-              </main>
+              {children}
             </LayoutShell>
           </ToastProvider>
         </SettingsProvider>

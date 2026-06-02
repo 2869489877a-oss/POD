@@ -45,7 +45,7 @@ export function AiProvidersManager() {
   const [error, setError] = useState<string | null>(null);
   const { mode, accent, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
-  const isDark = mode === "dark";
+  const isDark = mode !== "light";
 
   const fetchProviders = useCallback(async () => {
     setLoading(true);

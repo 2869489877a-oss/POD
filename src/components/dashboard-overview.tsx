@@ -17,7 +17,9 @@ const workflowItems = [
 ];
 
 export function DashboardOverview({ stats }: Props) {
-  const { t } = useSettings();
+  const { mode, t } = useSettings();
+  const isPremium = mode === "premium";
+  const isDark = mode !== "light";
 
   const summaryCards = [
     {
@@ -50,33 +52,40 @@ export function DashboardOverview({ stats }: Props) {
     <>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <div key={card.label} className="relative overflow-hidden rounded-xl border border-slate-200/60 bg-white p-5 shadow-sm">
+          <div
+            key={card.label}
+            className={
+              isPremium
+                ? "relative overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.055] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl"
+                : `relative overflow-hidden rounded-xl border p-5 shadow-sm ${isDark ? "border-white/5 bg-[#12122a]" : "border-slate-200/60 bg-white"}`
+            }
+          >
             <div className={`absolute left-0 top-0 h-1 w-full bg-gradient-to-r ${card.color}`} />
-            <p className="text-sm font-medium text-slate-500">{card.label}</p>
-            <p className="mt-3 text-3xl font-bold text-slate-900">{card.value}</p>
-            <p className="mt-2 text-xs text-slate-400">{card.note}</p>
+            <p className={`text-sm font-medium ${isDark ? "text-slate-400" : "text-slate-500"}`}>{card.label}</p>
+            <p className={`mt-3 text-3xl font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{card.value}</p>
+            <p className={`mt-2 text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{card.note}</p>
           </div>
         ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="rounded-xl border border-slate-200/60 bg-white p-6 shadow-sm">
-          <h3 className="text-base font-bold text-slate-900">{t("批处理流程", "Batch Workflow")}</h3>
+        <section className={isPremium ? "rounded-[24px] border border-white/10 bg-white/[0.055] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl" : `rounded-xl border p-6 shadow-sm ${isDark ? "border-white/5 bg-[#12122a]" : "border-slate-200/60 bg-white"}`}>
+          <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{t("批处理流程", "Batch Workflow")}</h3>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {workflowItems.map((item, index) => (
-              <div key={item.zh} className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 transition hover:bg-slate-100">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-xs font-bold text-white shadow-sm">
+              <div key={item.zh} className={`flex items-center gap-3 rounded-xl p-3 transition ${isDark ? "bg-white/[0.055] hover:bg-white/[0.08]" : "bg-slate-50 hover:bg-slate-100"}`}>
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-300 to-cyan-300 text-xs font-bold text-slate-950 shadow-sm">
                   {index + 1}
                 </span>
-                <span className="text-sm font-medium text-slate-700">{t(item.zh, item.en)}</span>
+                <span className={`text-sm font-medium ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t(item.zh, item.en)}</span>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200/60 bg-white p-6 shadow-sm">
-          <h3 className="text-base font-bold text-slate-900">{t("系统说明", "System Notes")}</h3>
-          <div className="mt-5 space-y-3 text-sm leading-6 text-slate-500">
+        <section className={isPremium ? "rounded-[24px] border border-white/10 bg-white/[0.055] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.18)] backdrop-blur-xl" : `rounded-xl border p-6 shadow-sm ${isDark ? "border-white/5 bg-[#12122a]" : "border-slate-200/60 bg-white"}`}>
+          <h3 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{t("系统说明", "System Notes")}</h3>
+          <div className={`mt-5 space-y-3 text-sm leading-6 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
             <p>{t("内部 POD 商品图批量处理系统。", "Internal POD product image batch processing system.")}</p>
             <p>{t("支持图片上传、批量处理、套图生成和导出功能。", "Supports image upload, batch processing, mockup generation, and export workflows.")}</p>
           </div>
