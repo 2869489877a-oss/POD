@@ -2,16 +2,19 @@
 
 import { type FormEvent, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { DropZone } from "@/components/drop-zone";
 
 export function AiPatternGenerator() {
   const [referenceUrl, setReferenceUrl] = useState("");
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [styleDescription, setStyleDescription] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ pattern_url?: string; asset_id?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [garmentUrl, setGarmentUrl] = useState("");
   const [garmentFile, setGarmentFile] = useState<File | null>(null);
+  const [garmentPreview, setGarmentPreview] = useState<string | null>(null);
   const [applyMode, setApplyMode] = useState(false);
   const [applyResult, setApplyResult] = useState<{ pattern_url?: string; composite_url?: string } | null>(null);
   const { mode, accent } = useSettings();
@@ -19,7 +22,18 @@ export function AiPatternGenerator() {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
-  const fileClass = `w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`;
+
+  function handleRefFile(f: File | null) {
+    setReferenceFile(f);
+    setReferencePreview(f ? URL.createObjectURL(f) : null);
+    if (f) setReferenceUrl("");
+  }
+
+  function handleGarmentFile(f: File | null) {
+    setGarmentFile(f);
+    setGarmentPreview(f ? URL.createObjectURL(f) : null);
+    if (f) setGarmentUrl("");
+  }
 
   async function uploadFile(file: File): Promise<string> {
     const fd = new FormData();
@@ -83,12 +97,12 @@ export function AiPatternGenerator() {
 
         <div>
           <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>上传参考图 (可选)</label>
-          <input type="file" accept="image/*" onChange={(e) => { setReferenceFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setReferenceUrl(""); }} className={fileClass} />
+          <DropZone file={referenceFile} preview={referencePreview} onFileChange={handleRefFile} label="拖拽参考图到此处，或点击选择" hint="支持 jpg、png、webp" />
         </div>
 
         <div>
           <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>或输入参考图 URL (可选)</label>
-          <input type="url" value={referenceUrl} onChange={(e) => { setReferenceUrl(e.target.value); if (e.target.value) setReferenceFile(null); }} placeholder="已提取的印花图片 URL" className={inputClass} disabled={!!referenceFile} />
+          <input type="url" value={referenceUrl} onChange={(e) => { setReferenceUrl(e.target.value); if (e.target.value) { setReferenceFile(null); setReferencePreview(null); } }} placeholder="已提取的印花图片 URL" className={inputClass} disabled={!!referenceFile} />
         </div>
 
         <div className="flex items-center gap-2">
@@ -100,11 +114,11 @@ export function AiPatternGenerator() {
           <>
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>上传衣服模板图片</label>
-              <input type="file" accept="image/*" onChange={(e) => { setGarmentFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setGarmentUrl(""); }} className={fileClass} />
+              <DropZone file={garmentFile} preview={garmentPreview} onFileChange={handleGarmentFile} label="拖拽衣服模板到此处，或点击选择" hint="支持 jpg、png、webp" />
             </div>
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>或输入衣服模板 URL</label>
-              <input type="url" value={garmentUrl} onChange={(e) => { setGarmentUrl(e.target.value); if (e.target.value) setGarmentFile(null); }} placeholder="衣服模板图片 URL" className={inputClass} disabled={!!garmentFile} />
+              <input type="url" value={garmentUrl} onChange={(e) => { setGarmentUrl(e.target.value); if (e.target.value) { setGarmentFile(null); setGarmentPreview(null); } }} placeholder="衣服模板图片 URL" className={inputClass} disabled={!!garmentFile} />
             </div>
           </>
         )}

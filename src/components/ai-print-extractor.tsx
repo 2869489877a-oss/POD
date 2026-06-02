@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { DropZone } from "@/components/drop-zone";
 
 const BG_OPTIONS = [
   { value: "transparent", label: "透明底 PNG" },
@@ -12,6 +13,7 @@ const BG_OPTIONS = [
 export function AiPrintExtractor() {
   const [imageUrl, setImageUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
   const [bgMode, setBgMode] = useState("transparent");
   const [tolerance, setTolerance] = useState(80);
   const [refineEdges, setRefineEdges] = useState(true);
@@ -23,6 +25,12 @@ export function AiPrintExtractor() {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
+
+  function handleFile(f: File | null) {
+    setFile(f);
+    setFilePreview(f ? URL.createObjectURL(f) : null);
+    if (f) setImageUrl("");
+  }
 
   async function uploadFileFirst(): Promise<string | null> {
     if (!file) return null;
@@ -85,17 +93,12 @@ export function AiPrintExtractor() {
       <form onSubmit={handleExtract} className="space-y-3">
         <div>
           <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>上传图片</label>
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => { setFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setImageUrl(""); }}
-            className={`w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`}
-          />
+          <DropZone file={file} preview={filePreview} onFileChange={handleFile} label="拖拽衣服图片到此处，或点击选择" hint="支持 jpg、png、webp" />
         </div>
 
         <div>
           <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>或输入图片 URL</label>
-          <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setFile(null); }} placeholder="https://..." className={inputClass} disabled={!!file} />
+          <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) { setFile(null); setFilePreview(null); } }} placeholder="https://..." className={inputClass} disabled={!!file} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">

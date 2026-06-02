@@ -2,6 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { DropZone } from "@/components/drop-zone";
 
 type ProviderOption = {
   id: string;
@@ -45,7 +46,6 @@ export function AiImageGenerator() {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
-  const fileClass = `w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`;
 
   function handleRefFile(f: File | null) {
     setRefFile(f);
@@ -139,8 +139,7 @@ export function AiImageGenerator() {
 
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>参考图 (可选，图生图)</label>
-          <input type="file" accept="image/*" onChange={(e) => handleRefFile(e.target.files?.[0] ?? null)} className={fileClass} />
-          {refPreview && <img src={refPreview} alt="ref" className="mt-2 h-20 rounded-lg object-cover" />}
+          <DropZone file={refFile} preview={refPreview} onFileChange={handleRefFile} label="拖拽参考图到此处，或点击选择" hint="支持 jpg、png、webp" />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
