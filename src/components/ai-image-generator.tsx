@@ -2,7 +2,6 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
-import { DropZone } from "@/components/drop-zone";
 
 type ProviderOption = {
   id: string;
@@ -15,8 +14,6 @@ type GenerateResult = {
   job_id?: string;
   asset_id?: string;
   result_url?: string;
-  image_base64?: string;
-  mime_type?: string;
   provider?: string;
   model?: string;
   error?: string;
@@ -36,8 +33,6 @@ export function AiImageGenerator() {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [sizeIndex, setSizeIndex] = useState(0);
   const [style, setStyle] = useState("");
-  const [refFile, setRefFile] = useState<File | null>(null);
-  const [refPreview, setRefPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,11 +41,6 @@ export function AiImageGenerator() {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
-
-  function handleRefFile(f: File | null) {
-    setRefFile(f);
-    setRefPreview(f ? URL.createObjectURL(f) : null);
-  }
 
   useEffect(() => {
     let cancelled = false;
@@ -61,7 +51,7 @@ export function AiImageGenerator() {
         if (cancelled) return;
         const active = (data.providers ?? []).filter((p: { is_active: boolean }) => p.is_active);
         setProviders(active);
-        setSelectedProvider((current) => current || active[0]?.id || "");
+        setSelectedProvider((c) => c || active[0]?.id || "");
       } catch { /* ignore */ }
     }
     void loadProviders();
@@ -76,17 +66,6 @@ export function AiImageGenerator() {
     setResult(null);
     const size = SIZE_PRESETS[sizeIndex];
     try {
-      let referenceUrl: string | undefined;
-      if (refFile) {
-        const fd = new FormData();
-        fd.append("files", refFile);
-        const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
-        const uploadData = await uploadRes.json();
-        if (uploadData.results?.[0]?.success) {
-          referenceUrl = uploadData.results[0].url;
-        }
-      }
-
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,7 +76,6 @@ export function AiImageGenerator() {
           height: size.height,
           style: style.trim() || undefined,
           provider_id: selectedProvider || undefined,
-          reference_url: referenceUrl,
           save_to_assets: true,
         }),
       });
@@ -120,28 +98,18 @@ export function AiImageGenerator() {
             <p className="text-sm text-amber-500">请先在「设置」页面添加 AI 模型</p>
           ) : (
             <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)} className={inputClass}>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>{p.display_name}</option>
-              ))}
+              {providers.map((p) => (<option key={p.id} value={p.id}>{p.display_name}</option>))}
             </select>
           )}
         </div>
-
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>提示词 (Prompt)</label>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder="描述你想生成的图片..." className={inputClass} required />
         </div>
-
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>反向提示词 (可选)</label>
           <input type="text" value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="不想出现的内容..." className={inputClass} />
         </div>
-
-        <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>参考图 (可选，图生图)</label>
-          <DropZone file={refFile} preview={refPreview} onFileChange={handleRefFile} label="拖拽参考图到此处，或点击选择" hint="支持 jpg、png、webp" />
-        </div>
-
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>尺寸</label>
@@ -154,18 +122,11 @@ export function AiImageGenerator() {
             <input type="text" value={style} onChange={(e) => setStyle(e.target.value)} placeholder="如: natural, vivid" className={inputClass} />
           </div>
         </div>
-
-        <button
-          type="submit"
-          disabled={generating || providers.length === 0}
-          className={`w-full rounded-lg bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`}
-        >
+        <button type="submit" disabled={generating || providers.length === 0} className={`w-full rounded-lg bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`}>
           {generating ? "生成中..." : "生成图片"}
         </button>
-
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
-
       <div className={`flex items-center justify-center rounded-xl border p-4 min-h-[400px] ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
         {generating ? (
           <div className="text-center">

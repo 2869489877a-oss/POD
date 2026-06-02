@@ -33,7 +33,7 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     if (params.referenceUrl) {
-      body.image_urls = [params.referenceUrl];
+      body.image = params.referenceUrl;
     }
 
     return this.doRequest(url, config.apiKey, body);
