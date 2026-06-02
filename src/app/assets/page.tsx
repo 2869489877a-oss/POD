@@ -46,7 +46,12 @@ export default async function AssetsPage() {
   const { assets, error } = await getInitialAssets();
 
   return (
-    <PageShell title="素材库管理" description="用于管理上传后的图片素材、分类和基础状态。">
+    <PageShell
+      titleZh="素材库管理"
+      titleEn="Assets"
+      descriptionZh="用于管理上传后的图片素材、分类和基础状态。"
+      descriptionEn="Manage uploaded image assets, categories, and basic status."
+    >
       <AssetsGallery initialAssets={assets} initialError={error} />
     </PageShell>
   );

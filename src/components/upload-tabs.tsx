@@ -3,16 +3,18 @@
 import { useState } from "react";
 import { UploadForm } from "@/components/upload-form";
 import { WebScraper } from "@/components/web-scraper";
+import { useSettings } from "@/lib/settings/context";
 
 const TABS = [
-  { key: "local", label: "本地上传" },
-  { key: "web", label: "网页采集" },
+  { key: "local", zh: "本地上传", en: "Local Upload" },
+  { key: "web", zh: "网页采集", en: "Web Collect" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
 
 export function UploadTabs() {
   const [active, setActive] = useState<TabKey>("local");
+  const { t } = useSettings();
 
   return (
     <div className="space-y-6">
@@ -27,7 +29,7 @@ export function UploadTabs() {
                 : "text-zinc-600 hover:text-zinc-950"
             }`}
           >
-            {tab.label}
+            {t(tab.zh, tab.en)}
           </button>
         ))}
       </div>

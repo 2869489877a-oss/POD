@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
+import { useSettings } from "@/lib/settings/context";
 
 type UploadResult = {
   asset_id?: string;
@@ -39,6 +40,7 @@ export function UploadForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const { t } = useSettings();
 
   const unsupportedFiles = useMemo(
     () =>
@@ -60,7 +62,7 @@ export function UploadForm() {
     event.preventDefault();
 
     if (files.length === 0) {
-      setMessage("请选择至少一张图片");
+      setMessage(t("请选择至少一张图片", "Please choose at least one image"));
       return;
     }
 
@@ -84,7 +86,7 @@ export function UploadForm() {
         setMessage(data.error);
       }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "上传失败");
+      setMessage(error instanceof Error ? error.message : t("上传失败", "Upload failed"));
     } finally {
       setIsUploading(false);
     }
@@ -117,9 +119,9 @@ export function UploadForm() {
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
           </svg>
           <p className="mt-3 text-sm font-medium text-slate-700">
-            {isDragging ? "松开鼠标上传文件" : "拖拽图片到此处，或点击选择"}
+            {isDragging ? t("松开鼠标上传文件", "Release to upload files") : t("拖拽图片到此处，或点击选择", "Drag images here, or click to choose")}
           </p>
-          <p className="mt-1 text-xs text-slate-500">支持 jpg、jpeg、png、webp，可一次选择多张</p>
+          <p className="mt-1 text-xs text-slate-500">{t("支持 jpg、jpeg、png、webp，可一次选择多张", "Supports jpg, jpeg, png, and webp. Multiple files can be selected.")}</p>
           <input
             id="images"
             type="file"
@@ -133,13 +135,13 @@ export function UploadForm() {
         {files.length > 0 ? (
           <div className="mt-5 rounded-md bg-zinc-50 p-4">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-zinc-950">已选择 {files.length} 张图片</p>
+              <p className="text-sm font-medium text-zinc-950">{t(`已选择 ${files.length} 张图片`, `${files.length} image${files.length === 1 ? "" : "s"} selected`)}</p>
               <button
                 type="button"
                 onClick={clearSelection}
                 className="text-sm font-medium text-zinc-600 hover:text-zinc-950"
               >
-                清空
+                {t("清空", "Clear")}
               </button>
             </div>
             <ul className="mt-3 max-h-44 space-y-2 overflow-y-auto text-sm text-zinc-600">
@@ -155,7 +157,10 @@ export function UploadForm() {
 
         {unsupportedFiles.length > 0 ? (
           <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-            有 {unsupportedFiles.length} 个文件格式可能不受支持，提交后会返回失败原因。
+            {t(
+              `有 ${unsupportedFiles.length} 个文件格式可能不受支持，提交后会返回失败原因。`,
+              `${unsupportedFiles.length} file${unsupportedFiles.length === 1 ? "" : "s"} may be unsupported. The server will return the reason after submission.`
+            )}
           </div>
         ) : null}
 
@@ -171,14 +176,14 @@ export function UploadForm() {
             disabled={isUploading || files.length === 0}
             className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            {isUploading ? "上传中..." : "开始上传"}
+            {isUploading ? t("上传中...", "Uploading...") : t("开始上传", "Start Upload")}
           </button>
           {successCount > 0 ? (
             <Link
               href="/assets"
               className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
             >
-              前往素材库
+              {t("前往素材库", "Go to Assets")}
             </Link>
           ) : null}
         </div>
@@ -187,9 +192,9 @@ export function UploadForm() {
       {results.length > 0 ? (
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-6 py-4">
-            <h3 className="text-base font-semibold text-zinc-950">上传结果</h3>
+            <h3 className="text-base font-semibold text-zinc-950">{t("上传结果", "Upload Results")}</h3>
             <p className="mt-1 text-sm text-zinc-500">
-              成功 {successCount} 张，失败 {results.length - successCount} 张
+              {t(`成功 ${successCount} 张，失败 ${results.length - successCount} 张`, `${successCount} succeeded, ${results.length - successCount} failed`)}
             </p>
           </div>
           <div className="divide-y divide-zinc-200">
@@ -218,7 +223,7 @@ export function UploadForm() {
                         : "bg-red-50 text-red-700",
                     ].join(" ")}
                   >
-                    {result.success ? "上传成功" : "上传失败"}
+                    {result.success ? t("上传成功", "Uploaded") : t("上传失败", "Failed")}
                   </span>
                 </div>
                 {result.original_url ? (
@@ -228,10 +233,10 @@ export function UploadForm() {
                     rel="noreferrer"
                     className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
                   >
-                    查看原图
+                    {t("查看原图", "View Original")}
                   </a>
                 ) : (
-                  <span className="text-sm text-zinc-400">无文件地址</span>
+                  <span className="text-sm text-zinc-400">{t("无文件地址", "No file URL")}</span>
                 )}
               </div>
             ))}

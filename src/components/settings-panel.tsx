@@ -61,11 +61,11 @@ export function SettingsPanel() {
         <div className="grid grid-cols-2 gap-3">
           <ThemeModeCard active={language === "zh"} onClick={() => setLanguage("zh")} isDark={isDark} accent={accent}>
             <span className={labelClass}>中文</span>
-            <p className={descClass}>简体中文界面</p>
+            <p className={descClass}>{t("简体中文界面", "Simplified Chinese interface")}</p>
           </ThemeModeCard>
           <ThemeModeCard active={language === "en"} onClick={() => setLanguage("en")} isDark={isDark} accent={accent}>
             <span className={labelClass}>English</span>
-            <p className={descClass}>English interface</p>
+            <p className={descClass}>{t("英文界面", "English interface")}</p>
           </ThemeModeCard>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PrintArea } from "@/lib/mockups/scenes";
+import { useSettings } from "@/lib/settings/context";
 
 type SceneEditorProps = {
   backgroundUrl: string;
@@ -33,6 +34,7 @@ export function SceneEditor({
   printArea,
   onPrintAreaChange,
 }: SceneEditorProps) {
+  const { t } = useSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [dragMode, setDragMode] = useState<DragMode>(null);
@@ -176,7 +178,7 @@ export function SceneEditor({
       {backgroundUrl && !imgError && (
         <img
           src={backgroundUrl}
-          alt="场景底图"
+          alt={t("场景底图", "Scene background")}
           className="absolute inset-0 h-full w-full object-cover"
           draggable={false}
           onError={() => setFailedBackgroundUrl(backgroundUrl)}
@@ -184,7 +186,7 @@ export function SceneEditor({
       )}
       {backgroundUrl && imgError && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <p className="rounded bg-amber-100 px-3 py-1.5 text-xs text-amber-700">底图加载失败，请检查 URL 是否有效</p>
+          <p className="rounded bg-amber-100 px-3 py-1.5 text-xs text-amber-700">{t("底图加载失败，请检查 URL 是否有效", "Background failed to load. Check whether the URL is valid.")}</p>
         </div>
       )}
       <div
@@ -199,7 +201,7 @@ export function SceneEditor({
         onMouseDown={(e) => handleMouseDown("move", e)}
       >
         <span className="absolute left-1 top-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-medium text-white select-none">
-          印花区域
+          {t("印花区域", "Print Area")}
         </span>
         {handles.map((h) => (
           <div

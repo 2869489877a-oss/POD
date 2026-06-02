@@ -53,7 +53,12 @@ export default async function MockupJobsPage() {
   const { assets, error, templates } = await getInitialData();
 
   return (
-    <PageShell title="套图任务" description="用于管理固定商品套图的批量生成任务。">
+    <PageShell
+      titleZh="套图任务"
+      titleEn="Mockup Jobs"
+      descriptionZh="用于管理固定商品套图的批量生成任务。"
+      descriptionEn="Manage batch generation jobs for product mockups."
+    >
       <MockupJobsManager assets={assets} initialError={error} templates={templates} />
     </PageShell>
   );

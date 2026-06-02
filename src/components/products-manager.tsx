@@ -3,6 +3,7 @@
 import { type FormEvent, useMemo, useState } from "react";
 
 import { fetchProducts } from "@/lib/actions/products";
+import { useSettings } from "@/lib/settings/context";
 
 import type {
   MockupOutputOption,
@@ -40,11 +41,11 @@ type SourceType = "asset" | "mockup_output";
 
 const statusOptions: ProductDraftStatus[] = ["draft", "ready", "exported", "failed"];
 
-const statusLabels: Record<ProductDraftStatus, string> = {
-  draft: "草稿",
-  exported: "已导出",
-  failed: "失败",
-  ready: "待导出",
+const statusLabels: Record<ProductDraftStatus, { zh: string; en: string }> = {
+  draft: { zh: "草稿", en: "Draft" },
+  exported: { zh: "已导出", en: "Exported" },
+  failed: { zh: "失败", en: "Failed" },
+  ready: { zh: "待导出", en: "Ready" },
 };
 
 const statusStyles: Record<ProductDraftStatus, string> = {
@@ -54,8 +55,8 @@ const statusStyles: Record<ProductDraftStatus, string> = {
   ready: "bg-emerald-50 text-emerald-700",
 };
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
+function formatDate(value: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -75,6 +76,7 @@ export function ProductsManager({
   mockupOutputOptions,
   products: initialProducts,
 }: ProductsManagerProps) {
+  const { t } = useSettings();
   const [products, setProducts] = useState<ProductDraftView[]>(initialProducts);
   const [selectedProductId, setSelectedProductId] = useState(initialProducts[0]?.id ?? "");
   const [error, setError] = useState<string | null>(initialError);
@@ -186,7 +188,7 @@ export function ProductsManager({
         setSelectedProductId("");
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "读取商品草稿失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("读取商品草稿失败", "Failed to load product drafts"));
     } finally {
       setIsRefreshing(false);
     }
@@ -217,7 +219,7 @@ export function ProductsManager({
       const data = (await response.json()) as ProductsResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "商品草稿创建失败");
+        throw new Error(data.error ?? t("商品草稿创建失败", "Failed to create product draft"));
       }
 
       setProducts(data.products ?? []);
@@ -225,7 +227,7 @@ export function ProductsManager({
       setCreateSku("");
       setCreateProductType("");
       setCreatePrice("");
-      setMessage("商品草稿创建成功");
+      setMessage(t("商品草稿创建成功", "Product draft created"));
 
       if (data.product_id) {
         const created = (data.products ?? []).find((product) => product.id === data.product_id);
@@ -235,7 +237,7 @@ export function ProductsManager({
         }
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "商品草稿创建失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("商品草稿创建失败", "Failed to create product draft"));
     } finally {
       setIsCreating(false);
     }
@@ -243,7 +245,7 @@ export function ProductsManager({
 
   async function saveProduct(nextStatus?: ProductDraftStatus) {
     if (!selectedProduct) {
-      setError("请选择一个商品草稿");
+      setError(t("请选择一个商品草稿", "Please select a product draft"));
       return;
     }
 
@@ -272,14 +274,14 @@ export function ProductsManager({
       const data = (await response.json()) as SaveResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "商品草稿保存失败");
+        throw new Error(data.error ?? t("商品草稿保存失败", "Failed to save product draft"));
       }
 
       setEditStatus(statusToSave);
-      setMessage(nextStatus === "ready" ? "商品草稿已标记为 ready" : "商品草稿保存成功");
+      setMessage(nextStatus === "ready" ? t("商品草稿已标记为 ready", "Product draft marked ready") : t("商品草稿保存成功", "Product draft saved"));
       await refreshProducts(selectedProduct.id);
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "商品草稿保存失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("商品草稿保存失败", "Failed to save product draft"));
     } finally {
       setIsSaving(false);
     }
@@ -287,7 +289,7 @@ export function ProductsManager({
 
   async function downloadProductImages(product: ProductDraftView) {
     if (product.images.length === 0 && !product.main_image_url) {
-      setError("该商品没有图片，无法下载");
+      setError(t("该商品没有图片，无法下载", "This product has no images to download"));
       setMessage(null);
       setImageZipResult(null);
       return;
@@ -305,13 +307,13 @@ export function ProductsManager({
       const data = (await response.json()) as ProductImagesZipResponse;
 
       if (!response.ok || !data.download_url) {
-        throw new Error(data.error ?? "下载商品套图失败");
+        throw new Error(data.error ?? t("下载商品套图失败", "Failed to download product image ZIP"));
       }
 
       setImageZipResult(data);
-      setMessage("商品套图 ZIP 已生成");
+      setMessage(t("商品套图 ZIP 已生成", "Product image ZIP generated"));
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "下载商品套图失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("下载商品套图失败", "Failed to download product image ZIP"));
     } finally {
       setIsDownloadingImages(false);
     }
@@ -323,8 +325,8 @@ export function ProductsManager({
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">创建商品草稿</h3>
-              <p className="mt-1 text-sm text-zinc-500">可从素材或套图结果创建。</p>
+              <h3 className="text-base font-semibold text-zinc-950">{t("创建商品草稿", "Create Product Draft")}</h3>
+              <p className="mt-1 text-sm text-zinc-500">{t("可从素材或套图结果创建。", "Create from an asset or a mockup output.")}</p>
             </div>
             <button
               type="button"
@@ -332,14 +334,14 @@ export function ProductsManager({
               disabled={isRefreshing}
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              {isRefreshing ? "刷新中..." : "刷新列表"}
+              {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新列表", "Refresh List")}
             </button>
           </div>
 
           <form onSubmit={createProduct} className="mt-5 grid gap-4 lg:grid-cols-2">
             <div>
               <label htmlFor="source-type" className="block text-sm font-medium text-zinc-950">
-                创建来源
+                {t("创建来源", "Source")}
               </label>
               <select
                 id="source-type"
@@ -347,15 +349,15 @@ export function ProductsManager({
                 onChange={(event) => setSourceType(event.target.value as SourceType)}
                 className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
               >
-                <option value="mockup_output">从套图结果创建</option>
-                <option value="asset">从素材创建</option>
+                <option value="mockup_output">{t("从套图结果创建", "From Mockup Output")}</option>
+                <option value="asset">{t("从素材创建", "From Asset")}</option>
               </select>
             </div>
 
             {sourceType === "mockup_output" ? (
               <div>
                 <label htmlFor="mockup-output" className="block text-sm font-medium text-zinc-950">
-                  套图结果
+                  {t("套图结果", "Mockup Output")}
                 </label>
                 <select
                   id="mockup-output"
@@ -363,10 +365,10 @@ export function ProductsManager({
                   onChange={(event) => setMockupOutputId(event.target.value)}
                   className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                 >
-                  {mockupOutputOptions.length === 0 ? <option value="">暂无套图结果</option> : null}
+                  {mockupOutputOptions.length === 0 ? <option value="">{t("暂无套图结果", "No mockup outputs")}</option> : null}
                   {mockupOutputOptions.map((option) => (
                     <option key={option.id} value={option.id}>
-                      {option.id} / {option.output_images.length} 张图 / {option.status}
+                      {option.id} / {t(`${option.output_images.length} 张图`, `${option.output_images.length} images`)} / {option.status}
                     </option>
                   ))}
                 </select>
@@ -374,7 +376,7 @@ export function ProductsManager({
             ) : (
               <div>
                 <label htmlFor="asset" className="block text-sm font-medium text-zinc-950">
-                  素材图片
+                  {t("素材图片", "Asset Image")}
                 </label>
                 <select
                   id="asset"
@@ -382,7 +384,7 @@ export function ProductsManager({
                   onChange={(event) => setAssetId(event.target.value)}
                   className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                 >
-                  {assetOptions.length === 0 ? <option value="">暂无素材</option> : null}
+                  {assetOptions.length === 0 ? <option value="">{t("暂无素材", "No assets")}</option> : null}
                   {assetOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.filename}
@@ -394,7 +396,7 @@ export function ProductsManager({
 
             <div>
               <label htmlFor="create-title" className="block text-sm font-medium text-zinc-950">
-                标题
+                {t("标题", "Title")}
               </label>
               <input
                 id="create-title"
@@ -418,7 +420,7 @@ export function ProductsManager({
 
             <div>
               <label htmlFor="create-product-type" className="block text-sm font-medium text-zinc-950">
-                产品类型
+                {t("产品类型", "Product Type")}
               </label>
               <input
                 id="create-product-type"
@@ -430,7 +432,7 @@ export function ProductsManager({
 
             <div>
               <label htmlFor="create-price" className="block text-sm font-medium text-zinc-950">
-                价格
+                {t("价格", "Price")}
               </label>
               <input
                 id="create-price"
@@ -447,7 +449,7 @@ export function ProductsManager({
                 disabled={isCreating}
                 className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isCreating ? "创建中..." : "创建商品草稿"}
+                {isCreating ? t("创建中...", "Creating...") : t("创建商品草稿", "Create Product Draft")}
               </button>
             </div>
           </form>
@@ -468,29 +470,29 @@ export function ProductsManager({
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="grid gap-4 border-b border-zinc-200 px-5 py-4 md:grid-cols-[1fr_260px]">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">商品草稿列表</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("商品草稿列表", "Product Drafts")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                共 {products.length} 个草稿，当前显示 {visibleProducts.length} 个
+                {t(`共 ${products.length} 个草稿，当前显示 ${visibleProducts.length} 个`, `${products.length} drafts, showing ${visibleProducts.length}`)}
               </p>
             </div>
             <div>
               <label htmlFor="product-search" className="sr-only">
-                搜索商品草稿
+                {t("搜索商品草稿", "Search Product Drafts")}
               </label>
               <input
                 id="product-search"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="搜索标题、SKU、类型"
+                placeholder={t("搜索标题、SKU、类型", "Search title, SKU, or type")}
                 className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
               />
             </div>
           </div>
 
           {products.length === 0 ? (
-            <div className="p-8 text-sm text-zinc-500">暂无商品草稿。</div>
+            <div className="p-8 text-sm text-zinc-500">{t("暂无商品草稿。", "No product drafts yet.")}</div>
           ) : visibleProducts.length === 0 ? (
-            <div className="p-8 text-sm text-zinc-500">没有匹配的商品草稿。</div>
+            <div className="p-8 text-sm text-zinc-500">{t("没有匹配的商品草稿。", "No matching product drafts.")}</div>
           ) : (
             <div className="divide-y divide-zinc-200">
               {visibleProducts.map((product) => {
@@ -513,19 +515,19 @@ export function ProductsManager({
                       />
                     ) : (
                       <span className="flex aspect-square items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-400">
-                        无图片
+                        {t("无图片", "No image")}
                       </span>
                     )}
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-zinc-950">
-                        {product.title || "未填写标题"}
+                        {product.title || t("未填写标题", "Untitled")}
                       </span>
                       <span className="mt-1 block text-xs text-zinc-500">
-                        SKU：{product.sku || "-"} · 类型：{product.product_type || "-"} · 价格：
+                        SKU: {product.sku || "-"} · {t("类型：", "Type: ")}{product.product_type || "-"} · {t("价格：", "Price: ")}
                         {formatPrice(product.price)}
                       </span>
                       <span className="mt-1 block text-xs text-zinc-500">
-                        创建时间：{formatDate(product.created_at)}
+                        {t(`创建时间：${formatDate(product.created_at, "zh-CN")}`, `Created: ${formatDate(product.created_at, "en-US")}`)}
                       </span>
                     </span>
                     <span className="self-start">
@@ -535,7 +537,7 @@ export function ProductsManager({
                           statusStyles[product.status],
                         ].join(" ")}
                       >
-                        {statusLabels[product.status]}
+                        {t(statusLabels[product.status].zh, statusLabels[product.status].en)}
                       </span>
                     </span>
                   </button>
@@ -548,19 +550,19 @@ export function ProductsManager({
 
       <section className="rounded-md border border-zinc-200 bg-white">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-zinc-950">编辑商品草稿</h3>
+          <h3 className="text-base font-semibold text-zinc-950">{t("编辑商品草稿", "Edit Product Draft")}</h3>
           <p className="mt-1 text-sm text-zinc-500">
-            {selectedProduct ? selectedProduct.id : "请选择一个商品草稿"}
+            {selectedProduct ? selectedProduct.id : t("请选择一个商品草稿", "Please select a product draft")}
           </p>
         </div>
 
         {!selectedProduct ? (
-          <div className="p-8 text-sm text-zinc-500">暂无可编辑的商品草稿。</div>
+          <div className="p-8 text-sm text-zinc-500">{t("暂无可编辑的商品草稿。", "No editable product drafts.")}</div>
         ) : (
           <div className="space-y-5 p-5">
             <div>
               <label htmlFor="edit-title" className="block text-sm font-medium text-zinc-950">
-                标题
+                {t("标题", "Title")}
               </label>
               <input
                 id="edit-title"
@@ -572,7 +574,7 @@ export function ProductsManager({
 
             <div>
               <label htmlFor="edit-description" className="block text-sm font-medium text-zinc-950">
-                描述
+                {t("描述", "Description")}
               </label>
               <textarea
                 id="edit-description"
@@ -598,7 +600,7 @@ export function ProductsManager({
 
               <div>
                 <label htmlFor="edit-price" className="block text-sm font-medium text-zinc-950">
-                  价格
+                  {t("价格", "Price")}
                 </label>
                 <input
                   id="edit-price"
@@ -613,7 +615,7 @@ export function ProductsManager({
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="edit-product-type" className="block text-sm font-medium text-zinc-950">
-                  产品类型
+                  {t("产品类型", "Product Type")}
                 </label>
                 <input
                   id="edit-product-type"
@@ -625,7 +627,7 @@ export function ProductsManager({
 
               <div>
                 <label htmlFor="edit-status" className="block text-sm font-medium text-zinc-950">
-                  状态
+                  {t("状态", "Status")}
                 </label>
                 <select
                   id="edit-status"
@@ -635,7 +637,7 @@ export function ProductsManager({
                 >
                   {statusOptions.map((status) => (
                     <option key={status} value={status}>
-                      {statusLabels[status]}
+                    {t(statusLabels[status].zh, statusLabels[status].en)}
                     </option>
                   ))}
                 </select>
@@ -644,7 +646,7 @@ export function ProductsManager({
 
             <div>
               <label htmlFor="edit-tags" className="block text-sm font-medium text-zinc-950">
-                标签
+                {t("标签", "Tags")}
               </label>
               <textarea
                 id="edit-tags"
@@ -652,7 +654,7 @@ export function ProductsManager({
                 onChange={(event) => setEditTags(event.target.value)}
                 rows={4}
                 className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm leading-6 text-zinc-900"
-                placeholder="每行一个，或用逗号分隔"
+                placeholder={t("每行一个，或用逗号分隔", "One per line, or comma-separated")}
               />
             </div>
 
@@ -666,24 +668,24 @@ export function ProductsManager({
                 onChange={(event) => setEditBulletPoints(event.target.value)}
                 rows={5}
                 className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm leading-6 text-zinc-900"
-                placeholder="每行一个，或用逗号分隔"
+                placeholder={t("每行一个，或用逗号分隔", "One per line, or comma-separated")}
               />
             </div>
 
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-medium text-zinc-950">商品图片</p>
+                <p className="text-sm font-medium text-zinc-950">{t("商品图片", "Product Images")}</p>
                 <button
                   type="button"
                   onClick={() => void downloadProductImages(selectedProduct)}
                   disabled={isDownloadingImages}
                   className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                 >
-                  {isDownloadingImages ? "打包中..." : "下载套图 ZIP"}
+                  {isDownloadingImages ? t("打包中...", "Packing...") : t("下载套图 ZIP", "Download Image ZIP")}
                 </button>
               </div>
               {selectedProductImages.length === 0 ? (
-                <p className="mt-2 text-sm text-zinc-500">暂无商品图片。</p>
+                <p className="mt-2 text-sm text-zinc-500">{t("暂无商品图片。", "No product images.")}</p>
               ) : (
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {selectedProductImages.map((url, index) => (
@@ -699,7 +701,7 @@ export function ProductsManager({
                         style={{ backgroundImage: `url("${url}")` }}
                       />
                       <span className="block border-t border-zinc-200 px-3 py-2 text-sm text-zinc-700">
-                        图片 {index + 1}
+                        {t(`图片 ${index + 1}`, `Image ${index + 1}`)}
                       </span>
                     </a>
                   ))}
@@ -711,7 +713,7 @@ export function ProductsManager({
                   download
                   className="mt-3 block rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 transition hover:bg-emerald-100"
                 >
-                  下载文件：{imageZipResult.filename}
+                  {t(`下载文件：${imageZipResult.filename}`, `Download file: ${imageZipResult.filename}`)}
                 </a>
               ) : null}
             </div>
@@ -723,7 +725,7 @@ export function ProductsManager({
                 disabled={isSaving}
                 className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isSaving ? "保存中..." : "保存修改"}
+                {isSaving ? t("保存中...", "Saving...") : t("保存修改", "Save Changes")}
               </button>
               <button
                 type="button"
@@ -731,7 +733,7 @@ export function ProductsManager({
                 disabled={isSaving}
                 className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                标记为 ready
+                {t("标记为 ready", "Mark as Ready")}
               </button>
             </div>
           </div>

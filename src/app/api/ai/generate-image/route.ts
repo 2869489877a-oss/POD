@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -15,8 +16,18 @@ type GenerateImageRequest = {
   provider_id?: unknown;
   reference_url?: unknown;
   save_to_assets?: unknown;
+  transparent_background?: unknown;
+  background_tolerance?: unknown;
+  background_feather?: unknown;
+  background_transparency?: unknown;
   product_draft_id?: unknown;
 };
+
+function optionalNumber(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(min, Math.min(max, numeric));
+}
 
 export async function POST(request: Request) {
   let body: GenerateImageRequest;
@@ -38,6 +49,10 @@ export async function POST(request: Request) {
   const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
   const referenceUrl = typeof body.reference_url === "string" && body.reference_url.trim().length > 0 ? body.reference_url.trim() : undefined;
   const saveToAssets = body.save_to_assets !== false;
+  const transparentBackground = body.transparent_background === true;
+  const backgroundTolerance = optionalNumber(body.background_tolerance, 42, 1, 180);
+  const backgroundFeather = optionalNumber(body.background_feather, 18, 0, 80);
+  const backgroundTransparency = optionalNumber(body.background_transparency, 100, 0, 100);
   const productDraftId = typeof body.product_draft_id === "string" && body.product_draft_id.trim().length > 0
     ? body.product_draft_id.trim()
     : null;
@@ -83,11 +98,21 @@ export async function POST(request: Request) {
 
     let resultUrl: string | null = null;
     let assetId: string | null = null;
+    let outputBuffer: Buffer = Buffer.from(result.imageBase64, "base64");
+    let outputMimeType = result.mimeType;
+
+    if (transparentBackground) {
+      outputBuffer = await makeBackgroundTransparent(outputBuffer, {
+        feather: backgroundFeather,
+        tolerance: backgroundTolerance,
+        transparency: backgroundTransparency,
+      });
+      outputMimeType = "image/png";
+    }
 
     if (saveToAssets) {
-      const buffer = Buffer.from(result.imageBase64, "base64");
-      const ext = result.mimeType === "image/png" ? "png" : "jpg";
-      const metadata = await sharp(buffer).metadata();
+      const ext = outputMimeType === "image/png" ? "png" : "jpg";
+      const metadata = await sharp(outputBuffer).metadata();
       const outputWidth = metadata.width ?? width;
       const outputHeight = metadata.height ?? height;
       const datePath = new Date().toISOString().slice(0, 10);
@@ -95,8 +120,8 @@ export async function POST(request: Request) {
 
       const { error: uploadError } = await supabase.storage
         .from("assets")
-        .upload(storagePath, buffer, {
-          contentType: result.mimeType,
+        .upload(storagePath, outputBuffer, {
+          contentType: outputMimeType,
           upsert: false,
         });
 
@@ -112,7 +137,7 @@ export async function POST(request: Request) {
           .insert({
             original_url: resultUrl,
             filename: `ai-generated-${randomUUID().slice(0, 8)}.${ext}`,
-            file_size: buffer.length,
+            file_size: outputBuffer.length,
             width: outputWidth,
             height: outputHeight,
             format: ext === "png" ? "png" : "jpeg",
@@ -155,8 +180,8 @@ export async function POST(request: Request) {
       job_id: jobId,
       asset_id: assetId,
       result_url: resultUrl,
-      image_base64: saveToAssets ? undefined : result.imageBase64,
-      mime_type: result.mimeType,
+      image_base64: saveToAssets ? undefined : outputBuffer.toString("base64"),
+      mime_type: outputMimeType,
       provider: resolved.providerType,
       model: resolved.modelId,
       product_draft_id: productDraftId,

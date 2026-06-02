@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
+import { useSettings } from "@/lib/settings/context";
 import {
   resizePresets,
   type ResizePresetKey,
@@ -92,36 +93,36 @@ type AssetsGalleryProps = {
   initialError?: string | null;
 };
 
-const statusOptions: Array<{ label: string; value: "all" | AssetStatus }> = [
-  { label: "全部状态", value: "all" },
-  { label: "已上传", value: "uploaded" },
-  { label: "处理中", value: "processing" },
-  { label: "已处理", value: "processed" },
-  { label: "失败", value: "failed" },
+const statusOptions: Array<{ zh: string; en: string; value: "all" | AssetStatus }> = [
+  { zh: "全部状态", en: "All Statuses", value: "all" },
+  { zh: "已上传", en: "Uploaded", value: "uploaded" },
+  { zh: "处理中", en: "Processing", value: "processing" },
+  { zh: "已处理", en: "Processed", value: "processed" },
+  { zh: "失败", en: "Failed", value: "failed" },
 ];
 
-const copyrightOptions: Array<{ label: string; value: "all" | CopyrightStatus }> = [
-  { label: "全部版权", value: "all" },
-  { label: "未知", value: "unknown" },
-  { label: "自有", value: "owned" },
-  { label: "可商用", value: "commercial_ok" },
-  { label: "有风险", value: "risky" },
-  { label: "禁用", value: "forbidden" },
+const copyrightOptions: Array<{ zh: string; en: string; value: "all" | CopyrightStatus }> = [
+  { zh: "全部版权", en: "All Copyright", value: "all" },
+  { zh: "未知", en: "Unknown", value: "unknown" },
+  { zh: "自有", en: "Owned", value: "owned" },
+  { zh: "可商用", en: "Commercial OK", value: "commercial_ok" },
+  { zh: "有风险", en: "Risky", value: "risky" },
+  { zh: "禁用", en: "Forbidden", value: "forbidden" },
 ];
 
-const statusLabels: Record<AssetStatus, string> = {
-  failed: "失败",
-  processed: "已处理",
-  processing: "处理中",
-  uploaded: "已上传",
+const statusLabels: Record<AssetStatus, { zh: string; en: string }> = {
+  failed: { zh: "失败", en: "Failed" },
+  processed: { zh: "已处理", en: "Processed" },
+  processing: { zh: "处理中", en: "Processing" },
+  uploaded: { zh: "已上传", en: "Uploaded" },
 };
 
-const copyrightLabels: Record<CopyrightStatus, string> = {
-  commercial_ok: "可商用",
-  forbidden: "禁用",
-  owned: "自有",
-  risky: "有风险",
-  unknown: "未知",
+const copyrightLabels: Record<CopyrightStatus, { zh: string; en: string }> = {
+  commercial_ok: { zh: "可商用", en: "Commercial OK" },
+  forbidden: { zh: "禁用", en: "Forbidden" },
+  owned: { zh: "自有", en: "Owned" },
+  risky: { zh: "有风险", en: "Risky" },
+  unknown: { zh: "未知", en: "Unknown" },
 };
 
 const statusStyles: Record<AssetStatus, string> = {
@@ -133,12 +134,12 @@ const statusStyles: Record<AssetStatus, string> = {
 
 const resizePresetOptions: ResizePresetKey[] = ["tshirt-print", "square-product"];
 
-const resizeJobStatusLabels: Record<ResizeJobStatus, string> = {
-  completed: "已完成",
-  failed: "失败",
-  partial_failed: "部分失败",
-  pending: "等待处理",
-  processing: "处理中",
+const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }> = {
+  completed: { zh: "已完成", en: "Completed" },
+  failed: { zh: "失败", en: "Failed" },
+  partial_failed: { zh: "部分失败", en: "Partial Failed" },
+  pending: { zh: "等待处理", en: "Pending" },
+  processing: { zh: "处理中", en: "Processing" },
 };
 
 function formatFileSize(size: number) {
@@ -149,8 +150,8 @@ function formatFileSize(size: number) {
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
+function formatDate(value: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -172,6 +173,7 @@ function buildAssetQuery(status: string, copyrightStatus: string) {
 }
 
 export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {
+  const { language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
@@ -228,7 +230,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         return new Set(Array.from(current).filter((id) => visibleIds.has(id)));
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "读取素材失败");
+      setError(requestError instanceof Error ? requestError.message : t("读取素材失败", "Failed to load assets"));
       setAssets([]);
       setSelectedIds(new Set());
     } finally {
@@ -274,7 +276,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
   async function deleteAssetIds(assetIds: string[]) {
     if (assetIds.length === 0) {
-      setError("请选择要删除的素材");
+      setError(t("请选择要删除的素材", "Please select assets to delete"));
       return;
     }
 
@@ -296,13 +298,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       const checkData = (await checkResponse.json()) as DeleteAssetsResponse;
 
       if (!checkResponse.ok) {
-        throw new Error(checkData.error ?? "删除检查失败");
+        throw new Error(checkData.error ?? t("删除检查失败", "Delete check failed"));
       }
 
       const confirmed = window.confirm(
         checkData.requires_confirmation
-          ? "该素材已被使用，删除可能影响商品草稿，是否继续？"
-          : `确认删除 ${assetIds.length} 张素材？`,
+          ? t("该素材已被使用，删除可能影响商品草稿，是否继续？", "This asset is already used. Deleting it may affect product drafts. Continue?")
+          : t(`确认删除 ${assetIds.length} 张素材？`, `Delete ${assetIds.length} asset(s)?`),
       );
 
       if (!confirmed) {
@@ -323,13 +325,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       const failedResults = (data.results ?? []).filter((result) => !result.success);
 
       if (!response.ok && (data.results ?? []).length === 0) {
-        throw new Error(data.error ?? "删除素材失败");
+        throw new Error(data.error ?? t("删除素材失败", "Failed to delete assets"));
       }
 
-      setDeleteMessage(`删除成功 ${data.success_count ?? 0} 张，失败 ${data.failed_count ?? 0} 张`);
+      setDeleteMessage(t(`删除成功 ${data.success_count ?? 0} 张，失败 ${data.failed_count ?? 0} 张`, `${data.success_count ?? 0} deleted, ${data.failed_count ?? 0} failed`));
 
       if (failedResults.length > 0) {
-        setError(failedResults.map((result) => `${result.filename ?? result.asset_id}：${result.error ?? "删除失败"}`).join("\n"));
+        setError(failedResults.map((result) => `${result.filename ?? result.asset_id}: ${result.error ?? t("删除失败", "Delete failed")}`).join("\n"));
       }
 
       setSelectedIds((current) => {
@@ -343,7 +345,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       await fetchAssets(status, copyrightStatus);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "删除素材失败");
+      setError(requestError instanceof Error ? requestError.message : t("删除素材失败", "Failed to delete assets"));
     } finally {
       setIsDeleting(false);
     }
@@ -356,7 +358,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     const data = (await response.json()) as ResizeJobResponse;
 
     if (!response.ok || !data.job) {
-      throw new Error(data.error ?? "读取任务进度失败");
+      throw new Error(data.error ?? t("读取任务进度失败", "Failed to load job progress"));
     }
 
     return data.job;
@@ -367,13 +369,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     let pollTimer: number | undefined;
 
     if (assetIds.length === 0) {
-      setResizeError("请先选择要处理的图片");
+      setResizeError(t("请先选择要处理的图片", "Please select images to process"));
       return;
     }
 
     setIsResizeRunning(true);
     setResizeError(null);
-    setResizeMessage("正在创建批量改尺寸任务...");
+    setResizeMessage(t("正在创建批量改尺寸任务...", "Creating batch resize job..."));
     setResizeJob(null);
 
     try {
@@ -390,7 +392,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       const createData = (await createResponse.json()) as CreateResizeJobResponse;
 
       if (!createResponse.ok || !createData.job) {
-        throw new Error(createData.error ?? "任务创建失败");
+        throw new Error(createData.error ?? t("任务创建失败", "Failed to create job"));
       }
 
       const jobId = createData.job.id;
@@ -398,7 +400,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         ...createData.job,
         items: [],
       });
-      setResizeMessage("任务已创建，正在同步处理图片...");
+      setResizeMessage(t("任务已创建，正在同步处理图片...", "Job created. Processing images synchronously..."));
       setIsResizeDialogOpen(false);
 
       pollTimer = window.setInterval(() => {
@@ -413,14 +415,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       const processData = (await processResponse.json()) as ResizeJobResponse;
 
       if (!processResponse.ok || !processData.job) {
-        throw new Error(processData.error ?? "任务处理失败");
+        throw new Error(processData.error ?? t("任务处理失败", "Job processing failed"));
       }
 
       setResizeJob(processData.job);
-      setResizeMessage("批量改尺寸任务处理完成");
+      setResizeMessage(t("批量改尺寸任务处理完成", "Batch resize job complete"));
       await fetchAssets(status, copyrightStatus);
     } catch (requestError) {
-      setResizeError(requestError instanceof Error ? requestError.message : "任务处理失败");
+      setResizeError(requestError instanceof Error ? requestError.message : t("任务处理失败", "Job processing failed"));
       setResizeMessage(null);
     } finally {
       if (pollTimer) {
@@ -437,7 +439,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto_auto]">
           <div>
             <label htmlFor="asset-status" className="block text-sm font-medium text-zinc-950">
-              状态
+              {t("状态", "Status")}
             </label>
             <select
               id="asset-status"
@@ -447,7 +449,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             >
               {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.zh, option.en)}
                 </option>
               ))}
             </select>
@@ -455,7 +457,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
           <div>
             <label htmlFor="copyright-status" className="block text-sm font-medium text-zinc-950">
-              版权状态
+              {t("版权状态", "Copyright Status")}
             </label>
             <select
               id="copyright-status"
@@ -467,7 +469,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             >
               {copyrightOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.zh, option.en)}
                 </option>
               ))}
             </select>
@@ -480,8 +482,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             className="self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {assets.length > 0 && assets.every((asset) => selectedIds.has(asset.id))
-              ? "取消全选"
-              : "全选当前"}
+              ? t("取消全选", "Deselect All")
+              : t("全选当前", "Select Current")}
           </button>
 
           <button
@@ -490,16 +492,16 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             disabled={isLoading}
             className="self-end rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            {isLoading ? "刷新中..." : "刷新列表"}
+            {isLoading ? t("刷新中...", "Refreshing...") : t("刷新列表", "Refresh List")}
           </button>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-600">
-          <span>共 {assets.length} 张素材</span>
-          <span>已选择 {selectedCount} 张</span>
+          <span>{t(`共 ${assets.length} 张素材`, `${assets.length} assets`)}</span>
+          <span>{t(`已选择 ${selectedCount} 张`, `${selectedCount} selected`)}</span>
           {selectedAssets.length > 0 ? (
             <span className="text-zinc-500">
-              最近选择：{selectedAssets.slice(0, 3).map((asset) => asset.filename).join("、")}
+              {t("最近选择：", "Recent selection: ")}{selectedAssets.slice(0, 3).map((asset) => asset.filename).join(t("、", ", "))}
             </span>
           ) : null}
         </div>
@@ -514,7 +516,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             disabled={selectedCount === 0 || isResizeRunning}
             className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            批量改尺寸
+            {t("批量改尺寸", "Batch Resize")}
           </button>
           <button
             type="button"
@@ -522,9 +524,9 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             disabled={selectedCount === 0 || isDeleting || isResizeRunning}
             className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
           >
-            {isDeleting ? "删除中..." : "批量删除"}
+            {isDeleting ? t("删除中...", "Deleting...") : t("批量删除", "Batch Delete")}
           </button>
-          <span className="text-sm text-zinc-500">会基于原图生成处理后图片，不覆盖原图。</span>
+          <span className="text-sm text-zinc-500">{t("会基于原图生成处理后图片，不覆盖原图。", "Generates processed images from originals without overwriting originals.")}</span>
         </div>
       </section>
 
@@ -538,14 +540,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">批量改尺寸进度</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("批量改尺寸进度", "Batch Resize Progress")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                {resizeMessage ?? "等待任务结果"}
+                {resizeMessage ?? t("等待任务结果", "Waiting for job result")}
               </p>
             </div>
             {resizeJob ? (
               <span className="rounded-md bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-700">
-                {resizeJobStatusLabels[resizeJob.status]}
+                {t(resizeJobStatusLabels[resizeJob.status].zh, resizeJobStatusLabels[resizeJob.status].en)}
               </span>
             ) : null}
           </div>
@@ -559,10 +561,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 />
               </div>
               <div className="grid gap-3 text-sm text-zinc-600 sm:grid-cols-4">
-                <span>总数：{resizeJob.total_count}</span>
-                <span>已完成：{resizeCompletedCount}</span>
-                <span>成功：{resizeJob.success_count}</span>
-                <span>失败：{resizeJob.failed_count}</span>
+                <span>{t("总数：", "Total: ")}{resizeJob.total_count}</span>
+                <span>{t("已完成：", "Done: ")}{resizeCompletedCount}</span>
+                <span>{t("成功：", "Success: ")}{resizeJob.success_count}</span>
+                <span>{t("失败：", "Failed: ")}{resizeJob.failed_count}</span>
               </div>
             </div>
           ) : null}
@@ -576,12 +578,12 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           {failedResizeItems.length > 0 ? (
             <div className="mt-4 rounded-md border border-red-200">
               <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm font-medium text-red-700">
-                失败原因
+                {t("失败原因", "Failure Reasons")}
               </div>
               <div className="divide-y divide-red-100">
                 {failedResizeItems.map((item) => (
                   <div key={item.id} className="px-4 py-2 text-sm text-red-700">
-                    {item.error_message ?? "未知错误"}
+                    {item.error_message ?? t("未知错误", "Unknown error")}
                   </div>
                 ))}
               </div>
@@ -598,14 +600,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       {isLoading ? (
         <div className="rounded-md border border-zinc-200 bg-white p-8 text-sm text-zinc-500">
-          正在加载素材...
+          {t("正在加载素材...", "Loading assets...")}
         </div>
       ) : null}
 
       {!isLoading && !error && assets.length === 0 ? (
         <div className="rounded-md border border-dashed border-zinc-300 bg-white p-8">
-          <p className="text-sm font-medium text-zinc-950">暂无素材</p>
-          <p className="mt-2 text-sm text-zinc-600">请先在上传页面添加图片，或调整筛选条件。</p>
+          <p className="text-sm font-medium text-zinc-950">{t("暂无素材", "No assets")}</p>
+          <p className="mt-2 text-sm text-zinc-600">{t("请先在上传页面添加图片，或调整筛选条件。", "Upload images first, or adjust filters.")}</p>
         </div>
       ) : null}
 
@@ -629,7 +631,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     onClick={() => setSelectedAsset(asset)}
                     className="h-full w-full bg-cover bg-center"
                     style={{ backgroundImage: `url("${previewUrl}")` }}
-                    aria-label={`查看 ${asset.filename} 详情`}
+                    aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
                   />
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
                     <input
@@ -638,7 +640,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       onChange={() => toggleAsset(asset.id)}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
-                    选择
+                    {t("选择", "Select")}
                   </label>
                   <span
                     className={[
@@ -646,7 +648,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       statusStyles[asset.status],
                     ].join(" ")}
                   >
-                    {statusLabels[asset.status]}
+                    {t(statusLabels[asset.status].zh, statusLabels[asset.status].en)}
                   </span>
                 </div>
 
@@ -663,15 +665,15 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
                   <dl className="grid grid-cols-2 gap-3 text-xs">
                     <div>
-                      <dt className="text-zinc-500">版权状态</dt>
+                      <dt className="text-zinc-500">{t("版权状态", "Copyright")}</dt>
                       <dd className="mt-1 font-medium text-zinc-800">
-                        {copyrightLabels[asset.copyright_status]}
+                        {t(copyrightLabels[asset.copyright_status].zh, copyrightLabels[asset.copyright_status].en)}
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-zinc-500">创建时间</dt>
+                      <dt className="text-zinc-500">{t("创建时间", "Created At")}</dt>
                       <dd className="mt-1 font-medium text-zinc-800">
-                        {formatDate(asset.created_at)}
+                        {formatDate(asset.created_at, language === "zh" ? "zh-CN" : "en-US")}
                       </dd>
                     </div>
                   </dl>
@@ -681,7 +683,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     onClick={() => setSelectedAsset(asset)}
                     className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                   >
-                    查看详情
+                    {t("查看详情", "View Details")}
                   </button>
                   <button
                     type="button"
@@ -689,7 +691,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     disabled={isDeleting || isResizeRunning}
                     className="w-full rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
                   >
-                    删除素材
+                    {t("删除素材", "Delete Asset")}
                   </button>
                 </div>
               </article>
@@ -706,10 +708,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             onClick={() => { const p = page - 1; setPage(p); void fetchAssets(status, copyrightStatus, p); }}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            上一页
+            {t("上一页", "Previous")}
           </button>
           <span className="text-sm text-slate-600">
-            第 {page} / {totalPages} 页（共 {total} 张）
+            {t(`第 ${page} / ${totalPages} 页（共 ${total} 张）`, `Page ${page} / ${totalPages} (${total} total)`)}
           </span>
           <button
             type="button"
@@ -717,7 +719,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             onClick={() => { const p = page + 1; setPage(p); void fetchAssets(status, copyrightStatus, p); }}
             className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            下一页
+            {t("下一页", "Next")}
           </button>
         </div>
       )}
@@ -732,10 +734,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           <div className="w-full max-w-2xl rounded-md bg-white shadow-xl">
             <div className="border-b border-zinc-200 px-6 py-4">
               <h3 id="resize-dialog-title" className="text-base font-semibold text-zinc-950">
-                批量改尺寸
+                {t("批量改尺寸", "Batch Resize")}
               </h3>
               <p className="mt-1 text-sm text-zinc-500">
-                已选择 {selectedCount} 张图片，处理结果会写入素材的 processed_url。
+                {t(`已选择 ${selectedCount} 张图片，处理结果会写入素材的 processed_url。`, `${selectedCount} image(s) selected. Results will be written to processed_url.`)}
               </p>
             </div>
 
@@ -764,10 +766,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     />
                     <span>
                       <span className="block text-sm font-semibold text-zinc-950">
-                        {preset.label}
+                        {t(preset.label, preset.labelEn)}
                       </span>
                       <span className="mt-1 block text-sm text-zinc-600">
-                        {preset.description}
+                        {t(preset.description, preset.descriptionEn)}
                       </span>
                     </span>
                   </label>
@@ -775,8 +777,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               })}
 
               <div className="rounded-md bg-zinc-50 p-4 text-sm leading-6 text-zinc-600">
-                当前只做尺寸标准化，不做抠图、高清化或套图。原图记录会保留，处理后图片会上传到
-                Supabase Storage。
+                {t("当前只做尺寸标准化，不做抠图、高清化或套图。原图记录会保留，处理后图片会上传到 Supabase Storage。", "This only standardizes image size. It does not cut out, enhance, or create mockups. Original records are kept and processed images are uploaded to Supabase Storage.")}
               </div>
             </div>
 
@@ -787,7 +788,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 disabled={isResizeRunning}
                 className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
               >
-                取消
+                {t("取消", "Cancel")}
               </button>
               <button
                 type="button"
@@ -795,7 +796,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 disabled={isResizeRunning || selectedCount === 0}
                 className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isResizeRunning ? "处理中..." : "确认处理"}
+                {isResizeRunning ? t("处理中...", "Processing...") : t("确认处理", "Confirm")}
               </button>
             </div>
           </div>
@@ -813,7 +814,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
               <div>
                 <h3 id="asset-detail-title" className="text-base font-semibold text-zinc-950">
-                  图片详情
+                  {t("图片详情", "Image Details")}
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">{selectedAsset.filename}</p>
               </div>
@@ -822,7 +823,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 onClick={() => setSelectedAsset(null)}
                 className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
               >
-                关闭
+                {t("关闭", "Close")}
               </button>
             </div>
 
@@ -836,20 +837,20 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
               <dl className="space-y-4 text-sm">
                 <div>
-                  <dt className="text-zinc-500">文件名</dt>
+                  <dt className="text-zinc-500">{t("文件名", "Filename")}</dt>
                   <dd className="mt-1 break-all font-medium text-zinc-950">
                     {selectedAsset.filename}
                   </dd>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-zinc-500">尺寸</dt>
+                    <dt className="text-zinc-500">{t("尺寸", "Dimensions")}</dt>
                     <dd className="mt-1 font-medium text-zinc-950">
                       {selectedAsset.width} x {selectedAsset.height}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-zinc-500">格式</dt>
+                    <dt className="text-zinc-500">{t("格式", "Format")}</dt>
                     <dd className="mt-1 font-medium text-zinc-950">
                       {selectedAsset.format.toUpperCase()}
                     </dd>
@@ -857,32 +858,32 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-zinc-500">文件大小</dt>
+                    <dt className="text-zinc-500">{t("文件大小", "File Size")}</dt>
                     <dd className="mt-1 font-medium text-zinc-950">
                       {formatFileSize(selectedAsset.file_size)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-zinc-500">状态</dt>
+                    <dt className="text-zinc-500">{t("状态", "Status")}</dt>
                     <dd className="mt-1 font-medium text-zinc-950">
-                      {statusLabels[selectedAsset.status]}
+                      {t(statusLabels[selectedAsset.status].zh, statusLabels[selectedAsset.status].en)}
                     </dd>
                   </div>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">版权状态</dt>
+                  <dt className="text-zinc-500">{t("版权状态", "Copyright Status")}</dt>
                   <dd className="mt-1 font-medium text-zinc-950">
-                    {copyrightLabels[selectedAsset.copyright_status]}
+                    {t(copyrightLabels[selectedAsset.copyright_status].zh, copyrightLabels[selectedAsset.copyright_status].en)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">创建时间</dt>
+                  <dt className="text-zinc-500">{t("创建时间", "Created At")}</dt>
                   <dd className="mt-1 font-medium text-zinc-950">
-                    {formatDate(selectedAsset.created_at)}
+                    {formatDate(selectedAsset.created_at, language === "zh" ? "zh-CN" : "en-US")}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">原图地址</dt>
+                  <dt className="text-zinc-500">{t("原图地址", "Original URL")}</dt>
                   <dd className="mt-1">
                     <a
                       href={selectedAsset.original_url}
@@ -901,7 +902,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     disabled={isDeleting || isResizeRunning}
                     className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
                   >
-                    {isDeleting ? "删除中..." : "删除素材"}
+                    {isDeleting ? t("删除中...", "Deleting...") : t("删除素材", "Delete Asset")}
                   </button>
                 </div>
               </dl>

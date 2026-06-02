@@ -15,7 +15,7 @@ type Props = {
 export function DropZone({ label, hint, accept = "image/*", file, preview, onFileChange }: Props) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { mode } = useSettings();
+  const { mode, t } = useSettings();
   const isDark = mode === "dark";
 
   function handleDrop(e: DragEvent) {
@@ -55,7 +55,7 @@ export function DropZone({ label, hint, accept = "image/*", file, preview, onFil
             onClick={(e) => { e.stopPropagation(); onFileChange(null); }}
             className="text-xs text-red-500 hover:text-red-600"
           >
-            移除
+            {t("移除", "Remove")}
           </button>
         </div>
       ) : (
@@ -63,7 +63,7 @@ export function DropZone({ label, hint, accept = "image/*", file, preview, onFil
           <svg className={`mx-auto h-8 w-8 ${isDark ? "text-slate-500" : "text-slate-400"}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
           </svg>
-          <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label || "拖拽图片到此处，或点击选择"}</p>
+          <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{label || t("拖拽图片到此处，或点击选择", "Drag an image here, or click to choose")}</p>
           {hint && <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{hint}</p>}
         </div>
       )}

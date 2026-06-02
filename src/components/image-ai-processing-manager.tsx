@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchAssetsForProcessing } from "@/lib/actions/common";
+import { useSettings } from "@/lib/settings/context";
 
 type ProcessingKind = "cutout" | "print_extraction";
 
@@ -70,18 +71,18 @@ type ImageAiProcessingManagerProps = {
 };
 
 const cutoutModes = [
-  { label: "自动背景移除", value: "auto_background" },
-  { label: "去白底", value: "white_background" },
-  { label: "去黑底", value: "black_background" },
-  { label: "去纯色背景", value: "solid_background" },
-  { label: "边缘泛洪移除", value: "edge_flood_fill" },
+  { zh: "自动背景移除", en: "Auto Background Removal", value: "auto_background" },
+  { zh: "去白底", en: "Remove White Background", value: "white_background" },
+  { zh: "去黑底", en: "Remove Black Background", value: "black_background" },
+  { zh: "去纯色背景", en: "Remove Solid Background", value: "solid_background" },
+  { zh: "边缘泛洪移除", en: "Edge Flood Fill", value: "edge_flood_fill" },
 ];
 
 const printModes = [
-  { label: "自动模式", value: "auto" },
-  { label: "浅色衣服提取", value: "light_garment" },
-  { label: "深色衣服提取", value: "dark_garment" },
-  { label: "高对比图案", value: "high_contrast" },
+  { zh: "自动模式", en: "Auto Mode", value: "auto" },
+  { zh: "浅色衣服提取", en: "Light Garment Extraction", value: "light_garment" },
+  { zh: "深色衣服提取", en: "Dark Garment Extraction", value: "dark_garment" },
+  { zh: "高对比图案", en: "High Contrast Artwork", value: "high_contrast" },
 ];
 
 function getPreviewUrl(asset: Asset): string {
@@ -90,10 +91,6 @@ function getPreviewUrl(asset: Asset): string {
 
 function getExistingResultUrl(asset: Asset, kind: ProcessingKind): string | null {
   return kind === "cutout" ? asset.cutout_url : asset.print_extract_url;
-}
-
-function getResultLabel(kind: ProcessingKind): string {
-  return kind === "cutout" ? "抠图结果" : "印花提取结果";
 }
 
 function buildSummaryFromResponse(
@@ -127,6 +124,7 @@ function buildSummaryFromResponse(
 }
 
 export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiProcessingManagerProps) {
+  const { t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState(kind === "cutout" ? "auto_background" : "auto");
@@ -141,7 +139,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const selectedCount = selectedIds.size;
-  const resultLabel = getResultLabel(kind);
+  const resultLabel = kind === "cutout" ? t("抠图结果", "cutout result") : t("印花提取结果", "print extraction result");
   const modeOptions = kind === "cutout" ? cutoutModes : printModes;
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedIds.has(asset.id)),
@@ -163,11 +161,11 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
         return new Set(Array.from(current).filter((id) => visibleIds.has(id)));
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "读取素材列表失败");
+      setError(requestError instanceof Error ? requestError.message : t("读取素材列表失败", "Failed to load asset list"));
     } finally {
       setIsLoadingAssets(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -205,13 +203,13 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
     const assetIds = Array.from(selectedIds);
 
     if (assetIds.length === 0) {
-      setError("请先选择至少一张素材");
+      setError(t("请先选择至少一张素材", "Please select at least one asset first"));
       return;
     }
 
     setIsProcessing(true);
     setError(null);
-    setMessage(kind === "cutout" ? "正在执行抠图..." : "正在提取印花图...");
+    setMessage(kind === "cutout" ? t("正在执行抠图...", "Running cutout...") : t("正在提取印花图...", "Extracting print artwork..."));
     setSummary(null);
 
     try {
@@ -254,15 +252,16 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
       const data = (await response.json()) as ProcessingResponse;
 
       if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "处理失败");
+        throw new Error(data.error ?? t("处理失败", "Processing failed"));
       }
 
       if (data.queued) {
         setSummary(null);
         setMessage(
-          `已提交到本地 worker 队列：共 ${data.total ?? assetIds.length} 张。请启动本地 worker，任务 ID：${
-            data.job_id ?? "未知"
-          }`,
+          t(
+            `已提交到本地 worker 队列：共 ${data.total ?? assetIds.length} 张。请启动本地 worker，任务 ID：${data.job_id ?? "未知"}`,
+            `Submitted to the local worker queue: ${data.total ?? assetIds.length} image(s). Start the local worker. Job ID: ${data.job_id ?? "unknown"}`
+          ),
         );
         await refreshAssets();
         return;
@@ -271,10 +270,10 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
       const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
       const nextSummary = buildSummaryFromResponse(data, kind, assetMap);
       setSummary(nextSummary);
-      setMessage(`处理完成：成功 ${nextSummary.success} 张，失败 ${nextSummary.failed} 张`);
+      setMessage(t(`处理完成：成功 ${nextSummary.success} 张，失败 ${nextSummary.failed} 张`, `Processing complete: ${nextSummary.success} succeeded, ${nextSummary.failed} failed`));
       await refreshAssets();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "处理失败");
+      setError(requestError instanceof Error ? requestError.message : t("处理失败", "Processing failed"));
       setMessage(null);
     } finally {
       setIsProcessing(false);
@@ -288,9 +287,9 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-semibold text-zinc-950">选择素材</h3>
+                <h3 className="text-base font-semibold text-zinc-950">{t("选择素材", "Select Assets")}</h3>
                 <p className="mt-1 text-sm text-zinc-500">
-                  共 {assets.length} 张素材，已选择 {selectedCount} 张
+                  {t(`共 ${assets.length} 张素材，已选择 ${selectedCount} 张`, `${assets.length} assets, ${selectedCount} selected`)}
                 </p>
               </div>
               <div className="flex gap-2">
@@ -301,8 +300,8 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                 >
                   {assets.length > 0 && assets.every((asset) => selectedIds.has(asset.id))
-                    ? "取消全选"
-                    : "全选"}
+                    ? t("取消全选", "Deselect All")
+                    : t("全选", "Select All")}
                 </button>
                 <button
                   type="button"
@@ -310,14 +309,14 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   disabled={isLoadingAssets || isProcessing}
                   className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                 >
-                  {isLoadingAssets ? "刷新中..." : "刷新素材"}
+                  {isLoadingAssets ? t("刷新中...", "Refreshing...") : t("刷新素材", "Refresh Assets")}
                 </button>
               </div>
             </div>
 
             {assets.length === 0 ? (
               <div className="mt-4 rounded-md border border-dashed border-zinc-300 bg-zinc-50 p-6 text-sm text-zinc-500">
-                暂无素材，请先到上传页面上传图片。
+                {t("暂无素材，请先到上传页面上传图片。", "No assets yet. Upload images on the Upload page first.")}
               </div>
             ) : (
               <div className="mt-4 grid max-h-[620px] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
@@ -362,7 +361,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                               existingResultUrl ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500",
                             ].join(" ")}
                           >
-                            {existingResultUrl ? `已有${resultLabel}` : `暂无${resultLabel}`}
+                            {existingResultUrl ? t(`已有${resultLabel}`, `Has ${resultLabel}`) : t(`暂无${resultLabel}`, `No ${resultLabel}`)}
                           </span>
                           <span
                             className={[
@@ -370,7 +369,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                               asset.preferred_design_url ? "bg-blue-50 text-blue-700" : "bg-zinc-100 text-zinc-500",
                             ].join(" ")}
                           >
-                            {asset.preferred_design_url ? "已有优先图" : "暂无优先图"}
+                            {asset.preferred_design_url ? t("已有优先图", "Has preferred image") : t("暂无优先图", "No preferred image")}
                           </span>
                         </span>
                       </span>
@@ -382,10 +381,10 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
           </div>
 
           <aside className="rounded-md bg-zinc-50 p-4">
-            <h3 className="text-base font-semibold text-zinc-950">处理参数</h3>
+            <h3 className="text-base font-semibold text-zinc-950">{t("处理参数", "Processing Settings")}</h3>
             <div className="mt-4 space-y-4">
               <label htmlFor="image-ai-mode" className="block text-sm font-medium text-zinc-950">
-                处理模式
+                {t("处理模式", "Processing Mode")}
                 <select
                   id="image-ai-mode"
                   value={mode}
@@ -395,7 +394,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                 >
                   {modeOptions.map((option) => (
                     <option key={option.value} value={option.value}>
-                      {option.label}
+                      {t(option.zh, option.en)}
                     </option>
                   ))}
                 </select>
@@ -404,7 +403,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
               {kind === "cutout" ? (
                 <>
                   <label className="block text-sm font-medium text-zinc-950">
-                    背景容差
+                    {t("背景容差", "Background Tolerance")}
                     <input
                       type="number"
                       value={tolerance}
@@ -423,13 +422,13 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                       disabled={isProcessing}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
-                    裁剪到主体边界
+                    {t("裁剪到主体边界", "Crop to subject bounds")}
                   </label>
                 </>
               ) : (
                 <>
                   <label className="block text-sm font-medium text-zinc-950">
-                    边距 padding
+                    {t("边距 padding", "Padding")}
                     <input
                       type="number"
                       value={padding}
@@ -441,7 +440,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                     />
                   </label>
                   <label className="block text-sm font-medium text-zinc-950">
-                    最小连通区域
+                    {t("最小连通区域", "Minimum connected area")}
                     <input
                       type="number"
                       value={minComponentArea}
@@ -463,7 +462,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   disabled={isProcessing}
                   className="h-4 w-4 rounded border-zinc-300"
                 />
-                处理成功后设为套图优先图
+                {t("处理成功后设为套图优先图", "Set successful result as mockup preferred image")}
               </label>
 
               <button
@@ -472,7 +471,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                 disabled={selectedCount === 0 || isProcessing}
                 className="w-full rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isProcessing ? "处理中..." : kind === "cutout" ? "开始抠图" : "开始提取"}
+                {isProcessing ? t("处理中...", "Processing...") : kind === "cutout" ? t("开始抠图", "Start Cutout") : t("开始提取", "Start Extraction")}
               </button>
             </div>
           </aside>
@@ -494,9 +493,9 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
       {summary ? (
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-5 py-4">
-            <h3 className="text-base font-semibold text-zinc-950">处理结果</h3>
+            <h3 className="text-base font-semibold text-zinc-950">{t("处理结果", "Processing Results")}</h3>
             <p className="mt-1 text-sm text-zinc-500">
-              总数 {summary.total}，成功 {summary.success}，失败 {summary.failed}
+              {t(`总数 ${summary.total}，成功 ${summary.success}，失败 ${summary.failed}`, `Total ${summary.total}, success ${summary.success}, failed ${summary.failed}`)}
             </p>
           </div>
 
@@ -507,7 +506,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   <div className="min-w-0">
                     <h4 className="truncate text-sm font-semibold text-zinc-950">{item.filename}</h4>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {item.status === "completed" ? "处理成功" : "处理失败"}
+                      {item.status === "completed" ? t("处理成功", "Processed") : t("处理失败", "Failed")}
                     </p>
                   </div>
                   <span
@@ -518,7 +517,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                         : "bg-red-50 text-red-700",
                     ].join(" ")}
                   >
-                    {item.status === "completed" ? "成功" : "失败"}
+                    {item.status === "completed" ? t("成功", "Success") : t("失败", "Failed")}
                   </span>
                 </div>
 
@@ -530,11 +529,11 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                       rel="noreferrer"
                       className="aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-cover bg-center"
                       style={{ backgroundImage: `url("${item.preview_url}")` }}
-                      aria-label="打开预览图"
+                      aria-label={t("打开预览图", "Open preview image")}
                     />
                   ) : (
                     <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
-                      无预览图
+                      {t("无预览图", "No preview")}
                     </div>
                   )}
                   {item.output_url ? (
@@ -544,11 +543,11 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                       rel="noreferrer"
                       className="aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-contain bg-center bg-no-repeat"
                       style={{ backgroundImage: `url("${item.output_url}")` }}
-                      aria-label={kind === "cutout" ? "打开结果图" : "打开最终图"}
+                      aria-label={kind === "cutout" ? t("打开结果图", "Open result image") : t("打开最终图", "Open final image")}
                     />
                   ) : (
                     <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
-                      无结果图
+                      {t("无结果图", "No result image")}
                     </div>
                   )}
                 </div>
@@ -568,7 +567,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                         rel="noreferrer"
                         className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                       >
-                        打开预览图
+                        {t("打开预览图", "Open Preview")}
                       </a>
                     ) : null}
                     <a
@@ -577,7 +576,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                       rel="noreferrer"
                       className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
                     >
-                      {kind === "cutout" ? "打开结果图" : "打开最终图"}
+                      {kind === "cutout" ? t("打开结果图", "Open Result") : t("打开最终图", "Open Final")}
                     </a>
                   </div>
                 ) : null}
@@ -589,8 +588,8 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
 
       {selectedAssets.length > 0 ? (
         <div className="rounded-md border border-zinc-200 bg-white p-4 text-sm text-zinc-500">
-          已选择：{selectedAssets.slice(0, 5).map((asset) => asset.filename).join("、")}
-          {selectedAssets.length > 5 ? ` 等 ${selectedAssets.length} 张` : ""}
+          {t("已选择：", "Selected: ")}{selectedAssets.slice(0, 5).map((asset) => asset.filename).join(t("、", ", "))}
+          {selectedAssets.length > 5 ? t(` 等 ${selectedAssets.length} 张`, ` and ${selectedAssets.length} total`) : ""}
         </div>
       ) : null}
     </div>

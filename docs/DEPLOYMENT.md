@@ -1,6 +1,6 @@
 # POD 商品图批量处理系统部署文档
 
-本文档用于第一版内部部署：Next.js 部署到 Vercel，数据库和图片存储使用 Supabase，AI 接口通过环境变量配置。
+本文档用于第一版内部部署：Next.js 部署到 Vercel，数据库和图片存储使用 Supabase，AI 图片模型在系统设置页配置。
 
 ## 1. 部署前准备
 
@@ -17,7 +17,7 @@ npm run build
 - GitHub 账号：用于托管代码仓库。
 - Supabase 账号：用于数据库和 Storage。
 - Vercel 账号：用于部署 Next.js 项目。
-- qwen 或 doubao 的 API Key：用于 AI 生成上架信息。
+- AI 图片模型 API Key：在系统设置页配置，用于 AI 图片工作台。
 
 部署前确认不要提交这些内容：
 
@@ -165,7 +165,7 @@ Project Settings -> Environment Variables
 配置规则：
 
 - `NEXT_PUBLIC_*` 变量可以被前端读取，不要放敏感密钥。
-- `SUPABASE_SERVICE_ROLE_KEY`、`QWEN_API_KEY`、`DOUBAO_API_KEY` 只能作为服务端环境变量使用。
+- `SUPABASE_SERVICE_ROLE_KEY` 只能作为服务端环境变量使用。
 - 修改环境变量后，需要重新部署才会生效。
 - 不要把 `.env.local` 上传到 Vercel 以外的地方。
 
@@ -175,13 +175,6 @@ Project Settings -> Environment Variables
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-AI_DEFAULT_PROVIDER=qwen
-QWEN_API_KEY=
-QWEN_MODEL=
-QWEN_BASE_URL=
-DOUBAO_API_KEY=
-DOUBAO_MODEL=
-DOUBAO_BASE_URL=
 ```
 
 说明：
@@ -191,15 +184,8 @@ DOUBAO_BASE_URL=
 | `NEXT_PUBLIC_SUPABASE_URL` | 是 | Supabase Project URL，前端和后端都会使用。 |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 是 | Supabase anon public key，只能用于前端安全范围。 |
 | `SUPABASE_SERVICE_ROLE_KEY` | 是 | Supabase service role key，仅后端使用。 |
-| `AI_DEFAULT_PROVIDER` | 否 | 默认 AI provider，可填 `qwen` 或 `doubao`。 |
-| `QWEN_API_KEY` | 使用 qwen 时必须 | 千问 API Key，仅后端使用。 |
-| `QWEN_MODEL` | 使用 qwen 时必须 | 千问模型名称。 |
-| `QWEN_BASE_URL` | 使用 qwen 时必须 | 兼容 Chat Completions 的接口地址。 |
-| `DOUBAO_API_KEY` | 使用 doubao 时必须 | 豆包 API Key，仅后端使用。 |
-| `DOUBAO_MODEL` | 使用 doubao 时必须 | 豆包模型名称。 |
-| `DOUBAO_BASE_URL` | 使用 doubao 时必须 | 兼容 Chat Completions 的接口地址。 |
 
-如果暂时不测试 AI，可以先只配置 Supabase 相关变量；访问 `/ai-generate` 时未配置的 provider 会返回错误提示。
+AI 图片模型在系统设置页中配置，API Key 不会暴露到前端。
 
 ## 9. 部署后如何测试
 
@@ -214,7 +200,7 @@ DOUBAO_BASE_URL=
 7. 访问 `/mockup-templates`，创建一个简单模板并上传底图。
 8. 访问 `/mockup-jobs`，选择素材和模板生成套图。
 9. 访问 `/products`，从套图结果创建商品草稿，保存修改并下载单商品套图 ZIP。
-10. 访问 `/ai-generate`，用已配置的 provider 测试生成标题、描述和标签。
+10. 访问 `/ai-image`，确认模型配置入口和图片工作台能打开。
 11. 访问 `/exports`，选择商品草稿测试 Excel 和图片 ZIP 导出。
 
 重点检查：
@@ -223,7 +209,7 @@ DOUBAO_BASE_URL=
 - `assets` 表是否出现记录。
 - 图片 URL 是否能打开。
 - Sharp 图片处理是否成功。
-- AI 错误是否能显示给用户。
+- AI 图片模型错误是否能显示给用户。
 - Excel 是否能下载并正常打开。
 - ZIP 是否能下载，内部图片结构是否正确。
 - `export_records.download_url` 是否写入 Supabase Storage 的公开 URL。
@@ -303,20 +289,20 @@ supabase db push
 - 确认 `SUPABASE_SERVICE_ROLE_KEY` 使用的是 service role key。
 - 不要在前端暴露 service role key。
 
-### AI 生成失败
+### AI 图片生成失败
 
 可能原因：
 
-- provider API Key 未配置。
-- model 或 base URL 配错。
-- provider 返回内容不是 JSON。
+- 系统设置页未配置可用 AI 图片模型。
+- API Key、model 或 base URL 配错。
+- 模型供应商返回错误或图片 URL 不可访问。
 
 处理：
 
 - 检查 Vercel Function Logs。
-- 确认 `AI_DEFAULT_PROVIDER` 是 `qwen` 或 `doubao`。
+- 到 `/settings` 检查 AI 模型配置是否启用。
 - 确认对应 provider 的 key、model、base URL 已配置。
-- 页面会显示 AI 返回非 JSON 或请求失败的错误原因。
+- 页面会显示模型返回或请求失败的错误原因。
 
 ### 批量处理或套图任务超时
 

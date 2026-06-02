@@ -83,17 +83,16 @@
 | 失败记录 | 使用异常素材或错误底图 URL 测试 | 失败项记录失败原因；任务统计准确 |  |  |
 | 查看套图结果 | 生成完成后查看结果 | 页面可查看每个商品的一组套图图片 |  |  |
 
-## 7. AI 生成上架信息
+## 7. AI 图片工作台
 
 | 验收项目 | 操作步骤 | 预期结果 | 通过/失败记录 | 备注 |
 | --- | --- | --- | --- | --- |
-| qwen 生成 | 配置 qwen 环境变量，打开 `/ai-generate`，填写输入并生成 | 后端调用 qwen；页面显示英文标题、描述、标签等 JSON 结果 |  |  |
-| doubao 生成 | 配置 doubao 环境变量，切换 provider 并生成 | 后端调用 doubao；页面显示英文结果 |  |  |
-| 生成 13 个标签 | 输入商品类型、主题、风格、平台、图片描述后生成 | `tags` 默认返回 13 个英文标签 |  |  |
-| 禁止侵权品牌词 | 使用普通主题生成 | 结果不出现 Disney、Nike、Marvel、Hello Kitty 等品牌词 |  |  |
-| 严格 JSON 校验 | 触发一次 AI 返回非 JSON 的情况 | 系统尝试修复；无法修复时显示错误 |  |  |
-| 保存生成记录 | 生成成功或失败后检查 `ai_generations` | 生成记录写入表；成功保存 response，失败保存 error_message |  |  |
-| 同步商品草稿 | 选择 `product_draft_id` 后生成 | 对应 `product_drafts` 的标题、描述、标签、bullet points、SKU 等字段被更新 |  |  |
+| 文生图 | 打开 `/ai-image`，选择已配置模型并输入提示词 | 后端调用图片模型；页面显示生成图片并保存到素材库 |  |  |
+| 图生图 AI 提取印花 | 上传服装参考图，选择常用模板并生成 | 输出独立印花素材，尽量去除衣服、人物和背景干扰 |  |  |
+| 印花图换底 | 上传或使用已提取印花图执行换底 | 前端本地生成透明底 PNG，不调用外部 API |  |  |
+| AI 生成印花 | 输入印花主题和风格后生成 | 输出适合 POD 印刷的居中印花图 |  |  |
+| 语言切换 | 在设置中切换中文/英文后返回 `/ai-image` | 页面标题、标签、按钮、提示和错误文案随语言切换 |  |  |
+| 保存生成记录 | 生成成功后检查素材库 | 图片 URL、文件名、尺寸、来源和模型信息可追踪 |  |  |
 
 ## 8. 商品草稿
 
@@ -137,24 +136,24 @@
 | mockup_templates 保存 | 创建模板后检查表 | name、product_type、scenes、status 正确 |  |  |
 | mockup_outputs 保存 | 生成套图后检查表 | asset_id、template_id、output_images、status、error_message 正确 |  |  |
 | product_drafts 保存 | 创建和编辑商品草稿后检查表 | 标题、描述、标签、卖点、SKU、价格、状态、图片正确 |  |  |
-| ai_generations 保存 | AI 生成后检查表 | provider、prompt、response、status、error_message 正确 |  |  |
+| AI 图片生成保存 | AI 图片生成后检查素材库记录 | 生成图片保存到 `assets`，来源和文件信息正确 |  |  |
 | RLS 基础策略 | 使用登录用户访问数据 | 登录用户可访问；未配置 service role 的后端操作应失败并暴露清晰错误 |  |  |
 
 ## 12. 环境变量安全
 
 | 验收项目 | 操作步骤 | 预期结果 | 通过/失败记录 | 备注 |
 | --- | --- | --- | --- | --- |
-| `.env.example` 完整 | 查看 `.env.example` | 包含 Supabase、qwen、doubao 所需变量名，不含真实密钥 |  |  |
+| `.env.example` 完整 | 查看 `.env.example` | 包含 Supabase 和图片处理所需变量名，不含真实密钥 |  |  |
 | 不提交真实 `.env` | 检查 Git 状态和 `.gitignore` | `.env`、`.env.local` 不会被提交 |  |  |
 | 前端不暴露 service role | 搜索前端代码中的 `SUPABASE_SERVICE_ROLE_KEY` | 只在后端服务端代码读取，不出现在客户端组件 |  |  |
-| 前端不暴露 AI Key | 搜索 qwen/doubao API Key 使用位置 | API Key 只在后端接口读取 |  |  |
+| 前端不暴露 AI Key | 搜索图片模型 API Key 使用位置 | API Key 只在后端接口或服务端配置中读取 |  |  |
 | 缺失环境变量提示 | 临时移除某个必要环境变量后访问相关功能 | 后端返回明确错误；前端显示失败原因 |  |  |
 
 ## 13. 前端页面基础可用性
 
 | 验收项目 | 操作步骤 | 预期结果 | 通过/失败记录 | 备注 |
 | --- | --- | --- | --- | --- |
-| 左侧菜单导航 | 依次点击 dashboard、assets、upload、image-jobs、mockup-templates、mockup-jobs、products、ai-generate、exports、settings | 页面路由正常切换，无 404 |  |  |
+| 左侧菜单导航 | 依次点击 dashboard、assets、upload、image-jobs、mockup-templates、mockup-jobs、products、ai-image、exports、settings | 页面路由正常切换，无 404 |  |  |
 | 页面加载状态 | 打开需要读取数据的页面 | 数据加载期间或空数据时有可理解提示 |  |  |
 | 表单错误提示 | 在上传、模板、AI、商品、导出页面提交无效数据 | 页面显示明确错误，不出现白屏 |  |  |
 | 按钮禁用状态 | 在处理上传、导出、保存等操作时观察按钮 | 操作中按钮有禁用或加载文案，避免重复提交 |  |  |

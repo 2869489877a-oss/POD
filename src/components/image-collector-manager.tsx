@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchCollectionTemplates, fetchCollectionRuns, saveCollectionTemplate, archiveCollectionTemplate, runCollectionTemplate } from "@/lib/actions/image-collector";
+import { useSettings } from "@/lib/settings/context";
 import type {
   ImageCollectionRun,
   ImageCollectionScheduleFrequency,
@@ -107,26 +108,26 @@ function splitKeywords(value: string) {
     .filter(Boolean);
 }
 
-function statusLabel(status: string) {
-  const labels: Record<string, string> = {
-    active: "启用",
-    archived: "已归档",
-    completed: "完成",
-    failed: "失败",
-    partial_failed: "部分失败",
-    pending: "待执行",
-    processing: "处理中",
+function statusLabel(status: string, translate: (zh: string, en: string) => string) {
+  const labels: Record<string, { zh: string; en: string }> = {
+    active: { zh: "启用", en: "Active" },
+    archived: { zh: "已归档", en: "Archived" },
+    completed: { zh: "完成", en: "Completed" },
+    failed: { zh: "失败", en: "Failed" },
+    partial_failed: { zh: "部分失败", en: "Partial Failed" },
+    pending: { zh: "待执行", en: "Pending" },
+    processing: { zh: "处理中", en: "Processing" },
   };
 
-  return labels[status] ?? status;
+  return labels[status] ? translate(labels[status].zh, labels[status].en) : status;
 }
 
-function formatDateTime(value: string | null) {
+function formatDateTime(value: string | null, locale: string) {
   if (!value) {
     return "-";
   }
 
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale, {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
@@ -197,6 +198,7 @@ function templateToForm(template: ImageCollectionTemplate): TemplateFormState {
 }
 
 export function ImageCollectorManager() {
+  const { language, t } = useSettings();
   const [templates, setTemplates] = useState<ImageCollectionTemplate[]>([]);
   const [runs, setRuns] = useState<RunWithTemplateName[]>([]);
   const [form, setForm] = useState<TemplateFormState>(() => createBlankForm());
@@ -223,11 +225,11 @@ export function ImageCollectorManager() {
       if (data.error) throw new Error(data.error);
       setTemplates(data.templates as ImageCollectionTemplate[]);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "读取采集模板失败");
+      setError(requestError instanceof Error ? requestError.message : t("读取采集模板失败", "Failed to load collection templates"));
     } finally {
       setIsLoading(false);
     }
-  }, [includeArchived]);
+  }, [includeArchived, t]);
 
   const refreshRuns = useCallback(async () => {
     try {
@@ -236,9 +238,9 @@ export function ImageCollectorManager() {
 
       setRuns(data.runs as RunWithTemplateName[]);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "读取采集历史失败");
+      setError(requestError instanceof Error ? requestError.message : t("读取采集历史失败", "Failed to load collection history"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -282,7 +284,7 @@ export function ImageCollectorManager() {
 
   async function saveTemplate() {
     if (form.sources.length === 0) {
-      setError("请至少添加一个网站来源");
+      setError(t("请至少添加一个网站来源", "Please add at least one website source"));
       return;
     }
 
@@ -295,18 +297,18 @@ export function ImageCollectorManager() {
       const data = await saveCollectionTemplate(payload, editingId);
       if (data.error) throw new Error(data.error);
 
-      setMessage(editingId ? "采集模板已保存" : "采集模板已创建");
+      setMessage(editingId ? t("采集模板已保存", "Collection template saved") : t("采集模板已创建", "Collection template created"));
       resetForm();
       await refreshTemplates();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "保存采集模板失败");
+      setError(requestError instanceof Error ? requestError.message : t("保存采集模板失败", "Failed to save collection template"));
     } finally {
       setIsSaving(false);
     }
   }
 
   async function archiveTemplate(template: ImageCollectionTemplate) {
-    const confirmed = window.confirm("确定要归档这个采集模板吗？归档后不会在默认列表中显示。");
+    const confirmed = window.confirm(t("确定要归档这个采集模板吗？归档后不会在默认列表中显示。", "Archive this collection template? It will no longer appear in the default list."));
 
     if (!confirmed) {
       return;
@@ -323,10 +325,10 @@ export function ImageCollectorManager() {
         resetForm();
       }
 
-      setMessage("采集模板已归档");
+      setMessage(t("采集模板已归档", "Collection template archived"));
       await refreshTemplates();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "归档采集模板失败");
+      setError(requestError instanceof Error ? requestError.message : t("归档采集模板失败", "Failed to archive collection template"));
     }
   }
 
@@ -340,10 +342,10 @@ export function ImageCollectorManager() {
       if (data.error) throw new Error(data.error);
 
       setLastRun(data.run as RunDetail | null);
-      setMessage("采集任务已提交");
+      setMessage(t("采集任务已提交", "Collection job submitted"));
       await refreshRuns();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "运行采集模板失败");
+      setError(requestError instanceof Error ? requestError.message : t("运行采集模板失败", "Failed to run collection template"));
     } finally {
       setIsRunningId(null);
     }
@@ -355,9 +357,9 @@ export function ImageCollectorManager() {
         <div className="rounded-md border border-zinc-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">采集模板列表</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("采集模板列表", "Collection Templates")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                共 {templates.length} 个模板，启用 {activeTemplates.length} 个
+                {t(`共 ${templates.length} 个模板，启用 ${activeTemplates.length} 个`, `${templates.length} templates, ${activeTemplates.length} active`)}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -368,7 +370,7 @@ export function ImageCollectorManager() {
                   onChange={(event) => setIncludeArchived(event.target.checked)}
                   className="h-4 w-4 rounded border-zinc-300"
                 />
-                显示已归档
+                {t("显示已归档", "Show Archived")}
               </label>
               <button
                 type="button"
@@ -376,13 +378,13 @@ export function ImageCollectorManager() {
                 disabled={isLoading}
                 className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
               >
-                {isLoading ? "刷新中..." : "刷新模板"}
+                {isLoading ? t("刷新中...", "Refreshing...") : t("刷新模板", "Refresh Templates")}
               </button>
             </div>
           </div>
 
           {templates.length === 0 ? (
-            <div className="p-5 text-sm text-zinc-500">暂无采集模板，请先创建一个模板。</div>
+            <div className="p-5 text-sm text-zinc-500">{t("暂无采集模板，请先创建一个模板。", "No collection templates yet. Create one first.")}</div>
           ) : (
             <div className="divide-y divide-zinc-200">
               {templates.map((template) => (
@@ -399,21 +401,20 @@ export function ImageCollectorManager() {
                               : "bg-zinc-100 text-zinc-500",
                           ].join(" ")}
                         >
-                          {statusLabel(template.status)}
+                          {statusLabel(template.status, t)}
                         </span>
                       </div>
                       <p className="mt-2 text-sm text-zinc-500">
-                        主文件夹：{template.storage_prefix}/{"{yyyyMMdd-HHmmss}"}-
+                        {t("主文件夹：", "Main folder: ")}{template.storage_prefix}/{"{yyyyMMdd-HHmmss}"}-
                         {template.main_folder_name}
                       </p>
                       <p className="mt-1 text-sm text-zinc-500">
-                        来源 {template.sources.length} 个，关键词 {template.keywords.length} 个，最多下载{" "}
-                        {template.max_images} 张
+                        {t(`来源 ${template.sources.length} 个，关键词 ${template.keywords.length} 个，最多下载 ${template.max_images} 张`, `${template.sources.length} sources, ${template.keywords.length} keywords, max ${template.max_images} images`)}
                       </p>
                       <p className="mt-1 text-sm text-zinc-500">
-                        自动运行：{template.schedule_enabled ? template.cron_expression ?? "hourly" : "未启用"}
-                        ，上次：{formatDateTime(template.last_run_at)}，下次：
-                        {formatDateTime(template.next_run_at)}
+                        {t("自动运行：", "Auto run: ")}{template.schedule_enabled ? template.cron_expression ?? "hourly" : t("未启用", "Disabled")}
+                        {t("，上次：", ", last: ")}{formatDateTime(template.last_run_at, language === "zh" ? "zh-CN" : "en-US")}{t("，下次：", ", next: ")}
+                        {formatDateTime(template.next_run_at, language === "zh" ? "zh-CN" : "en-US")}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -427,7 +428,7 @@ export function ImageCollectorManager() {
                         }}
                         className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                       >
-                        编辑
+                        {t("编辑", "Edit")}
                       </button>
                       <button
                         type="button"
@@ -435,7 +436,7 @@ export function ImageCollectorManager() {
                         disabled={template.status !== "active" || isRunningId === template.id}
                         className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                       >
-                        {isRunningId === template.id ? "创建中..." : "手动运行"}
+                        {isRunningId === template.id ? t("创建中...", "Creating...") : t("手动运行", "Run Manually")}
                       </button>
                       {template.status === "active" ? (
                         <button
@@ -443,7 +444,7 @@ export function ImageCollectorManager() {
                           onClick={() => void archiveTemplate(template)}
                           className="rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition hover:bg-red-50"
                         >
-                          归档
+                          {t("归档", "Archive")}
                         </button>
                       ) : null}
                     </div>
@@ -456,33 +457,33 @@ export function ImageCollectorManager() {
 
         <div className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-5 py-4">
-            <h3 className="text-base font-semibold text-zinc-950">采集历史</h3>
-            <p className="mt-1 text-sm text-zinc-500">展示最近采集运行记录和下载统计。</p>
+            <h3 className="text-base font-semibold text-zinc-950">{t("采集历史", "Collection History")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">{t("展示最近采集运行记录和下载统计。", "Shows recent collection runs and download statistics.")}</p>
           </div>
           {runs.length === 0 ? (
-            <div className="p-5 text-sm text-zinc-500">暂无采集历史。</div>
+            <div className="p-5 text-sm text-zinc-500">{t("暂无采集历史。", "No collection history yet.")}</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-zinc-200 text-sm">
                 <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-500">
                   <tr>
-                    <th className="px-5 py-3 font-medium">模板</th>
-                    <th className="px-5 py-3 font-medium">状态</th>
-                    <th className="px-5 py-3 font-medium">目录</th>
-                    <th className="px-5 py-3 font-medium">下载</th>
-                    <th className="px-5 py-3 font-medium">时间</th>
+                    <th className="px-5 py-3 font-medium">{t("模板", "Template")}</th>
+                    <th className="px-5 py-3 font-medium">{t("状态", "Status")}</th>
+                    <th className="px-5 py-3 font-medium">{t("目录", "Folder")}</th>
+                    <th className="px-5 py-3 font-medium">{t("下载", "Downloads")}</th>
+                    <th className="px-5 py-3 font-medium">{t("时间", "Time")}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
                   {runs.map((run) => (
                     <tr key={run.id}>
-                      <td className="px-5 py-3 text-zinc-900">{run.template_name ?? "模板已删除"}</td>
-                      <td className="px-5 py-3 text-zinc-600">{statusLabel(run.status)}</td>
+                      <td className="px-5 py-3 text-zinc-900">{run.template_name ?? t("模板已删除", "Template deleted")}</td>
+                      <td className="px-5 py-3 text-zinc-600">{statusLabel(run.status, t)}</td>
                       <td className="max-w-[260px] truncate px-5 py-3 text-zinc-600">{run.root_folder}</td>
                       <td className="px-5 py-3 text-zinc-600">
-                        {run.total_downloaded}/{run.total_found}，失败 {run.total_failed}
+                        {t(`${run.total_downloaded}/${run.total_found}，失败 ${run.total_failed}`, `${run.total_downloaded}/${run.total_found}, failed ${run.total_failed}`)}
                       </td>
-                      <td className="px-5 py-3 text-zinc-600">{formatDateTime(run.created_at)}</td>
+                      <td className="px-5 py-3 text-zinc-600">{formatDateTime(run.created_at, language === "zh" ? "zh-CN" : "en-US")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -495,20 +496,19 @@ export function ImageCollectorManager() {
           <div className="rounded-md border border-zinc-200 bg-white">
             <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
               <div>
-                <h3 className="text-base font-semibold text-zinc-950">本次采集结果</h3>
+                <h3 className="text-base font-semibold text-zinc-950">{t("本次采集结果", "Latest Collection Result")}</h3>
                 <p className="mt-1 text-sm text-zinc-500">
-                  找到 {lastRun.total_found} 张，成功 {lastRun.total_downloaded} 张，失败{" "}
-                  {lastRun.total_failed} 张
+                  {t(`找到 ${lastRun.total_found} 张，成功 ${lastRun.total_downloaded} 张，失败 ${lastRun.total_failed} 张`, `Found ${lastRun.total_found}, downloaded ${lastRun.total_downloaded}, failed ${lastRun.total_failed}`)}
                 </p>
                 <p className="mt-1 max-w-3xl truncate text-sm text-zinc-500">
-                  目录：{lastRun.root_folder}
+                  {t("目录：", "Folder: ")}{lastRun.root_folder}
                 </p>
               </div>
               <a
                 href="/assets"
                 className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
               >
-                去素材库查看
+                {t("去素材库查看", "View in Assets")}
               </a>
             </div>
 
@@ -519,7 +519,7 @@ export function ImageCollectorManager() {
             ) : null}
 
             {lastRun.items.length === 0 ? (
-              <div className="p-5 text-sm text-zinc-500">本次运行没有写入图片明细。</div>
+              <div className="p-5 text-sm text-zinc-500">{t("本次运行没有写入图片明细。", "This run did not write any image details.")}</div>
             ) : (
               <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
                 {lastRun.items.map((item) => {
@@ -534,17 +534,17 @@ export function ImageCollectorManager() {
                           rel="noreferrer"
                           className="block aspect-square rounded-md bg-zinc-100 bg-cover bg-center"
                           style={{ backgroundImage: `url("${previewUrl}")` }}
-                          aria-label="打开采集图片"
+                          aria-label={t("打开采集图片", "Open collected image")}
                         />
                       ) : (
                         <div className="flex aspect-square items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-400">
-                          无图片
+                          {t("无图片", "No image")}
                         </div>
                       )}
                       <div className="mt-3 min-w-0">
                         <div className="flex items-center justify-between gap-2">
                           <p className="truncate text-sm font-semibold text-zinc-950">
-                            {item.filename ?? item.source_site_name ?? "采集项"}
+                            {item.filename ?? item.source_site_name ?? t("采集项", "Collection item")}
                           </p>
                           <span
                             className={[
@@ -554,11 +554,11 @@ export function ImageCollectorManager() {
                                 : "bg-red-50 text-red-700",
                             ].join(" ")}
                           >
-                            {item.status === "downloaded" ? "成功" : "失败"}
+                            {item.status === "downloaded" ? t("成功", "Success") : t("失败", "Failed")}
                           </span>
                         </div>
                         <p className="mt-1 truncate text-xs text-zinc-500">
-                          {item.source_site_name ?? "未知来源"} / {item.source_folder_name ?? "-"}
+                          {item.source_site_name ?? t("未知来源", "Unknown source")} / {item.source_folder_name ?? "-"}
                         </p>
                         {item.error_message ? (
                           <p className="mt-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
@@ -579,9 +579,9 @@ export function ImageCollectorManager() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-zinc-950">
-              {editingId ? "编辑采集模板" : "新建采集模板"}
+              {editingId ? t("编辑采集模板", "Edit Collection Template") : t("新建采集模板", "New Collection Template")}
             </h3>
-            <p className="mt-1 text-sm text-zinc-500">配置网站来源、关键词和保存目录逻辑前缀。</p>
+            <p className="mt-1 text-sm text-zinc-500">{t("配置网站来源、关键词和保存目录逻辑前缀。", "Configure website sources, keywords, and storage path prefixes.")}</p>
           </div>
           {editingId ? (
             <button
@@ -589,36 +589,36 @@ export function ImageCollectorManager() {
               onClick={resetForm}
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
             >
-              新建
+              {t("新建", "New")}
             </button>
           ) : null}
         </div>
 
         <div className="mt-5 space-y-4">
           <label className="block text-sm font-medium text-zinc-950">
-            模板名称
+            {t("模板名称", "Template Name")}
             <input
               value={form.name}
               onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
               className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-              placeholder="例如：猫咪 T 恤素材采集"
+              placeholder={t("例如：猫咪 T 恤素材采集", "e.g. Cat T-shirt asset collection")}
             />
           </label>
 
           <label className="block text-sm font-medium text-zinc-950">
-            主文件夹名称
+            {t("主文件夹名称", "Main Folder Name")}
             <input
               value={form.mainFolderName}
               onChange={(event) =>
                 setForm((current) => ({ ...current, mainFolderName: event.target.value }))
               }
               className="mt-2 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
-              placeholder="例如：cat-shirts"
+              placeholder={t("例如：cat-shirts", "e.g. cat-shirts")}
             />
           </label>
 
           <label className="block text-sm font-medium text-zinc-950">
-            上层目录逻辑路径
+            {t("上层目录逻辑路径", "Parent Storage Prefix")}
             <input
               value={form.storagePrefix}
               onChange={(event) =>
@@ -630,7 +630,7 @@ export function ImageCollectorManager() {
           </label>
 
           <label className="block text-sm font-medium text-zinc-950">
-            关键词，逗号分隔
+            {t("关键词，逗号分隔", "Keywords, comma-separated")}
             <input
               value={form.keywordsText}
               onChange={(event) =>
@@ -642,7 +642,7 @@ export function ImageCollectorManager() {
           </label>
 
           <label className="block text-sm font-medium text-zinc-950">
-            下载图片数量
+            {t("下载图片数量", "Image Download Limit")}
             <input
               type="number"
               min={1}
@@ -671,13 +671,13 @@ export function ImageCollectorManager() {
               }
               className="h-4 w-4 rounded border-zinc-300"
             />
-            启用自动运行
+            {t("启用自动运行", "Enable Auto Run")}
           </label>
 
           {form.scheduleEnabled ? (
             <div className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
               <label className="block text-sm font-medium text-zinc-950">
-                自动运行频率
+                {t("自动运行频率", "Auto Run Frequency")}
                 <select
                   value={form.scheduleFrequency}
                   onChange={(event) =>
@@ -688,17 +688,17 @@ export function ImageCollectorManager() {
                   }
                   className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
                 >
-                  <option value="manual">手动</option>
-                  <option value="hourly">每小时</option>
-                  <option value="daily">每天</option>
-                  <option value="weekly">每周</option>
-                  <option value="custom">自定义 cron</option>
+                  <option value="manual">{t("手动", "Manual")}</option>
+                  <option value="hourly">{t("每小时", "Hourly")}</option>
+                  <option value="daily">{t("每天", "Daily")}</option>
+                  <option value="weekly">{t("每周", "Weekly")}</option>
+                  <option value="custom">{t("自定义 cron", "Custom cron")}</option>
                 </select>
               </label>
 
               {form.scheduleFrequency === "custom" ? (
                 <label className="block text-sm font-medium text-zinc-950">
-                  自定义 cron
+                  {t("自定义 cron", "Custom cron")}
                   <input
                     value={form.customCronExpression}
                     onChange={(event) =>
@@ -708,7 +708,7 @@ export function ImageCollectorManager() {
                       }))
                     }
                     className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-                    placeholder="例如：*/30 * * * *"
+                    placeholder={t("例如：*/30 * * * *", "e.g. */30 * * * *")}
                   />
                 </label>
               ) : null}
@@ -717,40 +717,40 @@ export function ImageCollectorManager() {
 
           <div className="rounded-md border border-zinc-200">
             <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
-              <h4 className="text-sm font-semibold text-zinc-950">网站来源配置</h4>
+              <h4 className="text-sm font-semibold text-zinc-950">{t("网站来源配置", "Website Source Config")}</h4>
               <button
                 type="button"
                 onClick={addSource}
                 className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
               >
-                添加来源
+                {t("添加来源", "Add Source")}
               </button>
             </div>
             <div className="space-y-4 p-4">
               {form.sources.map((source, index) => (
                 <div key={source.local_id} className="space-y-3 rounded-md bg-zinc-50 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-zinc-950">来源 {index + 1}</span>
+                    <span className="text-sm font-medium text-zinc-950">{t(`来源 ${index + 1}`, `Source ${index + 1}`)}</span>
                     <button
                       type="button"
                       onClick={() => removeSource(index)}
                       disabled={form.sources.length === 1}
                       className="text-sm font-medium text-red-600 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
-                      移除
+                      {t("移除", "Remove")}
                     </button>
                   </div>
                   <label className="block text-sm font-medium text-zinc-950">
-                    网站名称
+                    {t("网站名称", "Website Name")}
                     <input
                       value={source.site_name}
                       onChange={(event) => updateSource(index, { site_name: event.target.value })}
                       className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-                      placeholder="例如：Example"
+                      placeholder={t("例如：Example", "e.g. Example")}
                     />
                   </label>
                   <label className="block text-sm font-medium text-zinc-950">
-                    起始页面 URL
+                    {t("起始页面 URL", "Start Page URL")}
                     <input
                       value={source.start_url}
                       onChange={(event) => updateSource(index, { start_url: event.target.value })}
@@ -759,7 +759,7 @@ export function ImageCollectorManager() {
                     />
                   </label>
                   <label className="block text-sm font-medium text-zinc-950">
-                    文件夹名称
+                    {t("文件夹名称", "Folder Name")}
                     <input
                       value={source.folder_name}
                       onChange={(event) => updateSource(index, { folder_name: event.target.value })}
@@ -774,7 +774,7 @@ export function ImageCollectorManager() {
                       onChange={(event) => updateSource(index, { enabled: event.target.checked })}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
-                    启用该来源
+                    {t("启用该来源", "Enable this source")}
                   </label>
                 </div>
               ))}
@@ -787,7 +787,7 @@ export function ImageCollectorManager() {
             disabled={isSaving}
             className="w-full rounded-md bg-emerald-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            {isSaving ? "保存中..." : editingId ? "保存模板" : "创建模板"}
+            {isSaving ? t("保存中...", "Saving...") : editingId ? t("保存模板", "Save Template") : t("创建模板", "Create Template")}
           </button>
 
           {message ? (

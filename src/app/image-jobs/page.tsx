@@ -41,7 +41,12 @@ export default async function ImageJobsPage() {
   const { error, jobs } = await getInitialJobs();
 
   return (
-    <PageShell title="批量图片处理" description="用于查看和管理图片处理任务。">
+    <PageShell
+      titleZh="批量图片处理"
+      titleEn="Image Jobs"
+      descriptionZh="用于查看和管理图片处理任务。"
+      descriptionEn="View and manage batch image processing jobs."
+    >
       <ImageJobsCenter initialError={error} initialJobs={jobs} />
     </PageShell>
   );

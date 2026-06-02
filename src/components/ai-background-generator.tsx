@@ -56,42 +56,100 @@ const PRINT_AVOID_TERMS = [
   "皮肤",
 ].join("，");
 
+const PRINT_AVOID_TERMS_EN = [
+  "clothing",
+  "model",
+  "person",
+  "body",
+  "background",
+  "wall",
+  "floor",
+  "fabric texture",
+  "wrinkles",
+  "shadows",
+  "pockets",
+  "drawstrings",
+  "sleeves",
+  "collar",
+  "pants",
+  "hands",
+  "low resolution",
+  "blur",
+  "noise",
+  "incomplete artwork",
+  "wrong text",
+  "garbled text",
+  "distorted text",
+  "extra text",
+  "watermark",
+  "logo",
+  "border",
+  "cropping",
+  "repeated pattern",
+  "photo lighting",
+  "product photo background",
+  "hanger",
+  "label",
+  "zipper",
+  "buttons",
+  "hair",
+  "skin",
+].join(", ");
+
 const PRINT_PROMPT_TEMPLATES = [
   {
-    name: "精准提取印花",
-    prompt: `请参考上传的服装图片，仅提取衣服上的印花图案，并重新整理为干净、完整、高清的独立印花素材。保留原图中的主要图案元素、文字内容、颜色搭配、整体构图和风格，不要改变主题。输出为居中排版、白色或透明背景、边缘清晰、细节完整、适合POD服装印刷的图案素材。不要包含：${PRINT_AVOID_TERMS}。`,
+    nameZh: "精准提取印花",
+    nameEn: "Precise Print Extraction",
+    promptZh: `请参考上传的服装图片，仅提取衣服上的印花图案，并重新整理为干净、完整、高清的独立印花素材。保留原图中的主要图案元素、文字内容、颜色搭配、整体构图和风格，不要改变主题。输出为居中排版、白色或透明背景、边缘清晰、细节完整、适合POD服装印刷的图案素材。不要包含：${PRINT_AVOID_TERMS}。`,
+    promptEn: `Use the uploaded garment photo as reference. Extract only the print artwork from the clothing and rebuild it as a clean, complete, high-resolution standalone print asset. Preserve the main artwork elements, text content, color relationships, overall composition, and style without changing the theme. Output centered artwork on a white or transparent background with clean edges and complete details, suitable for POD garment printing. Do not include: ${PRINT_AVOID_TERMS_EN}.`,
   },
   {
-    name: "高清还原印花",
-    prompt: `请从上传的服装照片中识别并还原衣服表面的印花设计，只保留印花本身。按原印花的图案、文字、色彩、层次和构图重新绘制为高清印刷素材，线条干净，边缘锐利，色块清晰，文字尽量保持正确。不要生成服装、人物、背景或摄影痕迹。不要包含：${PRINT_AVOID_TERMS}。`,
+    nameZh: "高清还原印花",
+    nameEn: "HD Print Restoration",
+    promptZh: `请从上传的服装照片中识别并还原衣服表面的印花设计，只保留印花本身。按原印花的图案、文字、色彩、层次和构图重新绘制为高清印刷素材，线条干净，边缘锐利，色块清晰，文字尽量保持正确。不要生成服装、人物、背景或摄影痕迹。不要包含：${PRINT_AVOID_TERMS}。`,
+    promptEn: `Identify and restore the print design from the uploaded garment photo. Keep only the print itself. Recreate the original artwork, text, colors, layers, and composition as a high-resolution print asset with clean lines, sharp edges, clear color blocks, and text kept as accurate as possible. Do not generate clothing, people, background, or photographic traces. Do not include: ${PRINT_AVOID_TERMS_EN}.`,
   },
   {
-    name: "矢量风印花",
-    prompt: `请参考上传图片里的服装印花，生成适合服装印刷的独立矢量风图案素材。保持原始印花主题、主视觉、文字位置、颜色关系和整体风格，增强线条清晰度与图案完整度，输出居中、干净、无多余背景的POD印花图。不要包含：${PRINT_AVOID_TERMS}。`,
+    nameZh: "矢量风印花",
+    nameEn: "Vector Style Print",
+    promptZh: `请参考上传图片里的服装印花，生成适合服装印刷的独立矢量风图案素材。保持原始印花主题、主视觉、文字位置、颜色关系和整体风格，增强线条清晰度与图案完整度，输出居中、干净、无多余背景的POD印花图。不要包含：${PRINT_AVOID_TERMS}。`,
+    promptEn: `Reference the garment print in the uploaded image and generate a standalone vector-style artwork asset suitable for garment printing. Preserve the original theme, main visual, text placement, color relationships, and overall style. Improve line clarity and artwork completeness. Output a centered, clean POD print with no extra background. Do not include: ${PRINT_AVOID_TERMS_EN}.`,
   },
   {
-    name: "文字图案修复",
-    prompt: `请提取上传服装图片中的印花图案，并重点修复印花内的文字、边缘和图案缺失部分。尽量保留原印花文字内容和排版，不新增无关文字，不改变主题风格。输出干净完整、高清、居中、可直接用于服装印刷的独立图案素材。不要包含：${PRINT_AVOID_TERMS}。`,
+    nameZh: "文字图案修复",
+    nameEn: "Text and Artwork Repair",
+    promptZh: `请提取上传服装图片中的印花图案，并重点修复印花内的文字、边缘和图案缺失部分。尽量保留原印花文字内容和排版，不新增无关文字，不改变主题风格。输出干净完整、高清、居中、可直接用于服装印刷的独立图案素材。不要包含：${PRINT_AVOID_TERMS}。`,
+    promptEn: `Extract the print artwork from the uploaded garment image, focusing on repairing text, edges, and missing artwork areas. Preserve the original text content and layout as much as possible. Do not add unrelated text or change the theme/style. Output a clean, complete, high-resolution, centered standalone artwork asset ready for garment printing. Do not include: ${PRINT_AVOID_TERMS_EN}.`,
   },
   {
-    name: "黑白线稿印花",
-    prompt: `请参考上传的服装图片，仅提取衣服上的印花主体，并整理为黑白高对比线稿风格的独立印花素材。保留原图案主题、构图和文字位置，强化轮廓、线条和边缘清晰度，输出居中、干净、适合POD服装印刷的图案。不要包含：${PRINT_AVOID_TERMS}。`,
+    nameZh: "黑白线稿印花",
+    nameEn: "Black and White Line Art",
+    promptZh: `请参考上传的服装图片，仅提取衣服上的印花主体，并整理为黑白高对比线稿风格的独立印花素材。保留原图案主题、构图和文字位置，强化轮廓、线条和边缘清晰度，输出居中、干净、适合POD服装印刷的图案。不要包含：${PRINT_AVOID_TERMS}。`,
+    promptEn: `Reference the uploaded garment image and extract only the main print artwork from the clothing. Convert it into a standalone black-and-white high-contrast line-art print asset. Preserve the original theme, composition, and text placement. Strengthen outlines, lines, and edge clarity. Output centered, clean artwork suitable for POD garment printing. Do not include: ${PRINT_AVOID_TERMS_EN}.`,
   },
 ];
 
 export function AiBackgroundGenerator() {
+  const { mode, accent, language, t } = useSettings();
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [templateIndex, setTemplateIndex] = useState(0);
-  const [prompt, setPrompt] = useState(PRINT_PROMPT_TEMPLATES[0].prompt);
+  const [customPrompt, setCustomPrompt] = useState<string | null>(null);
+  const [backgroundTransparency, setBackgroundTransparency] = useState(100);
+  const [backgroundTolerance, setBackgroundTolerance] = useState(42);
+  const [backgroundFeather, setBackgroundFeather] = useState(18);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { mode, accent } = useSettings();
   const colors = ACCENT_COLORS[accent];
   const isDark = mode === "dark";
+  const currentTemplatePrompt =
+    language === "zh"
+      ? PRINT_PROMPT_TEMPLATES[templateIndex]?.promptZh ?? ""
+      : PRINT_PROMPT_TEMPLATES[templateIndex]?.promptEn ?? "";
+  const prompt = customPrompt ?? currentTemplatePrompt;
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
 
@@ -131,9 +189,9 @@ export function AiBackgroundGenerator() {
       fd.append("files", file);
       const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
       const uploadData = await uploadRes.json();
-      if (!uploadData.results?.[0]?.success) throw new Error("图片上传失败");
+      if (!uploadData.results?.[0]?.success) throw new Error(t("图片上传失败", "Image upload failed"));
       const imageUrl = getUploadedImageUrl(uploadData.results[0] as UploadApiResult);
-      if (!imageUrl) throw new Error("图片上传成功，但缺少可访问的图片 URL");
+      if (!imageUrl) throw new Error(t("图片上传成功，但缺少可访问的图片 URL", "Image uploaded, but no accessible image URL was returned"));
 
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",
@@ -143,13 +201,17 @@ export function AiBackgroundGenerator() {
           reference_url: imageUrl,
           provider_id: selectedProvider || undefined,
           save_to_assets: true,
+          transparent_background: true,
+          background_transparency: backgroundTransparency,
+          background_tolerance: backgroundTolerance,
+          background_feather: backgroundFeather,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "生成失败");
+      if (!res.ok) throw new Error(data.error || t("生成失败", "Generation failed"));
       setResult(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "生成失败");
+      setError(err instanceof Error ? err.message : t("生成失败", "Generation failed"));
     } finally {
       setGenerating(false);
     }
@@ -159,9 +221,9 @@ export function AiBackgroundGenerator() {
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <form onSubmit={handleGenerate} className="space-y-4">
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>选择模型</label>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("选择模型", "Model")}</label>
           {providers.length === 0 ? (
-            <p className="text-sm text-amber-500">请先在“设置”页面添加 AI 模型</p>
+            <p className="text-sm text-amber-500">{t("请先在“设置”页面添加 AI 模型", "Add an AI model in Settings first")}</p>
           ) : (
             <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value)} className={inputClass}>
               {providers.map((p) => (
@@ -172,34 +234,49 @@ export function AiBackgroundGenerator() {
         </div>
 
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>上传原图</label>
-          <DropZone file={file} preview={preview} onFileChange={handleFile} label="拖拽图片到此处，或点击选择" hint="支持 jpg、png、webp" />
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("上传原图", "Upload Source Image")}</label>
+          <DropZone file={file} preview={preview} onFileChange={handleFile} label={t("拖拽图片到此处，或点击选择", "Drag an image here, or click to choose")} hint={t("支持 jpg、png、webp", "Supports jpg, png, and webp")} />
         </div>
 
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>常用模板</label>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("常用模板", "Prompt Templates")}</label>
           <select
             value={templateIndex}
             onChange={(e) => {
               const nextIndex = Number(e.target.value);
               setTemplateIndex(nextIndex);
-              setPrompt(PRINT_PROMPT_TEMPLATES[nextIndex]?.prompt ?? "");
+              setCustomPrompt(null);
             }}
             className={inputClass}
           >
             {PRINT_PROMPT_TEMPLATES.map((template, index) => (
-              <option key={template.name} value={index}>{template.name}</option>
+              <option key={template.nameZh} value={index}>{t(template.nameZh, template.nameEn)}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>提示词 (Prompt)</label>
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={8} placeholder="请填写印花提取提示词..." className={inputClass} required />
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("提示词 (Prompt)", "Prompt")}</label>
+          <textarea value={prompt} onChange={(e) => setCustomPrompt(e.target.value)} rows={8} placeholder={t("请填写印花提取提示词...", "Enter a print extraction prompt...")} className={inputClass} required />
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("透明强度", "Transparency")} ({backgroundTransparency}%)</label>
+            <input type="range" min={0} max={100} value={backgroundTransparency} onChange={(e) => setBackgroundTransparency(Number(e.target.value))} className="w-full accent-blue-500" />
+          </div>
+          <div>
+            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("底色容差", "Background Tolerance")} ({backgroundTolerance})</label>
+            <input type="range" min={8} max={120} value={backgroundTolerance} onChange={(e) => setBackgroundTolerance(Number(e.target.value))} className="w-full accent-blue-500" />
+          </div>
+          <div>
+            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("边缘过渡", "Edge Feather")} ({backgroundFeather})</label>
+            <input type="range" min={0} max={60} value={backgroundFeather} onChange={(e) => setBackgroundFeather(Number(e.target.value))} className="w-full accent-blue-500" />
+          </div>
         </div>
 
         <button type="submit" disabled={generating || !file || providers.length === 0} className={`w-full rounded-lg bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`}>
-          {generating ? "生成中..." : "图生图"}
+          {generating ? t("生成中...", "Generating...") : t("AI 提取印花", "AI Extract Print")}
         </button>
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
@@ -208,12 +285,23 @@ export function AiBackgroundGenerator() {
         {generating ? (
           <div className="text-center">
             <div className={`mx-auto h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-blue-400" : "border-blue-500"}`} />
-            <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>AI 正在生成图片...</p>
+            <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("AI 正在生成图片...", "AI is generating the image...")}</p>
           </div>
         ) : result?.result_url ? (
           <div className="space-y-3 text-center">
-            <img src={result.result_url} alt="AI generated" className="max-h-[360px] rounded-lg shadow-lg" />
-            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{result.provider} / {result.model} · 已保存到素材库</p>
+            <div
+              className="rounded-lg p-4 shadow-lg"
+              style={{
+                backgroundColor: "#fff",
+                backgroundImage:
+                  "linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)",
+                backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
+                backgroundSize: "16px 16px",
+              }}
+            >
+              <img src={result.result_url} alt="AI generated" className="mx-auto max-h-[360px] rounded-lg" />
+            </div>
+            <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>{result.provider} / {result.model} · {t("已保存到素材库", "Saved to Assets")}</p>
           </div>
         ) : (
           <div className="text-center">
@@ -222,7 +310,7 @@ export function AiBackgroundGenerator() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
               </svg>
             </div>
-            <p className={`text-sm ${isDark ? "text-slate-500" : "text-slate-400"}`}>生成结果将显示在这里</p>
+            <p className={`text-sm ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("生成结果将显示在这里", "Generated results will appear here")}</p>
           </div>
         )}
       </div>

@@ -15,11 +15,11 @@ type Provider = {
 };
 
 const PROVIDER_TYPES = [
-  { value: "gemini", label: "Gemini (Google)" },
-  { value: "openai", label: "GPT / DALL-E (OpenAI)" },
-  { value: "doubao", label: "豆包 (字节跳动)" },
-  { value: "jimeng", label: "即梦 Seedream (字节跳动)" },
-  { value: "tongyi", label: "通义万相 (阿里)" },
+  { value: "gemini", zh: "Gemini (Google)", en: "Gemini (Google)" },
+  { value: "openai", zh: "GPT / DALL-E (OpenAI)", en: "GPT / DALL-E (OpenAI)" },
+  { value: "doubao", zh: "豆包 (字节跳动)", en: "Doubao (ByteDance)" },
+  { value: "jimeng", zh: "即梦 Seedream (字节跳动)", en: "Jimeng Seedream (ByteDance)" },
+  { value: "tongyi", zh: "通义万相 (阿里)", en: "Tongyi Wanxiang (Alibaba)" },
 ];
 
 const BASE_URL_DEFAULTS: Record<string, string> = {
@@ -43,6 +43,9 @@ export function AiProvidersManager() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { mode, accent, t } = useSettings();
+  const colors = ACCENT_COLORS[accent];
+  const isDark = mode === "dark";
 
   const fetchProviders = useCallback(async () => {
     setLoading(true);
@@ -51,28 +54,28 @@ export function AiProvidersManager() {
       const data = await res.json();
       setProviders(data.providers ?? []);
     } catch {
-      setError("加载失败");
+      setError(t("加载失败", "Load failed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/ai-providers");
-        const data = await res.json();
-        if (!cancelled) setProviders(data.providers ?? []);
-      } catch {
-        if (!cancelled) setError("加载失败");
+      const res = await fetch("/api/ai-providers");
+      const data = await res.json();
+      if (!cancelled) setProviders(data.providers ?? []);
+    } catch {
+        if (!cancelled) setError(t("加载失败", "Load failed"));
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     void load();
     return () => { cancelled = true; };
-  }, []);
+  }, [t]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -90,7 +93,7 @@ export function AiProvidersManager() {
       setFormData({ provider_type: "gemini", display_name: "", api_key: "", base_url: "", model_id: "", priority: 0 });
       fetchProviders();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败");
+      setError(err instanceof Error ? err.message : t("保存失败", "Save failed"));
     } finally {
       setSaving(false);
     }
@@ -106,14 +109,10 @@ export function AiProvidersManager() {
   }
 
   async function deleteProvider(id: string) {
-    if (!confirm("确定删除此模型配置？")) return;
+    if (!confirm(t("确定删除此模型配置？", "Delete this model configuration?"))) return;
     await fetch(`/api/ai-providers/${id}`, { method: "DELETE" });
     fetchProviders();
   }
-
-  const { mode, accent, t } = useSettings();
-  const colors = ACCENT_COLORS[accent];
-  const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${isDark ? `border-white/10 bg-[#1a1a3e] text-slate-200 placeholder:text-slate-500 focus:${colors.ring}` : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-blue-500 focus:border-blue-500"}`;
 
@@ -137,7 +136,7 @@ export function AiProvidersManager() {
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("模型类型", "Provider Type")}</label>
               <select value={formData.provider_type} onChange={(e) => { const pt = e.target.value; setFormData({ ...formData, provider_type: pt, base_url: BASE_URL_DEFAULTS[pt] || "" }); }} className={inputClass}>
-                {PROVIDER_TYPES.map((pt) => (<option key={pt.value} value={pt.value}>{pt.label}</option>))}
+                {PROVIDER_TYPES.map((pt) => (<option key={pt.value} value={pt.value}>{t(pt.zh, pt.en)}</option>))}
               </select>
             </div>
             <div>
@@ -182,7 +181,10 @@ export function AiProvidersManager() {
                 <div>
                   <p className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-slate-800"}`}>{p.display_name}</p>
                   <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                    {PROVIDER_TYPES.find((pt) => pt.value === p.provider_type)?.label} · {p.model_id} · Key: {p.api_key}
+                    {(() => {
+                      const providerType = PROVIDER_TYPES.find((pt) => pt.value === p.provider_type);
+                      return providerType ? t(providerType.zh, providerType.en) : p.provider_type;
+                    })()} · {p.model_id} · Key: {p.api_key}
                   </p>
                 </div>
               </div>

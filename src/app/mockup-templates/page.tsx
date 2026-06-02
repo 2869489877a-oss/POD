@@ -45,7 +45,12 @@ export default async function MockupTemplatesPage() {
   const { error, templates } = await getInitialTemplates();
 
   return (
-    <PageShell title="固定商品套图" description="用于维护固定商品套图模板。">
+    <PageShell
+      titleZh="固定商品套图"
+      titleEn="Mockup Templates"
+      descriptionZh="用于维护固定商品套图模板。"
+      descriptionEn="Maintain fixed product mockup templates."
+    >
       <MockupTemplatesManager initialError={error} initialTemplates={templates} />
     </PageShell>
   );

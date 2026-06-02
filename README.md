@@ -19,10 +19,10 @@
 - 印花提取和一键抠图 MVP，基于 Sharp + TypeScript 像素算法批量生成透明底结果
 - 简单版套图模板，支持 JSON 坐标配置和预览生成
 - 批量商品套图，根据模板为多张素材生成商品图
-- AI 生成商品上架信息，支持 qwen 和 doubao
 - 商品草稿管理，支持创建、编辑、查看图片和标记 ready
 - 导出中心，支持商品 Excel 和图片 ZIP
 - 素材删除、失败任务重试、商品搜索、单商品套图下载和导出记录
+- 前端页面内容支持设置中的中文 / English 切换
 - 暂不接入爬虫、支付、复杂权限和自动上架能力
 
 ## 页面路由
@@ -37,7 +37,7 @@
 - `/mockup-templates` 固定商品套图
 - `/mockup-jobs` 套图任务
 - `/products` 商品草稿管理
-- `/ai-generate` AI 文案生成
+- `/ai-image` AI 图片工作台
 - `/exports` 导出管理
 - `/settings` 设置
 
@@ -235,13 +235,6 @@ cp .env.example .env.local
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-AI_DEFAULT_PROVIDER=qwen
-QWEN_API_KEY=
-QWEN_MODEL=
-QWEN_BASE_URL=
-DOUBAO_API_KEY=
-DOUBAO_MODEL=
-DOUBAO_BASE_URL=
 ```
 
 使用规则：
@@ -250,13 +243,6 @@ DOUBAO_BASE_URL=
 - `SUPABASE_SERVICE_ROLE_KEY` 只能在后端代码中使用，当前入口为 `src/lib/supabase/server.ts`。
 - 不要提交真实 `.env`、`.env.local` 或任何包含真实密钥的文件。
 - 业务表结构通过 `supabase/migrations` 下的 SQL migration 管理。
-
-AI 配置说明：
-
-- `AI_DEFAULT_PROVIDER` 可设置为 `qwen` 或 `doubao`。
-- `QWEN_API_KEY`、`DOUBAO_API_KEY` 只在后端读取，不能暴露到前端。
-- `QWEN_BASE_URL`、`DOUBAO_BASE_URL` 使用兼容 OpenAI Chat Completions 的接口地址，可填写 API 根地址或完整 `/chat/completions` 地址。
-- `QWEN_MODEL`、`DOUBAO_MODEL` 填写对应供应商的模型名称。
 
 ## 数据库初始化
 
@@ -358,7 +344,7 @@ supabase db push
 - 用户确认后，会删除相关商品草稿、套图结果、任务子项，再删除 `assets` 表记录，并尝试删除 Supabase Storage 中的原图和处理后图片。
 - 只会删除该素材对应的 Storage 文件，不会删除无关文件。
 
-当前暂不支持编辑素材和 AI 生成。
+当前暂不支持直接编辑素材；AI 图片生成请使用 `/ai-image`。
 
 ## 图片采集
 
@@ -554,53 +540,7 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 - 生成完成后在页面查看每个商品的套图结果
 - 可下载单组套图 ZIP，图片按 `01-main.jpg`、`02-gallery.jpg`、`03-detail.jpg` 顺序命名
 
-当前不做 AI，也不做批量导出。
-
-## AI 生成上架信息
-
-AI 生成页面：
-
-```text
-/ai-generate
-```
-
-后端接口：
-
-```text
-/api/ai/generate-listing
-```
-
-输入字段：
-
-- `provider`：`qwen` 或 `doubao`
-- `product_type`
-- `theme`
-- `style`
-- `target_platform`
-- `image_description`
-- `product_draft_id`：可选，选择后会同步更新商品草稿
-
-AI 输出会被校验为严格 JSON：
-
-```json
-{
-  "title": "",
-  "description": "",
-  "tags": [],
-  "bullet_points": [],
-  "seo_keywords": [],
-  "sku_prefix": ""
-}
-```
-
-处理规则：
-
-- API Key 只从服务端环境变量读取，前端不会暴露密钥。
-- 生成内容要求英文，适合跨境 POD 商品。
-- 提示词禁止侵权品牌词，并明确禁止 Disney、Nike、Marvel、Hello Kitty 等品牌词。
-- AI 返回非 JSON 时，会尝试提取或修复为 JSON；仍失败则返回错误。
-- 成功和失败记录都会写入 `ai_generations` 表。
-- 如果选择了商品草稿，会同步更新 `product_drafts.title`、`description`、`tags`、`bullet_points`、`sku` 和 `product_type`。
+当前不做 AI 文案，也不做批量导出。
 
 ## 商品草稿
 
@@ -665,6 +605,8 @@ For Volcano Ark Seedream 5.0 providers:
 - `base_url` should normally be `https://ark.cn-beijing.volces.com`. The backend also accepts values that already end with `/api/v3` or `/api/v3/images/generations`.
 - The image-to-image upload flow must pass the uploaded asset `original_url` as `reference_url`; otherwise Seedream receives no reference image and falls back to text-only generation.
 - The image-to-image page provides editable print-extraction prompt templates and no longer exposes a separate negative prompt field.
+- The image-to-image print extraction flow can run local transparent-background cleanup after AI generation before saving the result to assets.
+- The `Transparent Print` tab changes white/light print backgrounds to transparent PNG in the browser with no external API call.
 - The request body is aligned with the official Seedream 5.0 image generation API: `model`, `prompt`, optional `image`, `size`, `response_format: "url"`, `output_format: "png"`, `watermark: false`, and `optimize_prompt_options: { mode: "standard" }`.
 - Seedream negative prompt text is folded into `prompt` as an avoid instruction instead of being sent as an unsupported `negative_prompt` field.
 - When a reference image is present, the backend enables single-result auto sequence mode with `sequential_image_generation: "auto"` and `sequential_image_generation_options: { max_images: 1 }`.

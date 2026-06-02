@@ -142,7 +142,12 @@ export default async function ProductsPage() {
   const { assetOptions, error, mockupOutputOptions, products } = await getInitialData();
 
   return (
-    <PageShell title="商品草稿管理" description="用于管理待完善、待导出或待上架的商品草稿。">
+    <PageShell
+      titleZh="商品草稿管理"
+      titleEn="Products"
+      descriptionZh="用于管理待完善、待导出或待上架的商品草稿。"
+      descriptionEn="Manage product drafts that need editing, export, or listing."
+    >
       <ProductsManager
         assetOptions={assetOptions}
         initialError={error}

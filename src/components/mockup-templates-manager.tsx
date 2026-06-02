@@ -9,6 +9,7 @@ import {
   type PrintArea,
 } from "@/lib/mockups/scenes";
 import { SceneEditor } from "@/components/scene-editor";
+import { useSettings } from "@/lib/settings/context";
 
 export type MockupTemplate = {
   created_at: string;
@@ -68,8 +69,8 @@ type MockupTemplatesManagerProps = {
   initialTemplates: MockupTemplate[];
 };
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
+function formatDate(value: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -147,6 +148,7 @@ export function MockupTemplatesManager({
   initialError = null,
   initialTemplates,
 }: MockupTemplatesManagerProps) {
+  const { language, t } = useSettings();
   const [templates, setTemplates] = useState<MockupTemplate[]>(initialTemplates);
   const [selectedTemplate, setSelectedTemplate] = useState<MockupTemplate | null>(
     initialTemplates[0] ?? null,
@@ -199,7 +201,7 @@ export function MockupTemplatesManager({
         return nextTemplates.find((template) => template.id === current.id) ?? nextTemplates[0] ?? null;
       });
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "读取模板失败");
+      setError(requestError instanceof Error ? requestError.message : t("读取模板失败", "Failed to load templates"));
     } finally {
       setIsRefreshing(false);
     }
@@ -207,7 +209,7 @@ export function MockupTemplatesManager({
 
   async function uploadBackgrounds() {
     if (backgroundFiles.length === 0) {
-      setError("请选择至少一张场景底图");
+      setError(t("请选择至少一张场景底图", "Please choose at least one scene background"));
       return;
     }
 
@@ -228,12 +230,12 @@ export function MockupTemplatesManager({
       setBackgroundResults(data.results ?? []);
 
       if (!response.ok) {
-        throw new Error(data.error ?? "底图上传失败");
+        throw new Error(data.error ?? t("底图上传失败", "Background upload failed"));
       }
 
-      setMessage("场景底图上传完成，可插入到 scenes JSON。");
+      setMessage(t("场景底图上传完成，可插入到 scenes JSON。", "Scene backgrounds uploaded and can be inserted into scenes JSON."));
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "底图上传失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("底图上传失败", "Background upload failed"));
     } finally {
       setIsUploadingBackgrounds(false);
     }
@@ -255,7 +257,7 @@ export function MockupTemplatesManager({
 
     const validScenes = scenes.filter((s) => s.name.trim() && s.background_url.trim());
     if (validScenes.length === 0) {
-      setError("请至少添加一个有效场景（需要名称和底图 URL）");
+      setError(t("请至少添加一个有效场景（需要名称和底图 URL）", "Please add at least one valid scene with a name and background URL"));
       setIsSaving(false);
       return;
     }
@@ -268,7 +270,7 @@ export function MockupTemplatesManager({
       });
 
       if (data.error || !data.template) {
-        throw new Error(data.error ?? "模板保存失败");
+        throw new Error(data.error ?? t("模板保存失败", "Template save failed"));
       }
 
       const saved = data.template as MockupTemplate;
@@ -277,9 +279,9 @@ export function MockupTemplatesManager({
       setName("");
       setProductType("");
       setScenes(sampleToDrafts());
-      setMessage("模板保存成功");
+      setMessage(t("模板保存成功", "Template saved"));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "模板保存失败");
+      setError(requestError instanceof Error ? requestError.message : t("模板保存失败", "Template save failed"));
     } finally {
       setIsSaving(false);
     }
@@ -287,12 +289,12 @@ export function MockupTemplatesManager({
 
   async function generatePreview() {
     if (!selectedTemplate) {
-      setError("请先选择一个模板");
+      setError(t("请先选择一个模板", "Please select a template first"));
       return;
     }
 
     if (!previewFile) {
-      setError("请上传一张测试印花图");
+      setError(t("请上传一张测试印花图", "Please upload a test print image"));
       return;
     }
 
@@ -311,12 +313,12 @@ export function MockupTemplatesManager({
       const data = (await response.json()) as PreviewResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "生成预览失败");
+        throw new Error(data.error ?? t("生成预览失败", "Preview generation failed"));
       }
 
       setPreviewResults(data.previews ?? []);
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "生成预览失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("生成预览失败", "Preview generation failed"));
     } finally {
       setIsPreviewing(false);
     }
@@ -336,8 +338,8 @@ export function MockupTemplatesManager({
 
       const confirmed = window.confirm(
         checkData.requires_confirmation
-          ? "该模板已有套图生成记录，删除可能影响历史套图。是否继续？"
-          : "确定要删除这个套图模板吗？删除后不可恢复。",
+          ? t("该模板已有套图生成记录，删除可能影响历史套图。是否继续？", "This template has generated mockup records. Deleting it may affect historical mockups. Continue?")
+          : t("确定要删除这个套图模板吗？删除后不可恢复。", "Delete this mockup template? This cannot be undone."),
       );
 
       if (!confirmed) {
@@ -349,14 +351,14 @@ export function MockupTemplatesManager({
       });
 
       if (!data.ok) {
-        throw new Error(data.error ?? "模板删除失败");
+        throw new Error(data.error ?? t("模板删除失败", "Template deletion failed"));
       }
 
-      setMessage("模板删除成功");
+      setMessage(t("模板删除成功", "Template deleted"));
       setPreviewResults([]);
       await refreshTemplates();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "模板删除失败");
+      setError(requestError instanceof Error ? requestError.message : t("模板删除失败", "Template deletion failed"));
     } finally {
       setDeletingTemplateId(null);
     }
@@ -368,8 +370,8 @@ export function MockupTemplatesManager({
         <section className="rounded-md border border-zinc-200 bg-white p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">创建套图模板</h3>
-              <p className="mt-1 text-sm text-zinc-500">可视化配置场景和印花坐标，拖拽调整位置。</p>
+              <h3 className="text-base font-semibold text-zinc-950">{t("创建套图模板", "Create Mockup Template")}</h3>
+              <p className="mt-1 text-sm text-zinc-500">{t("可视化配置场景和印花坐标，拖拽调整位置。", "Visually configure scenes and print coordinates by dragging the placement box.")}</p>
             </div>
             <button
               type="button"
@@ -377,7 +379,7 @@ export function MockupTemplatesManager({
               disabled={isRefreshing}
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              {isRefreshing ? "刷新中..." : "刷新模板"}
+              {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新模板", "Refresh Templates")}
             </button>
           </div>
 
@@ -385,81 +387,81 @@ export function MockupTemplatesManager({
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label htmlFor="template-name" className="block text-sm font-medium text-zinc-950">
-                  模板名称
+                  {t("模板名称", "Template Name")}
                 </label>
                 <input
                   id="template-name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900"
-                  placeholder="例如：T恤白底套图"
+                  placeholder={t("例如：T恤白底套图", "e.g. White background T-shirt mockup")}
                 />
               </div>
 
               <div>
                 <label htmlFor="product-type" className="block text-sm font-medium text-zinc-950">
-                  产品类型
+                  {t("产品类型", "Product Type")}
                 </label>
                 <input
                   id="product-type"
                   value={productType}
                   onChange={(event) => setProductType(event.target.value)}
                   className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-900"
-                  placeholder="例如：T恤"
+                  placeholder={t("例如：T恤", "e.g. T-shirt")}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-zinc-950">场景列表</span>
+                <span className="text-sm font-medium text-zinc-950">{t("场景列表", "Scene List")}</span>
                 <button
                   type="button"
                   onClick={() => setScenes((c) => [...c, createBlankScene()])}
                   className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                 >
-                  添加场景
+                  {t("添加场景", "Add Scene")}
                 </button>
               </div>
 
               {scenes.map((scene, index) => (
                 <div key={scene.local_id} className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-zinc-950">场景 {index + 1}</span>
+                    <span className="text-sm font-semibold text-zinc-950">{t(`场景 ${index + 1}`, `Scene ${index + 1}`)}</span>
                     <button
                       type="button"
                       onClick={() => setScenes((c) => c.filter((_, i) => i !== index))}
                       disabled={scenes.length === 1}
                       className="text-sm font-medium text-red-600 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
-                      删除
+                      {t("删除", "Delete")}
                     </button>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-sm font-medium text-zinc-700">
-                      场景名称
+                      {t("场景名称", "Scene Name")}
                       <input
                         value={scene.name}
                         onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, name: e.target.value } : s))}
                         className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-                        placeholder="例如：主图"
+                        placeholder={t("例如：主图", "e.g. Main image")}
                       />
                     </label>
                     <label className="block text-sm font-medium text-zinc-700">
-                      底图 URL
+                      {t("底图 URL", "Background URL")}
                       <input
                         value={scene.background_url}
                         onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, background_url: e.target.value } : s))}
                         className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-                        placeholder="上传底图后自动填入"
+                        placeholder={t("上传底图后自动填入", "Auto-filled after background upload")}
                       />
                     </label>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-3">
                     <label className="block text-sm font-medium text-zinc-700">
-                      输出宽度
+                      {t("输出宽度", "Output Width")}
                       <input
                         type="number"
                         value={scene.output_width}
@@ -468,7 +470,7 @@ export function MockupTemplatesManager({
                       />
                     </label>
                     <label className="block text-sm font-medium text-zinc-700">
-                      输出高度
+                      {t("输出高度", "Output Height")}
                       <input
                         type="number"
                         value={scene.output_height}
@@ -483,13 +485,13 @@ export function MockupTemplatesManager({
                         onChange={(e) => setScenes((c) => c.map((s, i) => i === index ? { ...s, need_print: e.target.checked } : s))}
                         className="h-4 w-4 rounded border-zinc-300"
                       />
-                      需要叠加印花
+                      {t("需要叠加印花", "Needs print overlay")}
                     </label>
                   </div>
 
                   {scene.need_print && scene.background_url && (
                     <div>
-                      <p className="mb-2 text-xs text-zinc-500">拖拽蓝色框调整印花位置和大小</p>
+                      <p className="mb-2 text-xs text-zinc-500">{t("拖拽蓝色框调整印花位置和大小", "Drag the blue box to adjust print position and size")}</p>
                       <SceneEditor
                         backgroundUrl={scene.background_url}
                         outputWidth={scene.output_width}
@@ -501,7 +503,7 @@ export function MockupTemplatesManager({
                   )}
 
                   {scene.need_print && !scene.background_url && (
-                    <p className="text-xs text-amber-600">请先填入底图 URL 或上传底图，即可可视化编辑印花区域</p>
+                    <p className="text-xs text-amber-600">{t("请先填入底图 URL 或上传底图，即可可视化编辑印花区域", "Enter or upload a background URL before visually editing the print area")}</p>
                   )}
                 </div>
               ))}
@@ -524,14 +526,14 @@ export function MockupTemplatesManager({
               disabled={isSaving}
               className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              {isSaving ? "保存中..." : "保存模板"}
+              {isSaving ? t("保存中...", "Saving...") : t("保存模板", "Save Template")}
             </button>
           </form>
         </section>
 
         <section className="rounded-md border border-zinc-200 bg-white p-4">
-          <h3 className="text-base font-semibold text-zinc-950">上传场景底图</h3>
-          <p className="mt-1 text-sm text-zinc-500">上传后可插入为 scenes JSON 中的新场景。</p>
+          <h3 className="text-base font-semibold text-zinc-950">{t("上传场景底图", "Upload Scene Backgrounds")}</h3>
+          <p className="mt-1 text-sm text-zinc-500">{t("上传后可插入为 scenes JSON 中的新场景。", "Uploaded backgrounds can be inserted as new scenes.")}</p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <input
               type="file"
@@ -546,7 +548,7 @@ export function MockupTemplatesManager({
               disabled={isUploadingBackgrounds || backgroundFiles.length === 0}
               className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              {isUploadingBackgrounds ? "上传中..." : "上传底图"}
+              {isUploadingBackgrounds ? t("上传中...", "Uploading...") : t("上传底图", "Upload Backgrounds")}
             </button>
           </div>
 
@@ -571,7 +573,7 @@ export function MockupTemplatesManager({
                         onClick={() => insertBackgroundScene(result)}
                         className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                       >
-                        插入场景
+                        {t("插入场景", "Insert Scene")}
                       </button>
                     ) : null}
                   </div>
@@ -585,12 +587,12 @@ export function MockupTemplatesManager({
       <div className="space-y-4 xl:max-h-[calc(100vh-10rem)] xl:overflow-y-auto">
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-5 py-3">
-            <h3 className="text-base font-semibold text-zinc-950">模板列表</h3>
-            <p className="mt-1 text-sm text-zinc-500">共 {templates.length} 个模板</p>
+            <h3 className="text-base font-semibold text-zinc-950">{t("模板列表", "Template List")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">{t(`共 ${templates.length} 个模板`, `${templates.length} templates`)}</p>
           </div>
 
           {templates.length === 0 ? (
-            <div className="p-8 text-sm text-zinc-500">暂无套图模板。</div>
+            <div className="p-8 text-sm text-zinc-500">{t("暂无套图模板。", "No mockup templates yet.")}</div>
           ) : (
             <div className="divide-y divide-zinc-200">
               {templates.map((template) => {
@@ -618,7 +620,7 @@ export function MockupTemplatesManager({
                             {template.name}
                           </span>
                           <span className="mt-1 block text-xs text-zinc-500">
-                            {template.product_type} · {template.scenes.length} 个场景
+                            {template.product_type} · {t(`${template.scenes.length} 个场景`, `${template.scenes.length} scenes`)}
                           </span>
                         </span>
                         <span className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
@@ -633,7 +635,7 @@ export function MockupTemplatesManager({
     disabled={deletingTemplateId !== null}
     className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
   >
-    {deletingTemplateId === template.id ? "删除中..." : "删除"}
+    {deletingTemplateId === template.id ? t("删除中...", "Deleting...") : t("删除", "Delete")}
   </button>
 </div>
                   </div>
@@ -646,9 +648,9 @@ export function MockupTemplatesManager({
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">模板详情</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("模板详情", "Template Details")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                {selectedTemplate ? selectedTemplate.name : "请选择一个模板"}
+                {selectedTemplate ? selectedTemplate.name : t("请选择一个模板", "Please select a template")}
               </p>
             </div>
             {selectedTemplate ? (
@@ -658,26 +660,26 @@ export function MockupTemplatesManager({
     disabled={deletingTemplateId !== null}
     className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
   >
-    {deletingTemplateId === selectedTemplate.id ? "删除中..." : "删除当前模板"}
+    {deletingTemplateId === selectedTemplate.id ? t("删除中...", "Deleting...") : t("删除当前模板", "Delete Current Template")}
   </button>
 ) : null}
           </div>
 
           {!selectedTemplate ? (
-            <div className="p-8 text-sm text-zinc-500">暂无可查看的模板详情。</div>
+            <div className="p-8 text-sm text-zinc-500">{t("暂无可查看的模板详情。", "No template details to view.")}</div>
           ) : (
             <div className="space-y-5 p-5">
               <dl className="grid gap-4 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-zinc-500">产品类型</dt>
+                  <dt className="text-zinc-500">{t("产品类型", "Product Type")}</dt>
                   <dd className="mt-1 font-medium text-zinc-950">
                     {selectedTemplate.product_type}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">创建时间</dt>
+                  <dt className="text-zinc-500">{t("创建时间", "Created At")}</dt>
                   <dd className="mt-1 font-medium text-zinc-950">
-                    {formatDate(selectedTemplate.created_at)}
+                    {formatDate(selectedTemplate.created_at, language === "zh" ? "zh-CN" : "en-US")}
                   </dd>
                 </div>
               </dl>
@@ -692,10 +694,10 @@ export function MockupTemplatesManager({
                     <div className="space-y-2 p-3 text-sm">
                       <p className="font-semibold text-zinc-950">{scene.name}</p>
                       <p className="text-zinc-500">
-                        输出：{scene.output_width} x {scene.output_height}
+                        {t("输出：", "Output: ")}{scene.output_width} x {scene.output_height}
                       </p>
                       <p className="text-zinc-500">
-                        {scene.need_print ? "需要叠加印花" : "固定底图输出"}
+                        {scene.need_print ? t("需要叠加印花", "Needs print overlay") : t("固定底图输出", "Fixed background output")}
                       </p>
                     </div>
                   </div>
@@ -710,9 +712,9 @@ export function MockupTemplatesManager({
         </section>
 
         <section className="rounded-md border border-zinc-200 bg-white p-4">
-          <h3 className="text-base font-semibold text-zinc-950">测试印花预览</h3>
+          <h3 className="text-base font-semibold text-zinc-950">{t("测试印花预览", "Test Print Preview")}</h3>
           <p className="mt-1 text-sm text-zinc-500">
-            上传一张测试印花，按当前模板生成预览图。
+            {t("上传一张测试印花，按当前模板生成预览图。", "Upload a test print and generate previews with the current template.")}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <input
@@ -727,7 +729,7 @@ export function MockupTemplatesManager({
               disabled={isPreviewing || !selectedTemplate}
               className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              {isPreviewing ? "生成中..." : "生成预览"}
+              {isPreviewing ? t("生成中...", "Generating...") : t("生成预览", "Generate Preview")}
             </button>
           </div>
 
@@ -751,7 +753,7 @@ export function MockupTemplatesManager({
                   <div className="p-3">
                     <p className="text-sm font-semibold text-zinc-950">{preview.name}</p>
                     <p className="mt-1 text-xs text-zinc-500">
-                      {preview.success ? "预览生成成功" : "预览生成失败"}
+                      {preview.success ? t("预览生成成功", "Preview generated") : t("预览生成失败", "Preview failed")}
                     </p>
                   </div>
                 </div>

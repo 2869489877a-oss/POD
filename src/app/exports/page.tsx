@@ -30,7 +30,12 @@ export default async function ExportsPage() {
   const { error, exportRecords, products } = await getInitialData();
 
   return (
-    <PageShell title="导出中心" description="选择商品草稿导出 Excel 或图片 ZIP。">
+    <PageShell
+      titleZh="导出中心"
+      titleEn="Export Center"
+      descriptionZh="选择商品草稿导出 Excel 或图片 ZIP。"
+      descriptionEn="Select product drafts and export Excel files or image ZIP packages."
+    >
       <ExportsManager exportRecords={exportRecords} initialError={error} products={products} />
     </PageShell>
   );

@@ -7,6 +7,7 @@ import type {
   ProductDraftView,
 } from "@/lib/products/types";
 import type { ExportRecordView } from "@/lib/exports/records";
+import { useSettings } from "@/lib/settings/context";
 
 type ExportsManagerProps = {
   exportRecords: ExportRecordView[];
@@ -24,11 +25,11 @@ type ExportResponse = {
   record?: ExportRecordView;
 };
 
-const statusLabels: Record<ProductDraftStatus, string> = {
-  draft: "草稿",
-  exported: "已导出",
-  failed: "失败",
-  ready: "待导出",
+const statusLabels: Record<ProductDraftStatus, { zh: string; en: string }> = {
+  draft: { zh: "草稿", en: "Draft" },
+  exported: { zh: "已导出", en: "Exported" },
+  failed: { zh: "失败", en: "Failed" },
+  ready: { zh: "待导出", en: "Ready" },
 };
 
 const statusStyles: Record<ProductDraftStatus, string> = {
@@ -38,14 +39,14 @@ const statusStyles: Record<ProductDraftStatus, string> = {
   ready: "bg-emerald-50 text-emerald-700",
 };
 
-const exportTypeLabels: Record<ExportRecordView["export_type"], string> = {
-  excel: "Excel",
-  images_zip: "图片 ZIP",
+const exportTypeLabels: Record<ExportRecordView["export_type"], { zh: string; en: string }> = {
+  excel: { zh: "Excel", en: "Excel" },
+  images_zip: { zh: "图片 ZIP", en: "Image ZIP" },
 };
 
-const exportStatusLabels: Record<ExportRecordView["status"], string> = {
-  completed: "成功",
-  failed: "失败",
+const exportStatusLabels: Record<ExportRecordView["status"], { zh: string; en: string }> = {
+  completed: { zh: "成功", en: "Success" },
+  failed: { zh: "失败", en: "Failed" },
 };
 
 const exportStatusStyles: Record<ExportRecordView["status"], string> = {
@@ -53,8 +54,8 @@ const exportStatusStyles: Record<ExportRecordView["status"], string> = {
   failed: "bg-red-50 text-red-700",
 };
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
+function formatDate(value: string, locale: string) {
+  return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
@@ -77,6 +78,7 @@ export function ExportsManager({
   initialError = null,
   products,
 }: ExportsManagerProps) {
+  const { language, t } = useSettings();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [busyKind, setBusyKind] = useState<ExportKind | null>(null);
   const [error, setError] = useState<string | null>(initialError);
@@ -106,7 +108,7 @@ export function ExportsManager({
 
   async function exportSelected(kind: ExportKind) {
     if (selectedIds.length === 0) {
-      setError("请选择至少一个商品草稿");
+      setError(t("请选择至少一个商品草稿", "Please select at least one product draft"));
       return;
     }
 
@@ -127,7 +129,7 @@ export function ExportsManager({
       const data = (await response.json()) as ExportResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? (kind === "excel" ? "导出 Excel 失败" : "导出图片 ZIP 失败"));
+        throw new Error(data.error ?? (kind === "excel" ? t("导出 Excel 失败", "Excel export failed") : t("导出图片 ZIP 失败", "Image ZIP export failed")));
       }
 
       if (kind === "excel") {
@@ -140,7 +142,7 @@ export function ExportsManager({
         setRecords((current) => [data.record as ExportRecordView, ...current].slice(0, 30));
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "导出失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("导出失败", "Export failed"));
     } finally {
       setBusyKind(null);
     }
@@ -151,9 +153,9 @@ export function ExportsManager({
       <section className="rounded-md border border-zinc-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h3 className="text-base font-semibold text-zinc-950">选择导出商品</h3>
+            <h3 className="text-base font-semibold text-zinc-950">{t("选择导出商品", "Select Products to Export")}</h3>
             <p className="mt-1 text-sm text-zinc-500">
-              当前只显示 status 为 draft 或 ready 的商品草稿。
+              {t("当前只显示 status 为 draft 或 ready 的商品草稿。", "Only product drafts with status draft or ready are shown.")}
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -163,7 +165,7 @@ export function ExportsManager({
               disabled={products.length === 0 || busyKind !== null}
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              {allSelected ? "取消全选" : "全选"}
+              {allSelected ? t("取消全选", "Deselect All") : t("全选", "Select All")}
             </button>
             <button
               type="button"
@@ -171,7 +173,7 @@ export function ExportsManager({
               disabled={selectedIds.length === 0 || busyKind !== null}
               className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              {busyKind === "excel" ? "导出中..." : "导出 Excel"}
+              {busyKind === "excel" ? t("导出中...", "Exporting...") : t("导出 Excel", "Export Excel")}
             </button>
             <button
               type="button"
@@ -179,20 +181,20 @@ export function ExportsManager({
               disabled={selectedIds.length === 0 || busyKind !== null}
               className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
             >
-              {busyKind === "zip" ? "打包中..." : "导出图片 ZIP"}
+              {busyKind === "zip" ? t("打包中...", "Packing...") : t("导出图片 ZIP", "Export Image ZIP")}
             </button>
           </div>
         </div>
 
         <div className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3">
           <div className="rounded-md bg-zinc-50 px-3 py-2">
-            可导出商品：<span className="font-semibold text-zinc-950">{products.length}</span>
+            {t("可导出商品：", "Exportable products: ")}<span className="font-semibold text-zinc-950">{products.length}</span>
           </div>
           <div className="rounded-md bg-zinc-50 px-3 py-2">
-            已选择：<span className="font-semibold text-zinc-950">{selectedIds.length}</span>
+            {t("已选择：", "Selected: ")}<span className="font-semibold text-zinc-950">{selectedIds.length}</span>
           </div>
           <div className="rounded-md bg-zinc-50 px-3 py-2">
-            图片数：{" "}
+            {t("图片数：", "Images: ")}{" "}
             <span className="font-semibold text-zinc-950">
               {selectedProducts.reduce((total, product) => total + imageCount(product), 0)}
             </span>
@@ -213,7 +215,7 @@ export function ExportsManager({
                 download
                 className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 transition hover:bg-emerald-100"
               >
-                下载 Excel：{excelResult.filename}（{excelResult.count ?? 0} 个商品）
+                {t(`下载 Excel：${excelResult.filename}（${excelResult.count ?? 0} 个商品）`, `Download Excel: ${excelResult.filename} (${excelResult.count ?? 0} products)`)}
               </a>
             ) : null}
             {zipResult?.download_url ? (
@@ -222,7 +224,7 @@ export function ExportsManager({
                 download
                 className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 transition hover:bg-emerald-100"
               >
-                下载图片 ZIP：{zipResult.filename}（{zipResult.count ?? 0} 个商品）
+                {t(`下载图片 ZIP：${zipResult.filename}（${zipResult.count ?? 0} 个商品）`, `Download image ZIP: ${zipResult.filename} (${zipResult.count ?? 0} products)`)}
               </a>
             ) : null}
           </div>
@@ -231,30 +233,30 @@ export function ExportsManager({
 
       <section className="rounded-md border border-zinc-200 bg-white">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-zinc-950">导出记录</h3>
-          <p className="mt-1 text-sm text-zinc-500">最近 30 条导出结果。</p>
+          <h3 className="text-base font-semibold text-zinc-950">{t("导出记录", "Export Records")}</h3>
+          <p className="mt-1 text-sm text-zinc-500">{t("最近 30 条导出结果。", "Latest 30 export results.")}</p>
         </div>
 
         {records.length === 0 ? (
-          <div className="p-8 text-sm text-zinc-500">暂无导出记录。</div>
+          <div className="p-8 text-sm text-zinc-500">{t("暂无导出记录。", "No export records yet.")}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-zinc-200 text-sm">
               <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase text-zinc-500">
                 <tr>
-                  <th className="px-5 py-3">类型</th>
-                  <th className="px-5 py-3">状态</th>
-                  <th className="px-5 py-3">商品数</th>
-                  <th className="px-5 py-3">文件</th>
-                  <th className="px-5 py-3">创建时间</th>
-                  <th className="px-5 py-3">备注</th>
+                  <th className="px-5 py-3">{t("类型", "Type")}</th>
+                  <th className="px-5 py-3">{t("状态", "Status")}</th>
+                  <th className="px-5 py-3">{t("商品数", "Products")}</th>
+                  <th className="px-5 py-3">{t("文件", "File")}</th>
+                  <th className="px-5 py-3">{t("创建时间", "Created At")}</th>
+                  <th className="px-5 py-3">{t("备注", "Notes")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 bg-white">
                 {records.map((record) => (
                   <tr key={record.id}>
                     <td className="px-5 py-4 text-zinc-700">
-                      {exportTypeLabels[record.export_type]}
+                      {t(exportTypeLabels[record.export_type].zh, exportTypeLabels[record.export_type].en)}
                     </td>
                     <td className="px-5 py-4">
                       <span
@@ -263,7 +265,7 @@ export function ExportsManager({
                           exportStatusStyles[record.status],
                         ].join(" ")}
                       >
-                        {exportStatusLabels[record.status]}
+                        {t(exportStatusLabels[record.status].zh, exportStatusLabels[record.status].en)}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-zinc-700">{record.product_count}</td>
@@ -274,13 +276,13 @@ export function ExportsManager({
                           download
                           className="font-medium text-emerald-700 hover:text-emerald-800"
                         >
-                          {record.filename ?? "下载文件"}
+                          {record.filename ?? t("下载文件", "Download file")}
                         </a>
                       ) : (
-                        <span className="text-zinc-400">无文件</span>
+                        <span className="text-zinc-400">{t("无文件", "No file")}</span>
                       )}
                     </td>
-                    <td className="px-5 py-4 text-zinc-700">{formatDate(record.created_at)}</td>
+                    <td className="px-5 py-4 text-zinc-700">{formatDate(record.created_at, language === "zh" ? "zh-CN" : "en-US")}</td>
                     <td className="max-w-xs truncate px-5 py-4 text-zinc-500">
                       {record.error_message ?? "-"}
                     </td>
@@ -294,12 +296,12 @@ export function ExportsManager({
 
       <section className="rounded-md border border-zinc-200 bg-white">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-zinc-950">商品草稿列表</h3>
-          <p className="mt-1 text-sm text-zinc-500">勾选多个商品后导出。</p>
+          <h3 className="text-base font-semibold text-zinc-950">{t("商品草稿列表", "Product Drafts")}</h3>
+          <p className="mt-1 text-sm text-zinc-500">{t("勾选多个商品后导出。", "Select multiple products before exporting.")}</p>
         </div>
 
         {products.length === 0 ? (
-          <div className="p-8 text-sm text-zinc-500">暂无可导出的商品草稿。</div>
+          <div className="p-8 text-sm text-zinc-500">{t("暂无可导出的商品草稿。", "No exportable product drafts.")}</div>
         ) : (
           <div className="divide-y divide-zinc-200">
             {products.map((product) => {
@@ -326,19 +328,19 @@ export function ExportsManager({
                     />
                   ) : (
                     <span className="flex aspect-square items-center justify-center rounded-md bg-zinc-100 text-xs text-zinc-400">
-                      无图片
+                      {t("无图片", "No image")}
                     </span>
                   )}
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-zinc-950">
-                      {product.title || "未填写标题"}
+                      {product.title || t("未填写标题", "Untitled")}
                     </span>
                     <span className="mt-1 block text-xs text-zinc-500">
-                      SKU：{product.sku || "-"} · 类型：{product.product_type || "-"} · 价格：
+                      SKU: {product.sku || "-"} · {t("类型：", "Type: ")}{product.product_type || "-"} · {t("价格：", "Price: ")}
                       {formatPrice(product.price)}
                     </span>
                     <span className="mt-1 block text-xs text-zinc-500">
-                      图片：{imageCount(product)} 张 · 创建时间：{formatDate(product.created_at)}
+                      {t(`图片：${imageCount(product)} 张 · 创建时间：${formatDate(product.created_at, "zh-CN")}`, `Images: ${imageCount(product)} · Created: ${formatDate(product.created_at, "en-US")}`)}
                     </span>
                   </span>
                   <span className="self-start">
@@ -348,7 +350,7 @@ export function ExportsManager({
                         statusStyles[product.status],
                       ].join(" ")}
                     >
-                      {statusLabels[product.status]}
+                      {t(statusLabels[product.status].zh, statusLabels[product.status].en)}
                     </span>
                   </span>
                 </label>

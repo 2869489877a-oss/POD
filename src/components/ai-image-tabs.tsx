@@ -12,8 +12,8 @@ type Props = {
 
 const tabs = [
   { key: "generate", zh: "文生图", en: "Text to Image" },
-  { key: "background", zh: "图生图", en: "Image to Image" },
-  { key: "extract", zh: "AI 抠印花", en: "Extract Print" },
+  { key: "background", zh: "图生图(AI提取印花)", en: "AI Print Extract" },
+  { key: "extract", zh: "印花图换底", en: "Transparent Print" },
   { key: "pattern", zh: "AI 生成印花", en: "Gen Pattern" },
 ] as const;
 

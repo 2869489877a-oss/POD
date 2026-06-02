@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { fetchMockupJobs, createMockupJob } from "@/lib/actions/mockup-jobs";
+import { useSettings } from "@/lib/settings/context";
 
 import type { MockupScene } from "@/lib/mockups/scenes";
 
@@ -59,10 +60,10 @@ type MockupJobsManagerProps = {
   templates: MockupJobTemplate[];
 };
 
-const jobStatusLabels: Record<MockupJobResult["status"], string> = {
-  completed: "已完成",
-  failed: "失败",
-  partial_failed: "部分失败",
+const jobStatusLabels: Record<MockupJobResult["status"], { zh: string; en: string }> = {
+  completed: { zh: "已完成", en: "Completed" },
+  failed: { zh: "失败", en: "Failed" },
+  partial_failed: { zh: "部分失败", en: "Partial Failed" },
 };
 
 function shortId(id: string) {
@@ -74,6 +75,7 @@ export function MockupJobsManager({
   initialError = null,
   templates,
 }: MockupJobsManagerProps) {
+  const { t } = useSettings();
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [templateId, setTemplateId] = useState(templates[0]?.id ?? "");
   const [jobResult, setJobResult] = useState<MockupJobResult | null>(null);
@@ -119,12 +121,12 @@ export function MockupJobsManager({
     const assetIds = Array.from(selectedAssetIds);
 
     if (assetIds.length === 0) {
-      setError("请选择至少一张素材图片");
+      setError(t("请选择至少一张素材图片", "Please select at least one asset image"));
       return;
     }
 
     if (!templateId) {
-      setError("请选择一个套图模板");
+      setError(t("请选择一个套图模板", "Please select a mockup template"));
       return;
     }
 
@@ -139,7 +141,7 @@ export function MockupJobsManager({
 
       setJobResult({ count: data.count } as unknown as MockupJobResult);
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "套图生成失败");
+      setError(requestError instanceof Error ? requestError.message : t("套图生成失败", "Mockup generation failed"));
     } finally {
       setIsGenerating(false);
     }
@@ -147,7 +149,7 @@ export function MockupJobsManager({
 
   async function downloadMockupOutput(output: MockupJobOutput) {
     if (!output.mockup_output_id || output.output_images.length === 0) {
-      setError("该套图没有图片，无法下载");
+      setError(t("该套图没有图片，无法下载", "This mockup has no images to download"));
       return;
     }
 
@@ -162,7 +164,7 @@ export function MockupJobsManager({
       const data = (await response.json()) as MockupOutputZipResponse;
 
       if (!response.ok || !data.download_url) {
-        throw new Error(data.error ?? "下载套图 ZIP 失败");
+        throw new Error(data.error ?? t("下载套图 ZIP 失败", "Failed to download mockup ZIP"));
       }
 
       setDownloadResults((current) => ({
@@ -170,7 +172,7 @@ export function MockupJobsManager({
         [output.mockup_output_id as string]: data,
       }));
     } catch (requestError) {
-      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? "网络请求失败，请将 localhost 加入代理排除列表后重试" : requestError.message) : "下载套图 ZIP 失败");
+      setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("下载套图 ZIP 失败", "Failed to download mockup ZIP"));
     } finally {
       setDownloadingOutputId(null);
     }
@@ -182,7 +184,7 @@ export function MockupJobsManager({
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr_auto_auto]">
           <div>
             <label htmlFor="mockup-template" className="block text-sm font-medium text-zinc-950">
-              套图模板
+              {t("套图模板", "Mockup Template")}
             </label>
             <select
               id="mockup-template"
@@ -190,7 +192,7 @@ export function MockupJobsManager({
               onChange={(event) => setTemplateId(event.target.value)}
               className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             >
-              {templates.length === 0 ? <option value="">暂无模板</option> : null}
+              {templates.length === 0 ? <option value="">{t("暂无模板", "No templates")}</option> : null}
               {templates.map((template) => (
                 <option key={template.id} value={template.id}>
                   {template.name} / {template.product_type}
@@ -204,11 +206,11 @@ export function MockupJobsManager({
               <>
                 <p className="font-medium text-zinc-950">{selectedTemplate.name}</p>
                 <p className="mt-1">
-                  {selectedTemplate.product_type} · {selectedTemplate.scenes.length} 个场景
+                  {selectedTemplate.product_type} · {t(`${selectedTemplate.scenes.length} 个场景`, `${selectedTemplate.scenes.length} scenes`)}
                 </p>
               </>
             ) : (
-              <p>请先创建套图模板。</p>
+              <p>{t("请先创建套图模板。", "Create a mockup template first.")}</p>
             )}
           </div>
 
@@ -219,8 +221,8 @@ export function MockupJobsManager({
             className="self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {assets.length > 0 && assets.every((asset) => selectedAssetIds.has(asset.id))
-              ? "取消全选"
-              : "全选素材"}
+              ? t("取消全选", "Deselect All")
+              : t("全选素材", "Select All Assets")}
           </button>
 
           <button
@@ -229,16 +231,16 @@ export function MockupJobsManager({
             disabled={isGenerating || selectedAssetIds.size === 0 || !templateId}
             className="self-end rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            {isGenerating ? "生成中..." : "生成套图"}
+            {isGenerating ? t("生成中...", "Generating...") : t("生成套图", "Generate Mockups")}
           </button>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-600">
-          <span>可用素材 {assets.length} 张</span>
-          <span>已选择 {selectedAssetIds.size} 张</span>
+          <span>{t(`可用素材 ${assets.length} 张`, `${assets.length} available assets`)}</span>
+          <span>{t(`已选择 ${selectedAssetIds.size} 张`, `${selectedAssetIds.size} selected`)}</span>
           {selectedAssets.length > 0 ? (
             <span className="text-zinc-500">
-              最近选择：{selectedAssets.slice(0, 3).map((asset) => asset.filename).join("、")}
+              {t("最近选择：", "Recent selection: ")}{selectedAssets.slice(0, 3).map((asset) => asset.filename).join(t("、", ", "))}
             </span>
           ) : null}
         </div>
@@ -252,14 +254,14 @@ export function MockupJobsManager({
 
       <section className="rounded-md border border-zinc-200 bg-white">
         <div className="border-b border-zinc-200 px-5 py-4">
-          <h3 className="text-base font-semibold text-zinc-950">选择素材图片</h3>
+          <h3 className="text-base font-semibold text-zinc-950">{t("选择素材图片", "Select Asset Images")}</h3>
           <p className="mt-1 text-sm text-zinc-500">
-            优先使用处理后图片，没有处理图时使用原图。
+            {t("优先使用处理后图片，没有处理图时使用原图。", "Uses processed images first, falling back to originals.")}
           </p>
         </div>
 
         {assets.length === 0 ? (
-          <div className="p-8 text-sm text-zinc-500">暂无素材，请先上传图片。</div>
+          <div className="p-8 text-sm text-zinc-500">{t("暂无素材，请先上传图片。", "No assets yet. Upload images first.")}</div>
         ) : (
           <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
             {assets.map((asset) => {
@@ -279,7 +281,7 @@ export function MockupJobsManager({
                     onClick={() => toggleAsset(asset.id)}
                     className="block aspect-square w-full bg-zinc-100 bg-cover bg-center"
                     style={{ backgroundImage: `url("${previewUrl}")` }}
-                    aria-label={`选择 ${asset.filename}`}
+                    aria-label={t(`选择 ${asset.filename}`, `Select ${asset.filename}`)}
                   />
                   <div className="space-y-2 p-3">
                     <label className="flex items-center gap-2 text-sm font-medium text-zinc-900">
@@ -292,7 +294,7 @@ export function MockupJobsManager({
                       <span className="min-w-0 truncate">{asset.filename}</span>
                     </label>
                     <p className="text-xs text-zinc-500">
-                      {asset.processed_url ? "使用处理后图片" : "使用原图"}
+                      {asset.processed_url ? t("使用处理后图片", "Using processed image") : t("使用原图", "Using original image")}
                     </p>
                   </div>
                 </article>
@@ -306,15 +308,15 @@ export function MockupJobsManager({
         <section className="rounded-md border border-zinc-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">套图生成结果</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("套图生成结果", "Mockup Generation Results")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
-                任务 {shortId(jobResult.id)} · {jobStatusLabels[jobResult.status]}
+                {t("任务", "Job")} {shortId(jobResult.id)} · {t(jobStatusLabels[jobResult.status].zh, jobStatusLabels[jobResult.status].en)}
               </p>
             </div>
             <div className="grid grid-cols-3 gap-3 text-sm text-zinc-600">
-              <span>总数 {jobResult.total_count}</span>
-              <span>成功 {jobResult.success_count}</span>
-              <span>失败 {jobResult.failed_count}</span>
+              <span>{t("总数", "Total")} {jobResult.total_count}</span>
+              <span>{t("成功", "Success")} {jobResult.success_count}</span>
+              <span>{t("失败", "Failed")} {jobResult.failed_count}</span>
             </div>
           </div>
 
@@ -333,7 +335,7 @@ export function MockupJobsManager({
                       <p className="mt-1 font-mono text-xs text-zinc-500">
                         {output.mockup_output_id
                           ? `mockup_outputs: ${shortId(output.mockup_output_id)}`
-                          : "未生成 mockup_outputs"}
+                          : t("未生成 mockup_outputs", "No mockup_outputs generated")}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -343,7 +345,7 @@ export function MockupJobsManager({
                         disabled={downloadingOutputId !== null}
                         className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                       >
-                        {isDownloading ? "打包中..." : "下载套图 ZIP"}
+                        {isDownloading ? t("打包中...", "Packing...") : t("下载套图 ZIP", "Download Mockup ZIP")}
                       </button>
                       <span
                         className={[
@@ -353,7 +355,7 @@ export function MockupJobsManager({
                             : "bg-red-50 text-red-700",
                         ].join(" ")}
                       >
-                        {output.status === "completed" ? "生成成功" : "生成失败"}
+                        {output.status === "completed" ? t("生成成功", "Generated") : t("生成失败", "Failed")}
                       </span>
                     </div>
                   </div>
@@ -370,7 +372,7 @@ export function MockupJobsManager({
                       download
                       className="block rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700 transition hover:bg-emerald-100"
                     >
-                      下载文件：{downloadResult.filename}
+                      {t(`下载文件：${downloadResult.filename}`, `Download file: ${downloadResult.filename}`)}
                     </a>
                   ) : null}
 
@@ -389,7 +391,7 @@ export function MockupJobsManager({
                             style={{ backgroundImage: `url("${url}")` }}
                           />
                           <span className="block border-t border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-800">
-                            商品图 {index + 1}
+                            {t(`商品图 ${index + 1}`, `Product Image ${index + 1}`)}
                           </span>
                         </a>
                       ))}

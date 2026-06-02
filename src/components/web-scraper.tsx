@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSettings } from "@/lib/settings/context";
 
 type ScrapeResult = {
   images: string[];
@@ -24,11 +25,12 @@ export function WebScraper() {
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
+  const { t } = useSettings();
 
   async function handleScrape() {
     const trimmed = url.trim();
     if (!trimmed) {
-      setMessage("请输入网页 URL");
+      setMessage(t("请输入网页 URL", "Please enter a web page URL"));
       return;
     }
     setLoading(true);
@@ -45,16 +47,16 @@ export function WebScraper() {
       });
       const data = (await res.json()) as ScrapeResult & { error?: string };
       if (!res.ok) {
-        setMessage(data.error || "抓取失败");
+        setMessage(data.error || t("抓取失败", "Scrape failed"));
         return;
       }
       if (data.count === 0) {
-        setMessage("未在页面中找到图片");
+        setMessage(t("未在页面中找到图片", "No images were found on this page"));
         return;
       }
       setImages(data.images);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "请求失败");
+      setMessage(err instanceof Error ? err.message : t("请求失败", "Request failed"));
     } finally {
       setLoading(false);
     }
@@ -79,7 +81,7 @@ export function WebScraper() {
 
   async function handleImport() {
     if (selected.size === 0) {
-      setMessage("请至少选择一张图片");
+      setMessage(t("请至少选择一张图片", "Please select at least one image"));
       return;
     }
     setImporting(true);
@@ -94,9 +96,9 @@ export function WebScraper() {
       });
       const data = await res.json();
       setImportResults(data.results || []);
-      setMessage(`导入完成：成功 ${data.success_count} 张，失败 ${data.failed_count} 张`);
+      setMessage(t(`导入完成：成功 ${data.success_count} 张，失败 ${data.failed_count} 张`, `Import complete: ${data.success_count} succeeded, ${data.failed_count} failed`));
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "导入失败");
+      setMessage(err instanceof Error ? err.message : t("导入失败", "Import failed"));
     } finally {
       setImporting(false);
     }
@@ -107,10 +109,10 @@ export function WebScraper() {
       {/* URL Input */}
       <div className="rounded-md border border-zinc-200 bg-white p-6">
         <label htmlFor="scrape-url" className="block text-sm font-medium text-zinc-950">
-          网页 URL
+          {t("网页 URL", "Web Page URL")}
         </label>
         <p className="mt-1 text-xs text-zinc-500">
-          粘贴电商列表页或商品页链接，系统自动提取页面中的所有图片。
+          {t("粘贴电商列表页或商品页链接，系统自动提取页面中的所有图片。", "Paste an ecommerce list or product page link. The system will extract images from the page.")}
         </p>
         <div className="mt-3 flex gap-3">
           <input
@@ -126,7 +128,7 @@ export function WebScraper() {
             disabled={loading}
             className="shrink-0 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:bg-zinc-300"
           >
-            {loading ? "抓取中..." : "提取图片"}
+            {loading ? t("抓取中...", "Scraping...") : t("提取图片", "Extract Images")}
           </button>
         </div>
       </div>
@@ -142,11 +144,11 @@ export function WebScraper() {
         <div className="rounded-md border border-zinc-200 bg-white p-6">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-medium text-zinc-950">
-              找到 {images.length} 张图片，已选择 {selected.size} 张
+              {t(`找到 ${images.length} 张图片，已选择 ${selected.size} 张`, `Found ${images.length} images, ${selected.size} selected`)}
             </p>
             <div className="flex gap-2">
-              <button onClick={selectAll} className="text-sm font-medium text-zinc-600 hover:text-zinc-950">全选</button>
-              <button onClick={deselectAll} className="text-sm font-medium text-zinc-600 hover:text-zinc-950">取消全选</button>
+              <button onClick={selectAll} className="text-sm font-medium text-zinc-600 hover:text-zinc-950">{t("全选", "Select All")}</button>
+              <button onClick={deselectAll} className="text-sm font-medium text-zinc-600 hover:text-zinc-950">{t("取消全选", "Deselect All")}</button>
             </div>
           </div>
 
@@ -177,7 +179,7 @@ export function WebScraper() {
               disabled={importing || selected.size === 0}
               className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:bg-zinc-300"
             >
-              {importing ? "导入中..." : `导入选中 ${selected.size} 张到素材库`}
+              {importing ? t("导入中...", "Importing...") : t(`导入选中 ${selected.size} 张到素材库`, `Import ${selected.size} selected to Assets`)}
             </button>
           </div>
         </div>
@@ -187,14 +189,14 @@ export function WebScraper() {
       {importResults.length > 0 && (
         <div className="rounded-md border border-zinc-200 bg-white">
           <div className="border-b border-zinc-200 px-6 py-4">
-            <h3 className="text-base font-semibold text-zinc-950">导入结果</h3>
+            <h3 className="text-base font-semibold text-zinc-950">{t("导入结果", "Import Results")}</h3>
           </div>
           <div className="divide-y divide-zinc-200">
             {importResults.map((r) => (
               <div key={r.source_url} className="flex items-center justify-between gap-3 px-6 py-3">
                 <span className="min-w-0 truncate text-sm text-zinc-700">{r.filename || r.source_url}</span>
                 <span className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium ${r.success ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"}`}>
-                  {r.success ? "成功" : r.error || "失败"}
+                  {r.success ? t("成功", "Success") : r.error || t("失败", "Failed")}
                 </span>
               </div>
             ))}
