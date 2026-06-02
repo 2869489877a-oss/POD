@@ -3,6 +3,7 @@ import "server-only";
 import type { ImageGenParams, ImageGenResult, ImageProvider, ImageProviderType, ProviderConfig } from "./types";
 import { DoubaoProvider } from "./providers/doubao";
 import { GeminiProvider } from "./providers/gemini";
+import { JimengProvider } from "./providers/jimeng";
 import { OpenAIProvider } from "./providers/openai";
 import { TongyiProvider } from "./providers/tongyi";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -12,6 +13,7 @@ const providers: Record<ImageProviderType, ImageProvider> = {
   openai: new OpenAIProvider(),
   doubao: new DoubaoProvider(),
   tongyi: new TongyiProvider(),
+  jimeng: new JimengProvider(),
 };
 
 export type ResolvedProvider = {

@@ -18,6 +18,7 @@ const PROVIDER_TYPES = [
   { value: "gemini", label: "Gemini (Google)" },
   { value: "openai", label: "GPT / DALL-E (OpenAI)" },
   { value: "doubao", label: "豆包 (字节跳动)" },
+  { value: "jimeng", label: "即梦 Seedream (字节跳动)" },
   { value: "tongyi", label: "通义万相 (阿里)" },
 ];
 

@@ -1,4 +1,4 @@
-export type ImageProviderType = "gemini" | "openai" | "doubao" | "tongyi";
+export type ImageProviderType = "gemini" | "openai" | "doubao" | "tongyi" | "jimeng";
 
 export type ImageGenParams = {
   prompt: string;

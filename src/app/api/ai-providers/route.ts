@@ -27,7 +27,7 @@ export async function GET() {
   return NextResponse.json({ providers: masked });
 }
 
-const validTypes = new Set(["gemini", "openai", "doubao", "tongyi"]);
+const validTypes = new Set(["gemini", "openai", "doubao", "tongyi", "jimeng"]);
 
 export async function POST(request: Request) {
   let body: Record<string, unknown>;
