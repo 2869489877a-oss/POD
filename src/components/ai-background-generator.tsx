@@ -129,6 +129,23 @@ const PRINT_PROMPT_TEMPLATES = [
   },
 ];
 
+const BACKGROUND_COLOR_OPTIONS = [
+  { id: "transparent", zh: "透明", en: "Transparent", promptZh: "换成透明底。", promptEn: "Change the background to transparent.", swatch: "transparent" },
+  { id: "white", zh: "白色", en: "White", promptZh: "换成白色底。", promptEn: "Change the background to white.", swatch: "#ffffff" },
+  { id: "black", zh: "黑色", en: "Black", promptZh: "换成黑色底。", promptEn: "Change the background to black.", swatch: "#111827" },
+  { id: "gray", zh: "灰色", en: "Gray", promptZh: "换成灰色底。", promptEn: "Change the background to gray.", swatch: "#9ca3af" },
+  { id: "red", zh: "红色", en: "Red", promptZh: "换成红色底。", promptEn: "Change the background to red.", swatch: "#ef4444" },
+  { id: "orange", zh: "橙色", en: "Orange", promptZh: "换成橙色底。", promptEn: "Change the background to orange.", swatch: "#f97316" },
+  { id: "yellow", zh: "黄色", en: "Yellow", promptZh: "换成黄色底。", promptEn: "Change the background to yellow.", swatch: "#facc15" },
+  { id: "green", zh: "绿色", en: "Green", promptZh: "换成绿色底。", promptEn: "Change the background to green.", swatch: "#22c55e" },
+  { id: "cyan", zh: "青色", en: "Cyan", promptZh: "换成青色底。", promptEn: "Change the background to cyan.", swatch: "#06b6d4" },
+  { id: "blue", zh: "蓝色", en: "Blue", promptZh: "换成蓝色底。", promptEn: "Change the background to blue.", swatch: "#3b82f6" },
+  { id: "purple", zh: "紫色", en: "Purple", promptZh: "换成紫色底。", promptEn: "Change the background to purple.", swatch: "#8b5cf6" },
+  { id: "pink", zh: "粉色", en: "Pink", promptZh: "换成粉色底。", promptEn: "Change the background to pink.", swatch: "#ec4899" },
+  { id: "beige", zh: "米色", en: "Beige", promptZh: "换成米色底。", promptEn: "Change the background to beige.", swatch: "#e8d8bd" },
+  { id: "brown", zh: "棕色", en: "Brown", promptZh: "换成棕色底。", promptEn: "Change the background to brown.", swatch: "#8b5e34" },
+] as const;
+
 export function AiBackgroundGenerator() {
   const { mode, accent, language, t } = useSettings();
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -137,9 +154,7 @@ export function AiBackgroundGenerator() {
   const [preview, setPreview] = useState<string | null>(null);
   const [templateIndex, setTemplateIndex] = useState(0);
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
-  const [backgroundTransparency, setBackgroundTransparency] = useState(100);
-  const [backgroundTolerance, setBackgroundTolerance] = useState(42);
-  const [backgroundFeather, setBackgroundFeather] = useState(18);
+  const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -181,6 +196,10 @@ export function AiBackgroundGenerator() {
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
     if (!file || !prompt.trim()) return;
+    const backgroundPrompt = BACKGROUND_COLOR_OPTIONS.find((option) => option.id === selectedBackgroundColor);
+    const finalPrompt = [prompt.trim(), backgroundPrompt ? (language === "zh" ? backgroundPrompt.promptZh : backgroundPrompt.promptEn) : ""]
+      .filter(Boolean)
+      .join(" ");
     setGenerating(true);
     setError(null);
     setResult(null);
@@ -197,14 +216,10 @@ export function AiBackgroundGenerator() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: prompt.trim(),
+          prompt: finalPrompt,
           reference_url: imageUrl,
           provider_id: selectedProvider || undefined,
           save_to_assets: true,
-          transparent_background: true,
-          background_transparency: backgroundTransparency,
-          background_tolerance: backgroundTolerance,
-          background_feather: backgroundFeather,
         }),
       });
       const data = await res.json();
@@ -260,18 +275,46 @@ export function AiBackgroundGenerator() {
           <textarea value={prompt} onChange={(e) => setCustomPrompt(e.target.value)} rows={8} placeholder={t("请填写印花提取提示词...", "Enter a print extraction prompt...")} className={inputClass} required />
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("透明强度", "Transparency")} ({backgroundTransparency}%)</label>
-            <input type="range" min={0} max={100} value={backgroundTransparency} onChange={(e) => setBackgroundTransparency(Number(e.target.value))} className="w-full accent-blue-500" />
-          </div>
-          <div>
-            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("底色容差", "Background Tolerance")} ({backgroundTolerance})</label>
-            <input type="range" min={8} max={120} value={backgroundTolerance} onChange={(e) => setBackgroundTolerance(Number(e.target.value))} className="w-full accent-blue-500" />
-          </div>
-          <div>
-            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("边缘过渡", "Edge Feather")} ({backgroundFeather})</label>
-            <input type="range" min={0} max={60} value={backgroundFeather} onChange={(e) => setBackgroundFeather(Number(e.target.value))} className="w-full accent-blue-500" />
+        <div>
+          <label className={`block text-sm font-medium mb-2 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("底色", "Background Color")}</label>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {BACKGROUND_COLOR_OPTIONS.map((option) => {
+              const selected = selectedBackgroundColor === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setSelectedBackgroundColor((current) => current === option.id ? null : option.id)}
+                  className={`flex h-10 items-center gap-2 rounded-lg border px-3 text-sm transition ${
+                    selected
+                      ? "border-emerald-500 bg-emerald-500/10 text-emerald-600"
+                      : isDark
+                        ? "border-white/10 bg-slate-800/40 text-slate-300 hover:border-white/20"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  }`}
+                  aria-pressed={selected}
+                >
+                  <span
+                    className={`relative h-5 w-5 shrink-0 overflow-hidden rounded-full border ${option.id === "white" ? "border-slate-300" : "border-transparent"}`}
+                    style={{
+                      background:
+                        option.id === "transparent"
+                          ? "linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)"
+                          : option.swatch,
+                      backgroundPosition: option.id === "transparent" ? "0 0, 0 5px, 5px -5px, -5px 0" : undefined,
+                      backgroundSize: option.id === "transparent" ? "10px 10px" : undefined,
+                    }}
+                  >
+                    {selected && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-emerald-500/90 text-[11px] font-bold text-white">
+                        ✓
+                      </span>
+                    )}
+                  </span>
+                  <span>{t(option.zh, option.en)}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 
