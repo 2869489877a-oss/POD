@@ -664,6 +664,7 @@ For Volcano Ark Seedream 5.0 providers:
 
 - `base_url` should normally be `https://ark.cn-beijing.volces.com`. The backend also accepts values that already end with `/api/v3` or `/api/v3/images/generations`.
 - The image-to-image upload flow must pass the uploaded asset `original_url` as `reference_url`; otherwise Seedream receives no reference image and falls back to text-only generation.
+- The image-to-image page provides editable print-extraction prompt templates and no longer exposes a separate negative prompt field.
 - The request body is aligned with the official Seedream 5.0 image generation API: `model`, `prompt`, optional `image`, `size`, `response_format: "url"`, `output_format: "png"`, `watermark: false`, and `optimize_prompt_options: { mode: "standard" }`.
 - Seedream negative prompt text is folded into `prompt` as an avoid instruction instead of being sent as an unsupported `negative_prompt` field.
 - When a reference image is present, the backend enables single-result auto sequence mode with `sequential_image_generation: "auto"` and `sequential_image_generation_options: { max_images: 1 }`.

@@ -9,7 +9,6 @@ export const maxDuration = 120;
 
 type GenerateImageRequest = {
   prompt?: unknown;
-  negative_prompt?: unknown;
   width?: unknown;
   height?: unknown;
   style?: unknown;
@@ -33,7 +32,6 @@ export async function POST(request: Request) {
   }
 
   const prompt = body.prompt.trim();
-  const negativePrompt = typeof body.negative_prompt === "string" ? body.negative_prompt.trim() : undefined;
   const width = typeof body.width === "number" && body.width > 0 ? body.width : 1024;
   const height = typeof body.height === "number" && body.height > 0 ? body.height : 1024;
   const style = typeof body.style === "string" ? body.style.trim() : undefined;
@@ -63,7 +61,7 @@ export async function POST(request: Request) {
       provider_type: resolved.providerType,
       model_id: resolved.modelId,
       prompt,
-      negative_prompt: negativePrompt || null,
+      negative_prompt: null,
       width,
       height,
       style: style || null,
@@ -77,7 +75,6 @@ export async function POST(request: Request) {
   try {
     const result = await generateImage(resolved, {
       prompt,
-      negativePrompt,
       width,
       height,
       style,

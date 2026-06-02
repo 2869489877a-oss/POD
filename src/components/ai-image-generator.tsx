@@ -30,7 +30,6 @@ export function AiImageGenerator() {
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [negativePrompt, setNegativePrompt] = useState("");
   const [sizeIndex, setSizeIndex] = useState(0);
   const [style, setStyle] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -71,7 +70,6 @@ export function AiImageGenerator() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: prompt.trim(),
-          negative_prompt: negativePrompt.trim() || undefined,
           width: size.width,
           height: size.height,
           style: style.trim() || undefined,
@@ -105,10 +103,6 @@ export function AiImageGenerator() {
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>提示词 (Prompt)</label>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder="描述你想生成的图片..." className={inputClass} required />
-        </div>
-        <div>
-          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>反向提示词 (可选)</label>
-          <input type="text" value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="不想出现的内容..." className={inputClass} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
