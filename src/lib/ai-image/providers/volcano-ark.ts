@@ -22,8 +22,10 @@ export class VolcanoArkProvider implements ImageProvider {
       prompt: params.prompt,
       n: 1,
       size: this.resolveSize(params.width, params.height),
-      response_format: "b64_json",
+      response_format: "url",
+      guidance_scale: 2.5,
       watermark: false,
+      sequential_image_generation: "disabled",
     };
 
     if (params.negativePrompt) {
@@ -31,12 +33,7 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     if (params.referenceUrl) {
-      const imgRes = await fetch(params.referenceUrl, { signal: AbortSignal.timeout(30_000) });
-      if (!imgRes.ok) throw new Error("参考图下载失败");
-      const buf = await imgRes.arrayBuffer();
-      const b64 = Buffer.from(buf).toString("base64");
-      const mime = imgRes.headers.get("content-type") || "image/jpeg";
-      body.image = `data:${mime};base64,${b64}`;
+      body.image_urls = [params.referenceUrl];
     }
 
     return this.doRequest(url, config.apiKey, body);
@@ -50,7 +47,7 @@ export class VolcanoArkProvider implements ImageProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!response.ok) {
