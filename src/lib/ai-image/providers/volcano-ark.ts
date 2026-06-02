@@ -3,19 +3,27 @@ import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } fr
 export class VolcanoArkProvider implements ImageProvider {
   constructor(private readonly displayName: string) {}
 
+  private resolveSize(width?: number, height?: number): string {
+    const w = width || 1024;
+    if (w >= 2048) return "4k";
+    if (w >= 1024) return "2k";
+    return "1k";
+  }
+
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
     if (!config.baseUrl) {
       throw new Error(`${this.displayName}需要配置 base_url（火山方舟地址）`);
     }
 
-    const url = `${config.baseUrl.replace(/\/+$/, "")}/v1/images/generations`;
+    const url = `${config.baseUrl.replace(/\/+$/, "")}/api/v3/images/generations`;
 
     const body: Record<string, unknown> = {
       model: config.modelId,
       prompt: params.prompt,
       n: 1,
-      size: `${params.width || 1024}x${params.height || 1024}`,
+      size: this.resolveSize(params.width, params.height),
       response_format: "b64_json",
+      watermark: false,
     };
 
     if (params.negativePrompt) {

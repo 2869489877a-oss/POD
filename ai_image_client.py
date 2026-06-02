@@ -146,7 +146,7 @@ def _polish_with_doubao(image_bytes: bytes, prompt: str) -> bytes:
     api_key, base_url, model = _get_doubao_config()
     image_b64 = base64.b64encode(image_bytes).decode()
 
-    url = f"{base_url}/v1/images/edits"
+    url = f"{base_url}/api/v3/images/edits"
     body = {
         "model": model,
         "prompt": prompt,
@@ -181,7 +181,7 @@ def _polish_with_jimeng(image_bytes: bytes, prompt: str) -> bytes:
     api_key, base_url, model = _get_jimeng_config()
     image_b64 = base64.b64encode(image_bytes).decode()
 
-    url = f"{base_url}/v1/images/edits"
+    url = f"{base_url}/api/v3/images/edits"
     body = {
         "model": model,
         "prompt": prompt,
