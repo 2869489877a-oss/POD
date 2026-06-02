@@ -1,14 +1,13 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 
 const BG_OPTIONS = [
   { value: "transparent", label: "透明底 PNG" },
   { value: "white", label: "白底" },
   { value: "black", label: "黑底" },
 ];
-
-const inputClass = "w-full rounded-lg border border-violet-500/20 bg-[#1a1a3e] px-3 py-2.5 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500";
 
 export function AiPrintExtractor() {
   const [imageUrl, setImageUrl] = useState("");
@@ -19,6 +18,11 @@ export function AiPrintExtractor() {
   const [extracting, setExtracting] = useState(false);
   const [result, setResult] = useState<{ final_url?: string; preview_url?: string; raw_url?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { mode, accent } = useSettings();
+  const colors = ACCENT_COLORS[accent];
+  const isDark = mode === "dark";
+
+  const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
 
   async function uploadFileFirst(): Promise<string | null> {
     if (!file) return null;
@@ -74,59 +78,59 @@ export function AiPrintExtractor() {
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="text-base font-semibold text-white">AI 抠印花</h4>
-        <p className="mt-1 text-xs text-slate-400">上传衣服照片，自动识别并提取印花图案，可选择输出底色</p>
+        <h4 className={`text-base font-semibold ${isDark ? "text-white" : "text-slate-900"}`}>AI 抠印花</h4>
+        <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-500"}`}>上传衣服照片，自动识别并提取印花图案，可选择输出底色</p>
       </div>
 
       <form onSubmit={handleExtract} className="space-y-3">
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1.5">上传图片</label>
+          <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>上传图片</label>
           <input
             type="file"
             accept="image/*"
             onChange={(e) => { setFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setImageUrl(""); }}
-            className="w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-500/10 file:px-4 file:py-2 file:text-sm file:font-medium file:text-violet-300 hover:file:bg-violet-500/20 file:cursor-pointer"
+            className={`w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`}
           />
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1.5">或输入图片 URL</label>
+          <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>或输入图片 URL</label>
           <input type="url" value={imageUrl} onChange={(e) => { setImageUrl(e.target.value); if (e.target.value) setFile(null); }} placeholder="https://..." className={inputClass} disabled={!!file} />
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">输出底色</label>
+            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>输出底色</label>
             <select value={bgMode} onChange={(e) => setBgMode(e.target.value)} className={inputClass}>
               {BG_OPTIONS.map((opt) => (<option key={opt.value} value={opt.value}>{opt.label}</option>))}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">容差 ({tolerance})</label>
-            <input type="range" min={5} max={150} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} className="w-full mt-2 accent-violet-500" />
+            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>容差 ({tolerance})</label>
+            <input type="range" min={5} max={150} value={tolerance} onChange={(e) => setTolerance(Number(e.target.value))} className="w-full mt-2 accent-blue-500" />
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <input type="checkbox" id="refine-edges-dark" checked={refineEdges} onChange={(e) => setRefineEdges(e.target.checked)} className="rounded border-violet-500/30 bg-[#1a1a3e] text-violet-500 focus:ring-violet-500" />
-          <label htmlFor="refine-edges-dark" className="text-sm text-slate-300">边缘优化（去噪点、平滑边缘）</label>
+          <input type="checkbox" id="refine-edges-dark" checked={refineEdges} onChange={(e) => setRefineEdges(e.target.checked)} className="rounded border-slate-300 text-blue-500 focus:ring-blue-500" />
+          <label htmlFor="refine-edges-dark" className={`text-sm ${isDark ? "text-slate-300" : "text-slate-600"}`}>边缘优化（去噪点、平滑边缘）</label>
         </div>
 
-        <button type="submit" disabled={extracting || (!imageUrl.trim() && !file)} className="rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 disabled:opacity-50 transition-all">
+        <button type="submit" disabled={extracting || (!imageUrl.trim() && !file)} className={`rounded-lg bg-gradient-to-r ${colors.gradient} px-5 py-2.5 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 transition-all`}>
           {extracting ? "提取中..." : "提取印花"}
         </button>
       </form>
 
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-500">{error}</p>}
 
       {result && (
         <div className="grid grid-cols-2 gap-4">
-          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
-            <p className="text-xs text-slate-500 mb-2">提取结果</p>
-            <img src={result.final_url} alt="extracted" className="rounded-lg bg-[repeating-conic-gradient(#1a1a3e_0%_25%,#0d0d24_0%_50%)] bg-[length:16px_16px]" />
+          <div className={`rounded-xl border p-3 ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
+            <p className={`text-xs mb-2 ${isDark ? "text-slate-500" : "text-slate-400"}`}>提取结果</p>
+            <img src={result.final_url} alt="extracted" className="rounded-lg" />
           </div>
-          <div className="rounded-xl border border-violet-500/10 bg-[#0d0d24] p-3">
-            <p className="text-xs text-slate-500 mb-2">预览</p>
+          <div className={`rounded-xl border p-3 ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
+            <p className={`text-xs mb-2 ${isDark ? "text-slate-500" : "text-slate-400"}`}>预览</p>
             <img src={result.preview_url} alt="preview" className="rounded-lg" />
           </div>
         </div>
