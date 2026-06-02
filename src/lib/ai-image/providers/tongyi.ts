@@ -81,7 +81,7 @@ export class TongyiProvider implements ImageProvider {
         }
 
         if (first?.url) {
-          const imageResponse = await fetch(first.url);
+          const imageResponse = await fetch(first.url, { signal: AbortSignal.timeout(30_000) });
           if (!imageResponse.ok) {
             throw new Error("通义万相图片下载失败");
           }
