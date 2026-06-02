@@ -35,6 +35,8 @@ export function AiImageGenerator() {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [sizeIndex, setSizeIndex] = useState(0);
   const [style, setStyle] = useState("");
+  const [refFile, setRefFile] = useState<File | null>(null);
+  const [refPreview, setRefPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,12 @@ export function AiImageGenerator() {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
+  const fileClass = `w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`;
+
+  function handleRefFile(f: File | null) {
+    setRefFile(f);
+    setRefPreview(f ? URL.createObjectURL(f) : null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -68,6 +76,17 @@ export function AiImageGenerator() {
     setResult(null);
     const size = SIZE_PRESETS[sizeIndex];
     try {
+      let referenceUrl: string | undefined;
+      if (refFile) {
+        const fd = new FormData();
+        fd.append("files", refFile);
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
+        const uploadData = await uploadRes.json();
+        if (uploadData.results?.[0]?.success) {
+          referenceUrl = uploadData.results[0].url;
+        }
+      }
+
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -78,6 +97,7 @@ export function AiImageGenerator() {
           height: size.height,
           style: style.trim() || undefined,
           provider_id: selectedProvider || undefined,
+          reference_url: referenceUrl,
           save_to_assets: true,
         }),
       });
@@ -115,6 +135,12 @@ export function AiImageGenerator() {
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>反向提示词 (可选)</label>
           <input type="text" value={negativePrompt} onChange={(e) => setNegativePrompt(e.target.value)} placeholder="不想出现的内容..." className={inputClass} />
+        </div>
+
+        <div>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>参考图 (可选，图生图)</label>
+          <input type="file" accept="image/*" onChange={(e) => handleRefFile(e.target.files?.[0] ?? null)} className={fileClass} />
+          {refPreview && <img src={refPreview} alt="ref" className="mt-2 h-20 rounded-lg object-cover" />}
         </div>
 
         <div className="grid grid-cols-2 gap-3">

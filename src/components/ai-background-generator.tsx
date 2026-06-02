@@ -10,6 +10,7 @@ type Props = {
 export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
   const [cutoutUrl, setCutoutUrl] = useState(cutoutUrls[0]?.url ?? "");
   const [assetId, setAssetId] = useState(cutoutUrls[0]?.asset_id ?? "");
+  const [cutoutFile, setCutoutFile] = useState<File | null>(null);
   const [scene, setScene] = useState("");
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<{ background_url?: string; composite_url?: string } | null>(null);
@@ -19,18 +20,29 @@ export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
   const isDark = mode === "dark";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
+  const fileClass = `w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:px-4 file:py-2 file:text-sm file:font-medium file:cursor-pointer ${isDark ? "text-slate-400 file:bg-slate-700 file:text-slate-300 hover:file:bg-slate-600" : "text-slate-500 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"}`;
 
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
-    if (!cutoutUrl.trim() || !scene.trim()) return;
+    if ((!cutoutUrl.trim() && !cutoutFile) || !scene.trim()) return;
     setGenerating(true);
     setError(null);
     setResult(null);
     try {
+      let finalUrl = cutoutUrl.trim();
+      if (cutoutFile) {
+        const fd = new FormData();
+        fd.append("files", cutoutFile);
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
+        const uploadData = await uploadRes.json();
+        if (!uploadData.results?.[0]?.success) throw new Error("上传失败");
+        finalUrl = uploadData.results[0].url;
+      }
+
       const res = await fetch("/api/ai/generate-background", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cutout_url: cutoutUrl.trim(), asset_id: assetId || undefined, scene_description: scene.trim() }),
+        body: JSON.stringify({ cutout_url: finalUrl, asset_id: assetId || undefined, scene_description: scene.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -58,10 +70,16 @@ export function AiBackgroundGenerator({ cutoutUrls = [] }: Props) {
             </select>
           </div>
         ) : (
-          <div>
-            <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>抠图图片 URL</label>
-            <input type="url" value={cutoutUrl} onChange={(e) => setCutoutUrl(e.target.value)} placeholder="https://... 透明底 PNG" className={inputClass} required />
-          </div>
+          <>
+            <div>
+              <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>上传抠图图片</label>
+              <input type="file" accept="image/*" onChange={(e) => { setCutoutFile(e.target.files?.[0] ?? null); if (e.target.files?.[0]) setCutoutUrl(""); }} className={fileClass} />
+            </div>
+            <div>
+              <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>或输入图片 URL</label>
+              <input type="url" value={cutoutUrl} onChange={(e) => { setCutoutUrl(e.target.value); if (e.target.value) setCutoutFile(null); }} placeholder="https://... 透明底 PNG" className={inputClass} disabled={!!cutoutFile} />
+            </div>
+          </>
         )}
 
         <div>
