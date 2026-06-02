@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { DropZone } from "@/components/drop-zone";
+import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
 export function AiPatternGenerator() {
   const [referenceUrl, setReferenceUrl] = useState("");
@@ -41,7 +42,9 @@ export function AiPatternGenerator() {
     const res = await fetch("/api/upload", { method: "POST", body: fd });
     const data = await res.json();
     if (!data.results?.[0]?.success) throw new Error("上传失败");
-    return data.results[0].url as string;
+    const uploadedUrl = getUploadedImageUrl(data.results[0] as UploadApiResult);
+    if (!uploadedUrl) throw new Error("上传成功，但缺少可访问的图片 URL");
+    return uploadedUrl;
   }
 
   async function handleGenerate(e: FormEvent) {

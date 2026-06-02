@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { DropZone } from "@/components/drop-zone";
+import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
 type ProviderOption = {
   id: string;
@@ -64,7 +65,8 @@ export function AiBackgroundGenerator() {
       const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
       const uploadData = await uploadRes.json();
       if (!uploadData.results?.[0]?.success) throw new Error("图片上传失败");
-      const imageUrl = uploadData.results[0].url as string;
+      const imageUrl = getUploadedImageUrl(uploadData.results[0] as UploadApiResult);
+      if (!imageUrl) throw new Error("图片上传成功，但缺少可访问的图片 URL");
 
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",

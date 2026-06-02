@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImage, resolveProvider } from "@/lib/ai-image/router";
 
@@ -89,6 +90,9 @@ export async function POST(request: Request) {
     if (saveToAssets) {
       const buffer = Buffer.from(result.imageBase64, "base64");
       const ext = result.mimeType === "image/png" ? "png" : "jpg";
+      const metadata = await sharp(buffer).metadata();
+      const outputWidth = metadata.width ?? width;
+      const outputHeight = metadata.height ?? height;
       const datePath = new Date().toISOString().slice(0, 10);
       const storagePath = `${datePath}/ai-${randomUUID()}.${ext}`;
 
@@ -112,8 +116,8 @@ export async function POST(request: Request) {
             original_url: resultUrl,
             filename: `ai-generated-${randomUUID().slice(0, 8)}.${ext}`,
             file_size: buffer.length,
-            width,
-            height,
+            width: outputWidth,
+            height: outputHeight,
             format: ext === "png" ? "png" : "jpeg",
             source: "ai",
             status: "uploaded",

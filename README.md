@@ -656,6 +656,19 @@ exports/{yyyy-mm-dd}/{uuid}.zip
 
 当前不做 SDS 自动推送和多平台自动上架。
 
+## AI Image / Seedream 5.0
+
+The `/ai-image` page supports text-to-image and image-to-image through `/api/ai/generate-image`.
+
+For Volcano Ark Seedream 5.0 providers:
+
+- `base_url` should normally be `https://ark.cn-beijing.volces.com`. The backend also accepts values that already end with `/api/v3` or `/api/v3/images/generations`.
+- The image-to-image upload flow must pass the uploaded asset `original_url` as `reference_url`; otherwise Seedream receives no reference image and falls back to text-only generation.
+- The request body is aligned with the official Seedream 5.0 image generation API: `model`, `prompt`, optional `image`, `size`, `response_format: "url"`, `output_format: "png"`, `watermark: false`, and `optimize_prompt_options: { mode: "standard" }`.
+- Seedream negative prompt text is folded into `prompt` as an avoid instruction instead of being sent as an unsupported `negative_prompt` field.
+- When a reference image is present, the backend enables single-result auto sequence mode with `sequential_image_generation: "auto"` and `sequential_image_generation_options: { max_images: 1 }`.
+- Do not send generic diffusion parameters such as `guidance_scale`, `quality`, or `prompt_priority` to Seedream 5.0 unless the official Volcano Ark API for the configured model explicitly supports them.
+
 ## 检查与构建
 
 ```bash
