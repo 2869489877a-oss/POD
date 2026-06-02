@@ -23,7 +23,6 @@ export class VolcanoArkProvider implements ImageProvider {
       n: 1,
       size: this.resolveSize(params.width, params.height),
       response_format: "url",
-      guidance_scale: 2.5,
       watermark: false,
       sequential_image_generation: "disabled",
     };
