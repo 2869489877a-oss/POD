@@ -103,12 +103,17 @@ export function AiProvidersManager() {
   const orderedProviders = useMemo(() => sortProviders(providers), [providers]);
   const activeProviders = useMemo(() => providers.filter((provider) => provider.is_active), [providers]);
   const currentProvider = useMemo(() => sortProviders(activeProviders)[0] ?? null, [activeProviders]);
+  const nextDefaultPriority = useMemo(() => {
+    const maxPriority = providers.reduce((max, provider) => Math.max(max, provider.priority), 0);
+    return maxPriority + 1;
+  }, [providers]);
 
   const fetchProviders = useCallback(async () => {
     try {
       const res = await fetch("/api/ai-providers");
       const data = await readJsonResponse(res) as ProvidersApiResponse;
       setProviders(data.providers ?? []);
+      window.dispatchEvent(new Event("pod-ai-providers-updated"));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("加载模型配置失败", "Failed to load model configs"));
     } finally {
@@ -230,6 +235,24 @@ export function AiProvidersManager() {
     }
   }
 
+  async function setDefaultProvider(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-providers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true, priority: nextDefaultPriority }),
+      });
+      await readJsonResponse(res);
+      await fetchProviders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("切换默认模型失败", "Failed to switch default model"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function deleteProvider(id: string) {
     if (!confirm(t("确定删除这个模型配置？", "Delete this model configuration?"))) return;
     setBusyId(id);
@@ -281,7 +304,7 @@ export function AiProvidersManager() {
 
       <div className="grid gap-3 lg:grid-cols-3">
         <StatusCard
-          label={t("系统运行中", "System Running")}
+          label={t("当前默认模型", "Current Default Model")}
           value={currentProvider?.display_name ?? t("暂无启用模型", "No active model")}
           detail={currentProvider ? `${currentProvider.model_id} · P${currentProvider.priority}` : t("请添加并启用模型", "Add and enable a model")}
           isDark={isDark}
@@ -302,6 +325,15 @@ export function AiProvidersManager() {
           accentColor={colors.primary}
         />
       </div>
+
+      <DefaultModelPanel
+        provider={currentProvider}
+        providerName={currentProvider ? t(getProviderMeta(currentProvider.provider_type).zh, getProviderMeta(currentProvider.provider_type).en) : t("未配置", "Not configured")}
+        isDark={isDark}
+        accentColor={colors.primary}
+        glow={colors.glow}
+        t={t}
+      />
 
       {error && (
         <div className="rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-sm font-medium text-red-400">
@@ -349,12 +381,12 @@ export function AiProvidersManager() {
               {t("模型清单", "Model Inventory")}
             </h4>
             <p className={`mt-1 text-xs ${mutedText}`}>
-              {t("系统默认使用启用状态下优先级最高的模型。", "The system defaults to the active model with the highest priority.")}
+              {t("点击“设为默认”即可切换当前默认模型，系统会自动启用并调整优先级。", "Click Set Default to switch the current default model; the system will enable it and adjust priority automatically.")}
             </p>
           </div>
           {currentProvider && (
             <span className="rounded-full px-3 py-1 text-xs font-bold" style={{ background: `${colors.primary}1a`, color: colors.primary }}>
-              {t("当前模型：", "Current: ")}{currentProvider.display_name}
+              {t("当前默认模型：", "Default: ")}{currentProvider.display_name}
             </span>
           )}
         </div>
@@ -453,6 +485,18 @@ export function AiProvidersManager() {
                         </>
                       ) : (
                         <>
+                          <button
+                            type="button"
+                            disabled={busyId === provider.id || isCurrent}
+                            onClick={() => setDefaultProvider(provider.id)}
+                            className={
+                              isCurrent
+                                ? "rounded-lg bg-emerald-500/15 px-3 py-2 text-xs font-bold text-emerald-400 opacity-80"
+                                : `rounded-lg px-3 py-2 text-xs font-bold text-white shadow-sm transition disabled:opacity-50 bg-gradient-to-r ${colors.gradient} ${colors.shadow} hover:brightness-110`
+                            }
+                          >
+                            {isCurrent ? t("当前默认", "Default") : provider.is_active ? t("设为默认", "Set Default") : t("启用并设默认", "Enable Default")}
+                          </button>
                           <button
                             type="button"
                             onClick={() => startEditing(provider)}
@@ -591,6 +635,67 @@ function ProviderFields({
         />
         <p className={helpClass}>{t("启用模型中优先级最高者会作为当前默认模型。", "Highest active priority becomes the default model.")}</p>
       </div>
+    </div>
+  );
+}
+
+function DefaultModelPanel({
+  provider,
+  providerName,
+  isDark,
+  accentColor,
+  glow,
+  t,
+}: {
+  provider: Provider | null;
+  providerName: string;
+  isDark: boolean;
+  accentColor: string;
+  glow: string;
+  t: (zh: string, en: string) => string;
+}) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-[22px] border p-5 ${
+        isDark ? "border-white/[0.08] bg-black/[0.16]" : "border-black/[0.05] bg-white/90"
+      }`}
+    >
+      <div
+        className="pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-40"
+        style={{ background: `radial-gradient(circle at 70% 20%, ${glow}, transparent 42%)` }}
+      />
+      <div className="relative z-10 grid gap-4 xl:grid-cols-[1.15fr_0.85fr] xl:items-center">
+        <div className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-full px-3 py-1 text-xs font-black" style={{ background: `${accentColor}1f`, color: accentColor }}>
+              {t("默认模型控制台", "Default Model Console")}
+            </span>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${isDark ? "bg-white/[0.06] text-slate-400" : "bg-slate-100 text-slate-500"}`}>
+              {t("点击模型卡片右侧“设为默认”切换", "Use Set Default on a model card to switch")}
+            </span>
+          </div>
+          <h4 className={`truncate text-2xl font-black ${isDark ? "text-white" : "text-slate-950"}`}>
+            {provider?.display_name ?? t("暂无启用默认模型", "No active default model")}
+          </h4>
+          <p className={`mt-1 truncate text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+            {provider ? `${provider.model_id} · P${provider.priority}` : t("添加模型后点击“设为默认”即可启用。", "Add a model, then click Set Default to enable it.")}
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
+          <MiniMetric label={t("Provider", "Provider")} value={provider ? providerName : "-"} isDark={isDark} />
+          <MiniMetric label={t("Endpoint", "Endpoint")} value={provider?.base_url || t("默认接口", "Default endpoint")} isDark={isDark} />
+          <MiniMetric label={t("切换方式", "Switch Method")} value={t("设为默认", "Set Default")} isDark={isDark} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value, isDark }: { label: string; value: string; isDark: boolean }) {
+  return (
+    <div className={`min-w-0 rounded-xl border px-3 py-2.5 ${isDark ? "border-white/[0.07] bg-white/[0.035]" : "border-black/[0.05] bg-slate-50/80"}`}>
+      <p className={`text-[10px] font-black uppercase tracking-wide ${isDark ? "text-slate-500" : "text-slate-400"}`}>{label}</p>
+      <p className={`mt-1 truncate text-xs font-bold ${isDark ? "text-slate-200" : "text-slate-700"}`} title={value}>{value}</p>
     </div>
   );
 }

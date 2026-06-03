@@ -35,8 +35,10 @@ export function Sidebar() {
     }
 
     void loadCurrentModel();
+    window.addEventListener("pod-ai-providers-updated", loadCurrentModel);
     return () => {
       cancelled = true;
+      window.removeEventListener("pod-ai-providers-updated", loadCurrentModel);
     };
   }, []);
 
@@ -158,7 +160,7 @@ export function Sidebar() {
           </div>
           <div className={`rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-black/10" : "border-black/[0.04] bg-white/55"}`}>
             <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-              {t("当前模型", "Current Model")}
+              {t("当前默认模型", "Current Default Model")}
             </p>
             <p
               className={`mt-0.5 truncate text-xs font-bold ${currentProvider ? (isDark ? "text-white" : "text-slate-900") : (isDark ? "text-slate-500" : "text-slate-400")}`}
