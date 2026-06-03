@@ -7,6 +7,8 @@ import {
   type InfringementCheckRow,
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
+import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
+import type { InfringementRuleCategory } from "@/lib/infringement/types";
 import { useSettings } from "@/lib/settings/context";
 
 type CheckStatus = "pending" | "clear" | "review" | "risky" | "blocked";
@@ -79,6 +81,32 @@ const copyrightStyles: Record<CopyrightStatus, string> = {
   risky: "bg-amber-50 text-amber-700",
   unknown: "bg-zinc-100 text-zinc-700",
 };
+
+const ruleCategoryLabels: Record<InfringementRuleCategory, { en: string; zh: string }> = {
+  brand: { en: "Brand / Trademark", zh: "品牌 / 商标" },
+  celebrity: { en: "Celebrity / Likeness", zh: "名人 / 肖像" },
+  character: { en: "IP / Character", zh: "IP / 角色" },
+  copyright_phrase: { en: "Derivative Copy", zh: "衍生文案" },
+  logo: { en: "Logo / Mark", zh: "Logo / 标识" },
+  marketplace: { en: "Marketplace Copy", zh: "平台文案" },
+  sports: { en: "Sports / Team", zh: "体育 / 球队" },
+};
+
+const ruleSeverityLabels: Record<string, { en: string; zh: string }> = {
+  critical: { en: "Critical", zh: "极高" },
+  high: { en: "High", zh: "高" },
+  low: { en: "Low", zh: "低" },
+  medium: { en: "Medium", zh: "中" },
+};
+
+const ruleCategoryOptions: Array<{ value: "all" | InfringementRuleCategory; en: string; zh: string }> = [
+  { en: "All Categories", value: "all", zh: "全部分类" },
+  ...Object.entries(ruleCategoryLabels).map(([value, label]) => ({
+    en: label.en,
+    value: value as InfringementRuleCategory,
+    zh: label.zh,
+  })),
+];
 
 const filterOptions: Array<{ en: string; value: "all" | CheckStatus | "unchecked"; zh: string }> = [
   { en: "All", value: "all", zh: "全部" },
@@ -182,6 +210,8 @@ export function InfringementChecksManager({
   const [reviewStatus, setReviewStatus] = useState<Exclude<CheckStatus, "pending">>("review");
   const [reviewNote, setReviewNote] = useState("");
   const [isReviewSaving, setIsReviewSaving] = useState(false);
+  const [ruleSearchQuery, setRuleSearchQuery] = useState("");
+  const [ruleCategoryFilter, setRuleCategoryFilter] = useState<"all" | InfringementRuleCategory>("all");
 
   const visibleItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -208,6 +238,30 @@ export function InfringementChecksManager({
     });
   }, [filter, items, searchQuery]);
 
+  const visibleRuleEntries = useMemo(() => {
+    const keyword = ruleSearchQuery.trim().toLowerCase();
+
+    return infringementRuleEntries.filter((entry) => {
+      if (ruleCategoryFilter !== "all" && entry.category !== ruleCategoryFilter) return false;
+      if (!keyword) return true;
+
+      const searchable = [
+        entry.term,
+        entry.labelEn,
+        entry.labelZh,
+        entry.descriptionEn,
+        entry.descriptionZh,
+        entry.policyBasisEn,
+        entry.policyBasisZh,
+        entry.sourceLabel,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(keyword);
+    });
+  }, [ruleCategoryFilter, ruleSearchQuery]);
+
   const selectedCount = selectedIds.size;
   const stats = useMemo(() => {
     return items.reduce(
@@ -224,6 +278,8 @@ export function InfringementChecksManager({
       { blocked: 0, clear: 0, review: 0, risky: 0, total: 0, unchecked: 0 },
     );
   }, [items]);
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
+  const displayedRuleEntries = visibleRuleEntries.slice(0, 80);
 
   async function refreshDashboard() {
     setIsRefreshing(true);
@@ -439,6 +495,157 @@ export function InfringementChecksManager({
             {t("检测当前未检测", "Check Visible Unchecked")}
           </button>
         </div>
+      </section>
+
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
+              {t("服装印花规则库", "Apparel Print Rule Library")}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-950">
+              {t("按规则库算法辅助判定侵权风险", "Rule-based infringement risk scoring")}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
+              {t(
+                "规则库围绕衣服印花、T恤、卫衣、球衣、贴纸、烫画和 POD 上架文案扩展；普通服装词不会单独触发风险，只有与品牌、角色、赛事、名人、Logo 或衍生文案组合时才会提高风险。",
+                "The library is expanded around apparel prints, shirts, hoodies, jerseys, stickers, transfers and POD listing copy. Generic apparel terms do not trigger risk by themselves; risk increases when they are paired with brands, characters, events, celebrities, logos or derivative-work wording.",
+              )}
+            </p>
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            <p className="font-semibold">{numberFormatter.format(infringementRuleStats.totalTerms)} {t("条规则项", "rule entries")}</p>
+            <p className="mt-1 text-xs">{t("版本", "Version")} {RULE_ENGINE_VERSION}</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border border-red-200 bg-red-50 p-4">
+            <p className="text-xs font-medium text-red-700">{t("极高风险", "Critical")}</p>
+            <p className="mt-2 text-2xl font-semibold text-red-800">
+              {numberFormatter.format(infringementRuleStats.bySeverity.critical)}
+            </p>
+          </div>
+          <div className="rounded-md border border-orange-200 bg-orange-50 p-4">
+            <p className="text-xs font-medium text-orange-700">{t("高风险", "High")}</p>
+            <p className="mt-2 text-2xl font-semibold text-orange-800">
+              {numberFormatter.format(infringementRuleStats.bySeverity.high)}
+            </p>
+          </div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-medium text-amber-700">{t("中风险", "Medium")}</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-800">
+              {numberFormatter.format(infringementRuleStats.bySeverity.medium)}
+            </p>
+          </div>
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-xs font-medium text-zinc-500">{t("低风险", "Low")}</p>
+            <p className="mt-2 text-2xl font-semibold text-zinc-950">
+              {numberFormatter.format(infringementRuleStats.bySeverity.low)}
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <h3 className="text-sm font-semibold text-zinc-950">{t("判定算法", "Scoring Algorithm")}</h3>
+            <div className="mt-3 grid gap-2 text-sm text-zinc-600 sm:grid-cols-2">
+              <p>{t("极高风险基础分 98，直接进入禁用。", "Critical starts at 98 and is blocked.")}</p>
+              <p>{t("高风险基础分 80，进入高风险复核。", "High starts at 80 and needs review.")}</p>
+              <p>{t("中风险基础分 55，进入人工复核。", "Medium starts at 55 and needs manual review.")}</p>
+              <p>{t("多命中每条额外 +3 分，最高 100。", "Each extra match adds 3 points, capped at 100.")}</p>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <h3 className="text-sm font-semibold text-zinc-950">{t("规则分类", "Rule Categories")}</h3>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {Object.entries(infringementRuleStats.byCategory).map(([category, count]) => (
+                <span key={category} className="rounded-md bg-white px-3 py-2 text-xs font-medium text-zinc-700">
+                  {t(ruleCategoryLabels[category as InfringementRuleCategory].zh, ruleCategoryLabels[category as InfringementRuleCategory].en)}
+                  <span className="ml-2 text-zinc-500">{numberFormatter.format(count)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_260px]">
+          <div>
+            <label htmlFor="rule-search" className="block text-sm font-medium text-zinc-950">
+              {t("搜索规则库", "Search Rules")}
+            </label>
+            <input
+              id="rule-search"
+              value={ruleSearchQuery}
+              onChange={(event) => setRuleSearchQuery(event.target.value)}
+              placeholder={t("搜索品牌、角色、Logo、赛事、平台文案或服装场景", "Search brand, character, logo, event, marketplace copy or apparel context")}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+          </div>
+          <div>
+            <label htmlFor="rule-category" className="block text-sm font-medium text-zinc-950">
+              {t("规则分类", "Category")}
+            </label>
+            <select
+              id="rule-category"
+              value={ruleCategoryFilter}
+              onChange={(event) => setRuleCategoryFilter(event.target.value as typeof ruleCategoryFilter)}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              {ruleCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.zh, option.en)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-hidden rounded-md border border-zinc-200">
+          <div className="grid grid-cols-[1.2fr_120px_1fr] gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            <span>{t("规则项", "Rule Entry")}</span>
+            <span>{t("风险", "Risk")}</span>
+            <span>{t("依据 / 来源", "Basis / Source")}</span>
+          </div>
+          <div className="max-h-[360px] overflow-y-auto divide-y divide-zinc-200 bg-white">
+            {displayedRuleEntries.map((entry) => (
+              <div key={entry.id} className="grid gap-3 px-4 py-3 text-sm text-zinc-700 md:grid-cols-[1.2fr_120px_1fr]">
+                <div>
+                  <p className="font-semibold text-zinc-950">{entry.term}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{t(entry.labelZh, entry.labelEn)}</p>
+                </div>
+                <div>
+                  <span className="rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
+                    {t(ruleSeverityLabels[entry.severity].zh, ruleSeverityLabels[entry.severity].en)}
+                  </span>
+                </div>
+                <div>
+                  <p className="line-clamp-2 text-xs leading-5 text-zinc-600">
+                    {t(entry.policyBasisZh ?? entry.descriptionZh, entry.policyBasisEn ?? entry.descriptionEn)}
+                  </p>
+                  {entry.sourceUrl ? (
+                    <a
+                      href={entry.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex text-xs font-medium text-emerald-700 hover:text-emerald-800"
+                    >
+                      {entry.sourceLabel ?? entry.sourceUrl}
+                    </a>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <p className="mt-3 text-xs leading-5 text-zinc-500">
+          {t(
+            `当前显示 ${displayedRuleEntries.length} / ${visibleRuleEntries.length} 条过滤结果。规则库只做风险筛查，不等同法律意见；最终上架仍需人工确认授权、商标和图片来源。`,
+            `Showing ${displayedRuleEntries.length} / ${visibleRuleEntries.length} filtered entries. The library is a risk screen, not legal advice; final listing still requires manual rights and source review.`,
+          )}
+        </p>
       </section>
 
       {message ? (

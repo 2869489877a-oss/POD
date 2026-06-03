@@ -1,4 +1,4 @@
-import { infringementRules, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
+import { infringementRules, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
 import type {
   InfringementDetectionInput,
   InfringementDetectionResult,
@@ -84,7 +84,7 @@ function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number)
   }
 
   return matchCount === 0
-    ? "规则库未发现明显命中。该结果不是法律意见，仍建议对商用素材保留授权证明。"
+    ? "服装印花规则库未发现明显命中。该结果不是法律意见，仍建议对商用素材保留授权证明。"
     : "存在规则命中，请人工复核后再决定是否上架。";
 }
 
@@ -142,7 +142,9 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
     evidence: {
       fields_scanned: fields.map((field) => field.name),
       product_text_count: input.productTexts?.length ?? 0,
+      rule_count: infringementRuleStats.totalRules,
       rule_engine_version: RULE_ENGINE_VERSION,
+      rule_term_count: infringementRuleStats.totalTerms,
     },
     matched_rules: matches,
     recommendation: getRecommendation(riskLevel, matches.length),

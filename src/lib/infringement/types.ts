@@ -21,8 +21,28 @@ export type InfringementRule = {
   labelEn: string;
   labelZh: string;
   patterns?: string[];
+  policyBasisEn?: string;
+  policyBasisZh?: string;
   severity: InfringementSeverity;
+  sourceLabel?: string;
+  sourceUrl?: string;
   terms: string[];
+};
+
+export type InfringementRuleEntry = {
+  category: InfringementRuleCategory;
+  descriptionEn: string;
+  descriptionZh: string;
+  id: string;
+  labelEn: string;
+  labelZh: string;
+  policyBasisEn?: string;
+  policyBasisZh?: string;
+  ruleId: string;
+  severity: InfringementSeverity;
+  sourceLabel?: string;
+  sourceUrl?: string;
+  term: string;
 };
 
 export type InfringementRuleMatch = {
@@ -58,7 +78,9 @@ export type InfringementDetectionResult = {
   evidence: {
     fields_scanned: string[];
     product_text_count: number;
+    rule_count?: number;
     rule_engine_version: string;
+    rule_term_count?: number;
   };
   matched_rules: InfringementRuleMatch[];
   recommendation: string;
