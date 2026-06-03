@@ -1,109 +1,172 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
 
+type DashScopeMultimodalResponse = {
+  output?: {
+    choices?: Array<{
+      message?: {
+        content?: Array<{ image?: string; text?: string }>;
+      };
+    }>;
+    results?: Array<{ url?: string; b64_image?: string }>;
+  };
+  code?: string;
+  message?: string;
+  error?: {
+    code?: string;
+    message?: string;
+  };
+};
+
 export class TongyiProvider implements ImageProvider {
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
-    const baseUrl = config.baseUrl || "https://dashscope.aliyuncs.com";
-    const submitUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/services/aigc/text2image/image-synthesis`;
+    const url = this.resolveMultimodalGenerationUrl(config.baseUrl);
+    const prompt = params.style ? `${params.prompt}\nStyle: ${params.style}` : params.prompt;
+    const content: Array<{ image: string } | { text: string }> = [];
 
-    const submitBody = {
-      model: config.modelId,
-      input: {
-        prompt: params.prompt,
-        negative_prompt: params.negativePrompt || "",
-      },
-      parameters: {
-        size: `${params.width || 1024}*${params.height || 1024}`,
-        style: params.style || "<auto>",
-      },
+    if (params.referenceUrl) {
+      content.push({ image: params.referenceUrl });
+    }
+    content.push({ text: prompt });
+
+    const parameters: Record<string, unknown> = {
+      n: 1,
+      watermark: false,
+      negative_prompt: params.negativePrompt || " ",
     };
 
-    const submitResponse = await fetch(submitUrl, {
+    if (!this.isLegacyQwenImageEdit(config.modelId)) {
+      parameters.prompt_extend = true;
+      parameters.size = this.normalizeSize(config.modelId, Boolean(params.referenceUrl), params.width, params.height);
+    }
+
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         "Content-Type": "application/json",
-        "X-DashScope-Async": "enable",
       },
-      body: JSON.stringify(submitBody),
-      signal: AbortSignal.timeout(30_000),
+      body: JSON.stringify({
+        model: config.modelId,
+        input: {
+          messages: [
+            {
+              role: "user",
+              content,
+            },
+          ],
+        },
+        parameters,
+      }),
+      signal: AbortSignal.timeout(120_000),
     });
 
-    if (!submitResponse.ok) {
-      const text = await submitResponse.text();
-      throw new Error(`通义万相提交失败 ${submitResponse.status}: ${text}`);
+    const text = await response.text();
+    const data = this.parseJson(text);
+
+    if (!response.ok) {
+      const message = data?.message || data?.error?.message || text || response.statusText;
+      throw new Error(`Tongyi image request failed ${response.status}: ${message}`);
     }
 
-    const submitData = await submitResponse.json() as {
-      output?: { task_id?: string; task_status?: string };
+    const imageValue = this.extractImageValue(data);
+    if (!imageValue) {
+      throw new Error("Tongyi image request did not return an image");
+    }
+
+    return this.readImageValue(imageValue);
+  }
+
+  private resolveMultimodalGenerationUrl(baseUrl?: string | null): string {
+    const normalized = (baseUrl || "https://dashscope.aliyuncs.com").trim().replace(/\/+$/, "");
+
+    if (normalized.endsWith("/services/aigc/multimodal-generation/generation")) {
+      return normalized;
+    }
+
+    if (normalized.endsWith("/api/v1")) {
+      return `${normalized}/services/aigc/multimodal-generation/generation`;
+    }
+
+    return `${normalized}/api/v1/services/aigc/multimodal-generation/generation`;
+  }
+
+  private normalizeSize(modelId: string, hasReferenceImage: boolean, width?: number, height?: number): string {
+    if (!hasReferenceImage && this.requiresPresetSize(modelId)) {
+      return this.closestPresetSize(width || 1024, height || 1024);
+    }
+
+    const safeWidth = this.clampToMultipleOf16(width || 1024, 512, 2048);
+    const safeHeight = this.clampToMultipleOf16(height || 1024, 512, 2048);
+    return `${safeWidth}*${safeHeight}`;
+  }
+
+  private requiresPresetSize(modelId: string): boolean {
+    return /^qwen-image-(max|plus)(?:-|$)/.test(modelId);
+  }
+
+  private closestPresetSize(width: number, height: number): string {
+    const ratio = width / height;
+    const presets = [
+      { size: "1664*928", ratio: 16 / 9 },
+      { size: "1472*1104", ratio: 4 / 3 },
+      { size: "1328*1328", ratio: 1 },
+      { size: "1104*1472", ratio: 3 / 4 },
+      { size: "928*1664", ratio: 9 / 16 },
+    ];
+    const closest = presets.reduce((best, item) => (
+      Math.abs(item.ratio - ratio) < Math.abs(best.ratio - ratio) ? item : best
+    ));
+    return closest.size;
+  }
+
+  private clampToMultipleOf16(value: number, min: number, max: number): number {
+    const clamped = Math.max(min, Math.min(max, Math.round(value)));
+    return Math.max(min, Math.min(max, Math.round(clamped / 16) * 16));
+  }
+
+  private isLegacyQwenImageEdit(modelId: string): boolean {
+    return modelId === "qwen-image-edit";
+  }
+
+  private parseJson(text: string): DashScopeMultimodalResponse | null {
+    try {
+      return text ? JSON.parse(text) as DashScopeMultimodalResponse : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractImageValue(data: DashScopeMultimodalResponse | null): string | undefined {
+    const content = data?.output?.choices?.[0]?.message?.content;
+    if (Array.isArray(content)) {
+      const imageItem = content.find((item) => typeof item.image === "string" && item.image.length > 0);
+      if (imageItem?.image) return imageItem.image;
+    }
+
+    const result = data?.output?.results?.[0];
+    return result?.url || result?.b64_image;
+  }
+
+  private async readImageValue(value: string): Promise<ImageGenResult> {
+    const dataUrlMatch = value.match(/^data:([^;]+);base64,(.+)$/);
+    if (dataUrlMatch) {
+      return { imageBase64: dataUrlMatch[2], mimeType: dataUrlMatch[1] };
+    }
+
+    if (/^[A-Za-z0-9+/=\s]+$/.test(value) && value.length > 1000) {
+      return { imageBase64: value.replace(/\s/g, ""), mimeType: "image/png" };
+    }
+
+    const imageResponse = await fetch(value, { signal: AbortSignal.timeout(30_000) });
+    if (!imageResponse.ok) {
+      throw new Error(`Tongyi image download failed ${imageResponse.status}`);
+    }
+
+    const buffer = Buffer.from(await imageResponse.arrayBuffer());
+    const mimeType = imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
+    return {
+      imageBase64: buffer.toString("base64"),
+      mimeType,
     };
-
-    const taskId = submitData.output?.task_id;
-    if (!taskId) {
-      throw new Error("通义万相未返回 task_id");
-    }
-
-    const result = await this.pollTask(baseUrl, config.apiKey, taskId);
-    return result;
-  }
-
-  private async pollTask(baseUrl: string, apiKey: string, taskId: string): Promise<ImageGenResult> {
-    const statusUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/tasks/${taskId}`;
-    const maxAttempts = 60;
-
-    for (let i = 0; i < maxAttempts; i++) {
-      await this.sleep(2000);
-
-      const response = await fetch(statusUrl, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(30_000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`通义万相查询失败 ${response.status}`);
-      }
-
-      const data = await response.json() as {
-        output?: {
-          task_status?: string;
-          results?: Array<{ url?: string; b64_image?: string }>;
-          message?: string;
-        };
-      };
-
-      const status = data.output?.task_status;
-
-      if (status === "SUCCEEDED") {
-        const results = data.output?.results;
-        const first = results?.[0];
-
-        if (first?.b64_image) {
-          return { imageBase64: first.b64_image, mimeType: "image/png" };
-        }
-
-        if (first?.url) {
-          const imageResponse = await fetch(first.url, { signal: AbortSignal.timeout(30_000) });
-          if (!imageResponse.ok) {
-            throw new Error("通义万相图片下载失败");
-          }
-          const buffer = await imageResponse.arrayBuffer();
-          return {
-            imageBase64: Buffer.from(buffer).toString("base64"),
-            mimeType: "image/png",
-          };
-        }
-
-        throw new Error("通义万相未返回图片");
-      }
-
-      if (status === "FAILED") {
-        throw new Error(`通义万相生成失败: ${data.output?.message || "未知错误"}`);
-      }
-    }
-
-    throw new Error("通义万相生成超时");
-  }
-
-  private sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

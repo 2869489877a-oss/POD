@@ -25,6 +25,7 @@ const PROVIDER_TYPES = [
 const BASE_URL_DEFAULTS: Record<string, string> = {
   doubao: "https://ark.cn-beijing.volces.com",
   jimeng: "https://ark.cn-beijing.volces.com",
+  tongyi: "https://dashscope.aliyuncs.com",
 };
 
 const REQUIRES_BASE_URL = new Set(["doubao", "jimeng"]);
