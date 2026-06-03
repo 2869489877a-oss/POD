@@ -1,15 +1,50 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { navItems } from "@/lib/navigation";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 
+type SidebarProvider = {
+  id: string;
+  display_name: string;
+  model_id: string;
+  is_active: boolean;
+  priority: number;
+};
+
 export function Sidebar() {
   const pathname = usePathname();
   const { accent, isDark, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
+  const [providers, setProviders] = useState<SidebarProvider[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentModel() {
+      try {
+        const res = await fetch("/api/ai-providers");
+        const data = await res.json();
+        if (!cancelled) setProviders(data.providers ?? []);
+      } catch {
+        if (!cancelled) setProviders([]);
+      }
+    }
+
+    void loadCurrentModel();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const currentProvider = useMemo(() => {
+    return providers
+      .filter((provider) => provider.is_active)
+      .sort((a, b) => b.priority - a.priority)[0] ?? null;
+  }, [providers]);
 
   return (
     <aside
@@ -19,7 +54,6 @@ export function Sidebar() {
           : "sticky top-3 flex h-[calc(100vh-1.5rem)] w-[270px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/80 shadow-[0_28px_80px_rgba(0,0,0,0.06)] backdrop-blur-2xl"
       }
     >
-      {/* Top glow accent */}
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-32"
         style={{
@@ -29,7 +63,6 @@ export function Sidebar() {
         }}
       />
 
-      {/* Logo area */}
       <div className={`relative z-10 px-5 py-5 ${isDark ? "border-b border-white/[0.06]" : "border-b border-black/[0.04]"}`}>
         <div className="flex items-center gap-3">
           <div
@@ -51,7 +84,6 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="relative z-10 flex-1 space-y-1 overflow-y-auto px-3 py-3">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
@@ -71,7 +103,6 @@ export function Sidebar() {
                     : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900",
               ].join(" ")}
             >
-              {/* Active indicator bar */}
               {isActive && (
                 <div
                   className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
@@ -94,7 +125,6 @@ export function Sidebar() {
               </svg>
               <span>{t(item.titleZh, item.titleEn)}</span>
 
-              {/* Hover shimmer */}
               <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                 <div
                   className="animate-shimmer absolute inset-0"
@@ -110,20 +140,37 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Bottom status */}
       <div className={`relative z-10 mx-3 mb-3 rounded-xl p-3.5 ${isDark ? "border border-white/[0.06] bg-white/[0.03]" : "border border-black/[0.04] bg-black/[0.02]"}`}>
-        <div className="flex items-center gap-2.5">
-          <div className="relative">
-            <div className="h-2 w-2 rounded-full" style={{ background: colors.primary }} />
-            <div className="animate-pulse-glow absolute inset-0 rounded-full" style={{ background: colors.primary, filter: "blur(3px)" }} />
+        <div className="space-y-3">
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <div className="h-2 w-2 rounded-full" style={{ background: colors.primary }} />
+              <div className="animate-pulse-glow absolute inset-0 rounded-full" style={{ background: colors.primary, filter: "blur(3px)" }} />
+            </div>
+            <div>
+              <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+                {t("系统状态", "System Status")}
+              </p>
+              <p className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                {t("系统运行中", "Running")}
+              </p>
+            </div>
           </div>
-          <div>
+          <div className={`rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-black/10" : "border-black/[0.04] bg-white/55"}`}>
             <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-              {t("系统状态", "System Status")}
+              {t("当前模型", "Current Model")}
             </p>
-            <p className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-              {t("在线运行中", "Online")}
+            <p
+              className={`mt-0.5 truncate text-xs font-bold ${currentProvider ? (isDark ? "text-white" : "text-slate-900") : (isDark ? "text-slate-500" : "text-slate-400")}`}
+              title={currentProvider ? `${currentProvider.display_name} / ${currentProvider.model_id}` : undefined}
+            >
+              {currentProvider?.display_name ?? t("暂无启用模型", "No active model")}
             </p>
+            {currentProvider && (
+              <p className={`mt-0.5 truncate text-[10px] ${isDark ? "text-slate-500" : "text-slate-400"}`} title={currentProvider.model_id}>
+                {currentProvider.model_id}
+              </p>
+            )}
           </div>
         </div>
       </div>
