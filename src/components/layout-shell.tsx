@@ -29,8 +29,8 @@ export function LayoutShell({ children }: { children: ReactNode }) {
         <main
           className={
             isDark
-              ? "min-w-0 flex-1 overflow-hidden rounded-[24px] border border-white/[0.08] bg-white/[0.03] px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-xl"
-              : "min-w-0 flex-1 overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/70 px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.06)] backdrop-blur-xl"
+              ? "pod-content min-w-0 flex-1 overflow-hidden rounded-[24px] border border-white/[0.08] bg-white/[0.03] px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+              : "pod-content min-w-0 flex-1 overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/70 px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.06)] backdrop-blur-xl"
           }
         >
           <div className="mx-auto max-w-[1500px]">{children}</div>

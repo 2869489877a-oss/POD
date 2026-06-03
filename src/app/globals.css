@@ -125,3 +125,168 @@ a {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
+
+/* Night mode legacy page normalization */
+[data-mode="night"] .pod-content {
+  color: #e5edf7;
+}
+
+[data-mode="night"] .pod-content :is(.bg-white, .bg-zinc-50, .bg-slate-50) {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)) !important;
+}
+
+[data-mode="night"] .pod-content :is(.bg-zinc-100, .bg-slate-100) {
+  background: rgba(255, 255, 255, 0.065) !important;
+}
+
+[data-mode="night"] .pod-content :is(section, article, aside, form, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).bg-white,
+[data-mode="night"] .pod-content :is(section, article, aside, form, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).bg-zinc-50,
+[data-mode="night"] .pod-content :is(section, article, aside, form, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl).bg-slate-50 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+[data-mode="night"] .pod-content :is(.border-zinc-200, .border-zinc-300, .border-slate-200, .border-slate-300, .border-slate-200\/60) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+[data-mode="night"] .pod-content :is(.divide-zinc-200, .divide-slate-200) > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-zinc-950, .text-zinc-900, .text-zinc-800, .text-slate-950, .text-slate-900, .text-slate-800) {
+  color: #f8fafc !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-zinc-700, .text-zinc-600, .text-slate-700, .text-slate-600) {
+  color: #cbd5e1 !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-zinc-500, .text-zinc-400, .text-slate-500, .text-slate-400) {
+  color: #94a3b8 !important;
+}
+
+[data-mode="night"] .pod-content :is(input, select, textarea) {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  background: rgba(15, 23, 42, 0.72) !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+[data-mode="night"] .pod-content :is(input, textarea)::placeholder {
+  color: rgba(148, 163, 184, 0.78) !important;
+}
+
+[data-mode="night"] .pod-content select option {
+  background: #0f172a;
+  color: #f8fafc;
+}
+
+[data-mode="night"] .pod-content input[type="checkbox"],
+[data-mode="night"] .pod-content input[type="radio"] {
+  accent-color: #10b981;
+  background: transparent !important;
+}
+
+[data-mode="night"] .pod-content :is(button, a).border-zinc-300,
+[data-mode="night"] .pod-content :is(button, a).border-slate-300 {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.045) !important;
+  color: #e2e8f0 !important;
+}
+
+[data-mode="night"] .pod-content :is(button, a).border-zinc-300:hover,
+[data-mode="night"] .pod-content :is(button, a).border-slate-300:hover {
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  color: #f8fafc !important;
+}
+
+[data-mode="night"] .pod-content :is(button, a).bg-zinc-950,
+[data-mode="night"] .pod-content button.bg-black {
+  background: linear-gradient(90deg, #10b981, #0891b2) !important;
+  color: #ffffff !important;
+  box-shadow: 0 18px 45px rgba(16, 185, 129, 0.22);
+}
+
+[data-mode="night"] .pod-content :is(button, a):disabled {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  background: rgba(148, 163, 184, 0.14) !important;
+  color: rgba(226, 232, 240, 0.5) !important;
+  box-shadow: none !important;
+}
+
+[data-mode="night"] .pod-content table {
+  color: #e2e8f0;
+}
+
+[data-mode="night"] .pod-content thead.bg-zinc-50,
+[data-mode="night"] .pod-content thead.bg-slate-50 {
+  background: rgba(15, 23, 42, 0.74) !important;
+}
+
+[data-mode="night"] .pod-content tbody.bg-white {
+  background: rgba(15, 23, 42, 0.35) !important;
+}
+
+[data-mode="night"] .pod-content :is(.hover\:bg-zinc-50, .hover\:bg-zinc-100, .hover\:bg-slate-50, .hover\:bg-slate-100):hover {
+  background: rgba(16, 185, 129, 0.08) !important;
+}
+
+[data-mode="night"] .pod-content :is(.bg-red-50, .bg-rose-50) {
+  border-color: rgba(248, 113, 113, 0.28) !important;
+  background: rgba(127, 29, 29, 0.28) !important;
+}
+
+[data-mode="night"] .pod-content :is(.bg-amber-50, .bg-yellow-50) {
+  border-color: rgba(251, 191, 36, 0.26) !important;
+  background: rgba(120, 53, 15, 0.28) !important;
+}
+
+[data-mode="night"] .pod-content :is(.bg-emerald-50, .bg-green-50, .bg-emerald-50\/60, .bg-emerald-50\/70, .bg-emerald-100) {
+  border-color: rgba(52, 211, 153, 0.24) !important;
+  background: rgba(6, 78, 59, 0.3) !important;
+}
+
+[data-mode="night"] .pod-content .bg-blue-50 {
+  border-color: rgba(96, 165, 250, 0.24) !important;
+  background: rgba(30, 64, 175, 0.26) !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-red-700, .text-red-600) {
+  color: #fca5a5 !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-amber-800, .text-amber-700, .text-yellow-800, .text-yellow-700) {
+  color: #fcd34d !important;
+}
+
+[data-mode="night"] .pod-content :is(.text-emerald-800, .text-emerald-700, .text-green-800, .text-green-700) {
+  color: #6ee7b7 !important;
+}
+
+[data-mode="night"] .pod-content .text-blue-700 {
+  color: #93c5fd !important;
+}
+
+[data-mode="night"] .pod-content :is(.border-red-100, .border-red-200, .border-red-300) {
+  border-color: rgba(248, 113, 113, 0.28) !important;
+}
+
+[data-mode="night"] .pod-content :is(.border-amber-200, .border-yellow-200) {
+  border-color: rgba(251, 191, 36, 0.26) !important;
+}
+
+[data-mode="night"] .pod-content :is(.border-emerald-200, .border-green-200) {
+  border-color: rgba(52, 211, 153, 0.24) !important;
+}
+
+[data-mode="night"] .pod-content :is(.hover\:bg-red-50, .hover\:bg-rose-50):hover {
+  background: rgba(127, 29, 29, 0.36) !important;
+}
+
+[data-mode="night"] .pod-content :is(.hover\:bg-emerald-100, .hover\:bg-green-100):hover {
+  background: rgba(6, 78, 59, 0.4) !important;
+}
