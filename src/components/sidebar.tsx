@@ -8,41 +8,51 @@ import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { mode, accent, t } = useSettings();
+  const { accent, isDark, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
-  const isPremium = mode === "premium";
-  const isDark = mode !== "light";
 
   return (
     <aside
       className={
-        isPremium
-          ? "sticky top-4 flex h-[calc(100vh-2rem)] w-72 shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.09),rgba(255,255,255,0.035))] shadow-[0_32px_90px_rgba(0,0,0,0.35)] backdrop-blur-2xl"
-          : `sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r ${isDark ? "bg-[#0d0d24] border-white/5" : "bg-white border-slate-200"}`
+        isDark
+          ? "sticky top-3 flex h-[calc(100vh-1.5rem)] w-[270px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_28px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl"
+          : "sticky top-3 flex h-[calc(100vh-1.5rem)] w-[270px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/80 shadow-[0_28px_80px_rgba(0,0,0,0.06)] backdrop-blur-2xl"
       }
     >
-      {isPremium && <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(32,227,162,0.16),transparent_18%,transparent_78%,rgba(246,198,106,0.1))]" />}
-      <div className={isPremium ? "relative z-10 border-b border-white/10 px-5 py-6" : "px-5 py-5"}>
-        <div className={isPremium ? "flex items-center gap-3.5" : "flex items-center gap-2.5"}>
+      {/* Top glow accent */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-32"
+        style={{
+          background: isDark
+            ? `linear-gradient(180deg, ${colors.glow.replace("0.4", "0.1")}, transparent)`
+            : `linear-gradient(180deg, ${colors.glow.replace("0.4", "0.06")}, transparent)`,
+        }}
+      />
+
+      {/* Logo area */}
+      <div className={`relative z-10 px-5 py-5 ${isDark ? "border-b border-white/[0.06]" : "border-b border-black/[0.04]"}`}>
+        <div className="flex items-center gap-3">
           <div
-            className={
-              isPremium
-                ? "flex h-14 w-14 items-center justify-center rounded-[17px] bg-gradient-to-br from-emerald-300 via-cyan-300 to-amber-300 text-slate-950 shadow-[0_18px_46px_rgba(32,227,162,0.28)]"
-                : `flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${colors.gradient} shadow-lg ${colors.shadow}`
-            }
+            className="animate-breathe flex h-11 w-11 items-center justify-center rounded-[14px] shadow-lg"
+            style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}dd)` }}
           >
-            <svg className={isPremium ? "h-7 w-7" : "h-4.5 w-4.5 text-white"} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <svg className="h-5.5 w-5.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
             </svg>
           </div>
           <div>
-            <p className={isPremium ? "text-xs font-black uppercase tracking-[0.14em] text-amber-300" : "text-[11px] font-semibold uppercase tracking-wider"} style={{ color: isPremium ? undefined : colors.primary }}>Internal</p>
-            <h1 className={`${isPremium ? "mt-0.5 text-xl" : "text-sm"} font-bold ${isDark ? "text-white" : "text-slate-900"}`}>{t("POD 批处理", "POD Batch")}</h1>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: colors.primary }}>
+              Internal
+            </p>
+            <h1 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
+              {t("POD 批处理", "POD Batch")}
+            </h1>
           </div>
         </div>
       </div>
 
-      <nav className={isPremium ? "relative z-10 flex-1 space-y-1.5 overflow-y-auto px-3.5 py-4" : "flex-1 space-y-0.5 overflow-y-auto px-3 py-2"}>
+      {/* Navigation */}
+      <nav className="relative z-10 flex-1 space-y-1 overflow-y-auto px-3 py-3">
         {navItems.map((item) => {
           const isActive = pathname === item.href;
 
@@ -51,21 +61,30 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={[
-                isPremium
-                  ? "flex h-11 items-center gap-3 rounded-2xl border px-3.5 text-sm font-semibold transition-all duration-150"
-                  : "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150 border",
-                isPremium
-                  ? isActive
-                    ? "border-emerald-300/30 bg-gradient-to-r from-emerald-400/25 to-cyan-300/10 text-white shadow-[inset_3px_0_0_#20e3a2,0_14px_36px_rgba(32,227,162,0.11)]"
-                    : "border-transparent text-slate-300 hover:border-white/10 hover:bg-white/[0.055] hover:text-white"
-                  : isActive
-                    ? `bg-gradient-to-r ${colors.gradient.replace("from-", "from-").replace("to-", "to-")}/10 ${isDark ? "text-white" : "text-slate-900"} shadow-sm ${colors.border}`
-                    : `${isDark ? "text-slate-400 hover:bg-white/5 hover:text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"} border-transparent`,
+                "group relative flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition-all duration-200",
+                isActive
+                  ? isDark
+                    ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"
+                    : "bg-black/[0.04] text-slate-900 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
+                  : isDark
+                    ? "text-slate-400 hover:bg-white/[0.04] hover:text-white"
+                    : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900",
               ].join(" ")}
             >
+              {/* Active indicator bar */}
+              {isActive && (
+                <div
+                  className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
+                  style={{
+                    background: colors.primary,
+                    boxShadow: `0 0 12px ${colors.glow}`,
+                  }}
+                />
+              )}
+
               <svg
-                className={isPremium ? "h-5 w-5 shrink-0" : "h-[18px] w-[18px] shrink-0"}
-                style={{ color: isActive ? (isPremium ? "#20e3a2" : colors.primary) : undefined }}
+                className="h-[18px] w-[18px] shrink-0 transition-colors duration-200"
+                style={{ color: isActive ? colors.primary : undefined }}
                 fill="none"
                 viewBox="0 0 24 24"
                 strokeWidth={1.5}
@@ -73,21 +92,40 @@ export function Sidebar() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
               </svg>
-              <span className="font-medium">{t(item.titleZh, item.titleEn)}</span>
+              <span>{t(item.titleZh, item.titleEn)}</span>
+
+              {/* Hover shimmer */}
+              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                <div
+                  className="animate-shimmer absolute inset-0"
+                  style={{
+                    background: isDark
+                      ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)"
+                      : "linear-gradient(90deg, transparent, rgba(0,0,0,0.02), transparent)",
+                  }}
+                />
+              </div>
             </Link>
           );
         })}
       </nav>
 
-      <div className={isPremium ? "relative z-10 m-4 rounded-2xl border border-white/10 bg-white/[0.055] p-4" : `border-t px-5 py-3 ${isDark ? "border-white/5" : "border-slate-200"}`}>
-        {isPremium ? (
-          <>
-            <p className="text-xs font-semibold text-slate-500">Workspace Status</p>
-            <p className="mt-1 text-sm font-bold text-emerald-100">{t("AI Studio Ready", "AI Studio Ready")}</p>
-          </>
-        ) : (
-          <p className={`text-[11px] ${isDark ? "text-slate-600" : "text-slate-400"}`}>v0.1.0 · {t("内部系统", "Internal")}</p>
-        )}
+      {/* Bottom status */}
+      <div className={`relative z-10 mx-3 mb-3 rounded-xl p-3.5 ${isDark ? "border border-white/[0.06] bg-white/[0.03]" : "border border-black/[0.04] bg-black/[0.02]"}`}>
+        <div className="flex items-center gap-2.5">
+          <div className="relative">
+            <div className="h-2 w-2 rounded-full" style={{ background: colors.primary }} />
+            <div className="animate-pulse-glow absolute inset-0 rounded-full" style={{ background: colors.primary, filter: "blur(3px)" }} />
+          </div>
+          <div>
+            <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+              {t("系统状态", "System Status")}
+            </p>
+            <p className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+              {t("在线运行中", "Online")}
+            </p>
+          </div>
+        </div>
       </div>
     </aside>
   );

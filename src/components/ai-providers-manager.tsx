@@ -43,9 +43,8 @@ export function AiProvidersManager() {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { mode, accent, t } = useSettings();
+  const { isDark, accent, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
-  const isDark = mode !== "light";
 
   const fetchProviders = useCallback(async () => {
     setLoading(true);
@@ -114,7 +113,7 @@ export function AiProvidersManager() {
     fetchProviders();
   }
 
-  const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 ${isDark ? `border-white/10 bg-[#1a1a3e] text-slate-200 placeholder:text-slate-500 focus:${colors.ring}` : "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-blue-500 focus:border-blue-500"}`;
+  const inputClass = `w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:ring-cyan-500/30 focus:border-cyan-500"}`;
 
   return (
     <div className="space-y-4">
@@ -131,7 +130,7 @@ export function AiProvidersManager() {
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       {showForm && (
-        <form onSubmit={handleSubmit} className={`space-y-3 rounded-xl border p-5 ${isDark ? "border-white/10 bg-[#12122a]" : "border-slate-200 bg-white"}`}>
+        <form onSubmit={handleSubmit} className={`space-y-3 rounded-[18px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={`block text-xs font-medium mb-1.5 ${isDark ? "text-slate-400" : "text-slate-600"}`}>{t("模型类型", "Provider Type")}</label>
@@ -169,13 +168,13 @@ export function AiProvidersManager() {
       {loading ? (
         <p className={`text-sm ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("加载中...", "Loading...")}</p>
       ) : providers.length === 0 ? (
-        <div className={`rounded-xl border border-dashed p-8 text-center ${isDark ? "border-white/10 bg-[#12122a]/50" : "border-slate-300 bg-slate-50"}`}>
+        <div className={`rounded-[18px] border border-dashed p-8 text-center ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-black/[0.06] bg-slate-50/50"}`}>
           <p className={`text-sm ${isDark ? "text-slate-500" : "text-slate-400"}`}>{t("暂无配置，请添加 AI 模型", "No models configured. Add one above.")}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {providers.map((p) => (
-            <div key={p.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 transition-colors ${isDark ? "border-white/5 bg-[#12122a] hover:border-white/10" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+            <div key={p.id} className={`flex items-center justify-between rounded-[14px] border px-4 py-3 transition-colors ${isDark ? "border-white/[0.06] bg-white/[0.03] hover:border-white/[0.1]" : "border-black/[0.05] bg-white/80 hover:border-black/[0.1]"}`}>
               <div className="flex items-center gap-3">
                 <span className={`inline-block h-2.5 w-2.5 rounded-full ${p.is_active ? "bg-cyan-400 shadow-sm shadow-cyan-400/50" : "bg-slate-400"}`} />
                 <div>

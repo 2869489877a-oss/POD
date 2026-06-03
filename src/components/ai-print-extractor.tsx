@@ -14,9 +14,8 @@ export function AiPrintExtractor() {
   const [processing, setProcessing] = useState(false);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { mode, accent, t } = useSettings();
+  const { isDark, accent, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
-  const isDark = mode !== "light";
 
   function handleFile(f: File | null) {
     setFile(f);

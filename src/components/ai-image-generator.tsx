@@ -35,9 +35,8 @@ export function AiImageGenerator() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { mode, accent, t } = useSettings();
+  const { isDark, accent, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
-  const isDark = mode !== "light";
 
   const inputClass = `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
 

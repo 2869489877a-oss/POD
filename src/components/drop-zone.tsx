@@ -15,8 +15,7 @@ type Props = {
 export function DropZone({ label, hint, accept = "image/*", file, preview, onFileChange }: Props) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { mode, t } = useSettings();
-  const isDark = mode !== "light";
+  const { isDark, t } = useSettings();
 
   function handleDrop(e: DragEvent) {
     e.preventDefault();

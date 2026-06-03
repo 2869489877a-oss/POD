@@ -5,30 +5,35 @@ import { Sidebar } from "@/components/sidebar";
 import { useSettings } from "@/lib/settings/context";
 
 export function LayoutShell({ children }: { children: ReactNode }) {
-  const { mode } = useSettings();
-  const isPremium = mode === "premium";
+  const { isDark } = useSettings();
 
   return (
     <div
       className={
-        isPremium
-          ? "min-h-screen bg-[radial-gradient(circle_at_18%_18%,rgba(32,227,162,0.16),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(246,198,106,0.13),transparent_28%),radial-gradient(circle_at_70%_92%,rgba(103,232,249,0.11),transparent_32%),linear-gradient(135deg,#060a11,#0d1320_42%,#101827)] p-4 text-slate-100"
-          : `flex min-h-screen ${mode === "dark" ? "bg-[#0a0a1a] text-slate-100" : "bg-slate-50 text-slate-900"}`
+        isDark
+          ? "min-h-screen bg-[radial-gradient(ellipse_at_15%_15%,rgba(6,182,212,0.12),transparent_32%),radial-gradient(ellipse_at_85%_20%,rgba(99,102,241,0.09),transparent_28%),radial-gradient(ellipse_at_60%_90%,rgba(6,182,212,0.07),transparent_30%),linear-gradient(160deg,#060a11,#0c1222_40%,#0f172a)] p-3 text-slate-100"
+          : "min-h-screen bg-[radial-gradient(ellipse_at_15%_15%,rgba(6,182,212,0.06),transparent_32%),radial-gradient(ellipse_at_85%_20%,rgba(99,102,241,0.05),transparent_28%),radial-gradient(ellipse_at_60%_90%,rgba(6,182,212,0.04),transparent_30%),linear-gradient(160deg,#f8fafc,#f1f5f9_40%,#e2e8f0)] p-3 text-slate-900"
       }
     >
-      {isPremium && (
-        <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px)] bg-[length:44px_44px] [mask-image:linear-gradient(to_bottom,transparent,#000_10%,#000_88%,transparent)]" />
-      )}
-      <div className={isPremium ? "relative z-10 flex min-h-[calc(100vh-2rem)] w-full gap-4" : "flex min-h-screen w-full"}>
+      {/* Grid background */}
+      <div
+        className={`pointer-events-none fixed inset-0 ${
+          isDark
+            ? "bg-[linear-gradient(90deg,rgba(255,255,255,0.025)_1px,transparent_1px),linear-gradient(rgba(255,255,255,0.025)_1px,transparent_1px)] bg-[length:48px_48px]"
+            : "bg-[linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px)] bg-[length:48px_48px]"
+        } [mask-image:linear-gradient(to_bottom,transparent,#000_8%,#000_90%,transparent)]`}
+      />
+
+      <div className="relative z-10 flex min-h-[calc(100vh-1.5rem)] w-full gap-3">
         <Sidebar />
         <main
           className={
-            isPremium
-              ? "min-w-0 flex-1 overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.035] px-7 py-6 shadow-[0_28px_90px_rgba(0,0,0,0.28)] backdrop-blur-xl"
-              : "min-w-0 flex-1 px-8 py-6"
+            isDark
+              ? "min-w-0 flex-1 overflow-hidden rounded-[24px] border border-white/[0.08] bg-white/[0.03] px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+              : "min-w-0 flex-1 overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/70 px-7 py-6 shadow-[0_24px_80px_rgba(0,0,0,0.06)] backdrop-blur-xl"
           }
         >
-          <div className={isPremium ? "mx-auto max-w-[1500px]" : "mx-auto max-w-7xl"}>{children}</div>
+          <div className="mx-auto max-w-[1500px]">{children}</div>
         </main>
       </div>
     </div>

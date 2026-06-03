@@ -147,7 +147,7 @@ const BACKGROUND_COLOR_OPTIONS = [
 ] as const;
 
 export function AiBackgroundGenerator() {
-  const { mode, accent, language, t } = useSettings();
+  const { isDark, accent, language, t } = useSettings();
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -159,17 +159,13 @@ export function AiBackgroundGenerator() {
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const colors = ACCENT_COLORS[accent];
-  const isPremium = mode === "premium";
-  const isDark = mode !== "light";
   const currentTemplatePrompt =
     language === "zh"
       ? PRINT_PROMPT_TEMPLATES[templateIndex]?.promptZh ?? ""
       : PRINT_PROMPT_TEMPLATES[templateIndex]?.promptEn ?? "";
   const prompt = customPrompt ?? currentTemplatePrompt;
 
-  const inputClass = isPremium
-    ? "w-full rounded-2xl border border-white/10 bg-white/[0.065] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 shadow-inner shadow-black/10 transition-colors focus:border-emerald-300/60 focus:outline-none focus:ring-1 focus:ring-emerald-300/50"
-    : `w-full rounded-lg border px-3 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors ${isDark ? "border-white/10 bg-slate-800/50 text-slate-200 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500" : "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500"}`;
+  const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
 
   function handleFile(f: File | null) {
     setFile(f);
@@ -237,7 +233,7 @@ export function AiBackgroundGenerator() {
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(500px,0.92fr)_minmax(500px,1fr)]">
-      <form onSubmit={handleGenerate} className={isPremium ? "space-y-4 rounded-[24px] border border-white/10 bg-white/[0.035] p-5" : "space-y-4"}>
+      <form onSubmit={handleGenerate} className={`space-y-4 rounded-[20px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/60"}`}>
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("选择模型", "Model")}</label>
           {providers.length === 0 ? (
@@ -290,12 +286,10 @@ export function AiBackgroundGenerator() {
                   onClick={() => setSelectedBackgroundColor((current) => current === option.id ? null : option.id)}
                   className={`flex h-10 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition ${
                     selected
-                      ? isPremium
-                        ? "border-transparent bg-gradient-to-r from-emerald-300 to-cyan-300 text-slate-950"
-                        : "border-emerald-500 bg-emerald-500/10 text-emerald-600"
+                      ? `border-transparent bg-gradient-to-r ${colors.gradient} text-white`
                       : isDark
-                        ? "border-white/10 bg-slate-800/40 text-slate-300 hover:border-white/20"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                        ? "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:border-white/[0.14]"
+                        : "border-black/[0.06] bg-white text-slate-700 hover:border-black/[0.12]"
                   }`}
                   aria-pressed={selected}
                 >
@@ -311,7 +305,7 @@ export function AiBackgroundGenerator() {
                     }}
                   >
                     {selected && (
-                      <span className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold ${isPremium ? "bg-white text-slate-950" : "bg-emerald-500/90 text-white"}`}>
+                      <span className={`absolute inset-0 flex items-center justify-center text-[11px] font-bold bg-white/90 text-slate-950`}>
                         ✓
                       </span>
                     )}
@@ -327,9 +321,7 @@ export function AiBackgroundGenerator() {
           type="submit"
           disabled={generating || !file || providers.length === 0}
           className={
-            isPremium
-              ? "w-full rounded-2xl bg-gradient-to-r from-emerald-300 to-cyan-300 px-4 py-4 text-sm font-black text-slate-950 shadow-[0_20px_50px_rgba(32,227,162,0.28)] transition-all hover:brightness-110 disabled:opacity-50 disabled:shadow-none"
-              : `w-full rounded-lg bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`
+            `w-full rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`
           }
         >
           {generating ? t("生成中...", "Generating...") : t("AI 提取印花", "AI Extract Print")}
@@ -339,17 +331,10 @@ export function AiBackgroundGenerator() {
 
       <div
         className={
-          isPremium
-            ? "relative flex min-h-[620px] items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-slate-950/35 p-6"
-            : `flex items-center justify-center rounded-xl border p-4 min-h-[400px] ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`
+          `relative flex min-h-[500px] items-center justify-center overflow-hidden rounded-[20px] border p-6 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-black/[0.05] bg-slate-50/80"}`
         }
       >
-        {isPremium && (
-          <>
-            <div className="absolute inset-6 rounded-[22px] border border-white/10 bg-[linear-gradient(45deg,rgba(255,255,255,0.075)_25%,transparent_25%),linear-gradient(-45deg,rgba(255,255,255,0.075)_25%,transparent_25%),linear-gradient(45deg,transparent_75%,rgba(255,255,255,0.075)_75%),linear-gradient(-45deg,transparent_75%,rgba(255,255,255,0.075)_75%)] bg-[length:26px_26px] bg-[position:0_0,0_13px,13px_-13px,-13px_0] opacity-90" />
-            <div className="absolute bottom-6 h-56 w-[70%] rounded-full bg-emerald-300/20 blur-2xl" />
-          </>
-        )}
+        <div className="pointer-events-none absolute inset-4 rounded-[16px] border border-dashed opacity-40" style={{ borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)" }} />
         {generating ? (
           <div className="relative z-10 text-center">
             <div className={`mx-auto h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-blue-400" : "border-blue-500"}`} />
