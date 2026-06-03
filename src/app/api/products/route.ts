@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { assertAssetsPassCopyrightGate } from "@/lib/infringement/guards";
 import {
   normalizeProductDraft,
   toStringArray,
@@ -149,21 +150,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "请选择一张素材图片" }, { status: 400 });
     }
 
+    const { data: asset, error: assetError } = await supabase
+      .from("assets")
+      .select("original_url,processed_url,copyright_status")
+      .eq("id", assetId)
+      .single();
+
+    if (assetError) {
+      throw new Error(assetError.message);
+    }
+
+    const assetImage = asset as unknown as {
+      copyright_status: string;
+      id?: string;
+      original_url: string;
+      processed_url: string | null;
+    };
+
+    assertAssetsPassCopyrightGate([{ ...assetImage, id: assetId }]);
+
     if (images.length === 0) {
-      const { data: asset, error: assetError } = await supabase
-        .from("assets")
-        .select("original_url,processed_url")
-        .eq("id", assetId)
-        .single();
-
-      if (assetError) {
-        throw new Error(assetError.message);
-      }
-
-      const assetImage = asset as unknown as {
-        original_url: string;
-        processed_url: string | null;
-      };
       images = [assetImage.processed_url ?? assetImage.original_url];
     }
 

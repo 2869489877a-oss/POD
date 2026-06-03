@@ -1,5 +1,6 @@
 import "server-only";
 
+import { assertAssetsPassCopyrightGate } from "@/lib/infringement/guards";
 import {
   normalizeProductDraft,
   type ProductDraftRow,
@@ -53,7 +54,7 @@ function isExportableStatus(status: string) {
 async function normalizeDraftRows(rows: ProductDraftRow[]) {
   const supabase = createSupabaseServiceRoleClient();
   const [assetsResponse, mockupsResponse] = await Promise.all([
-    supabase.from("assets").select("id,original_url,processed_url"),
+    supabase.from("assets").select("id,original_url,processed_url,copyright_status"),
     supabase.from("mockup_outputs").select("id,output_images"),
   ]);
 
@@ -69,6 +70,7 @@ async function normalizeDraftRows(rows: ProductDraftRow[]) {
     (
       (assetsResponse.data ?? []) as unknown as Array<{
         id: string;
+        copyright_status: string;
         original_url: string;
         processed_url: string | null;
       }>
@@ -82,6 +84,12 @@ async function normalizeDraftRows(rows: ProductDraftRow[]) {
       }>
     ).map((output) => [output.id, output]),
   );
+
+  const draftAssets = rows
+    .map((row) => assetsById.get(row.asset_id))
+    .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset));
+
+  assertAssetsPassCopyrightGate(draftAssets);
 
   return rows.map((draft) => normalizeProductDraft(draft, assetsById, mockupOutputsById));
 }

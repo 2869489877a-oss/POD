@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 
 import sharp from "sharp";
 
+import { assertAssetsPassCopyrightGate } from "@/lib/infringement/guards";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -13,6 +14,7 @@ const ASSETS_BUCKET = "assets";
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
 type AssetForMockup = {
+  copyright_status: string;
   filename: string;
   id: string;
   original_url: string;
@@ -241,7 +243,7 @@ export async function createAndProcessMockupJob(
 
   const { data: assetData, error: assetError } = await supabase
     .from("assets")
-    .select("id,filename,original_url,processed_url")
+    .select("id,filename,original_url,processed_url,copyright_status")
     .in("id", assetIds);
 
   if (assetError) {
@@ -253,6 +255,8 @@ export async function createAndProcessMockupJob(
   if (assets.length !== assetIds.length) {
     throw new Error("部分素材不存在，请刷新后重试");
   }
+
+  assertAssetsPassCopyrightGate(assets);
 
   const { data: jobData, error: jobError } = await supabase
     .from("image_jobs")

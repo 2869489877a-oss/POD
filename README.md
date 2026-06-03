@@ -14,6 +14,7 @@
 - 上传成功后写入 `assets` 表
 - 图片采集模块第一阶段，支持采集模板 CRUD、网站来源配置和手动运行记录
 - 素材库列表、筛选、多选和详情弹窗
+- 侵权检测模块，支持基于规则的 IP / 品牌 / 名人 / 体育 / Logo 风险筛查、命中原因记录和人工复核
 - 素材库批量改尺寸，生成 POD 标准尺寸图片
 - 图片任务中心，查看任务列表和子任务明细
 - 印花提取和一键抠图 MVP，基于 Sharp + TypeScript 像素算法批量生成透明底结果
@@ -32,6 +33,7 @@
 - `/upload` 上传图片
 - `/image-collector` 图片采集
 - `/image-jobs` 批量图片处理
+- `/infringement-check` 侵权检测和人工复核
 - `/print-extraction` 印花提取
 - `/cutout` 一键抠图
 - `/mockup-templates` 固定商品套图
@@ -210,6 +212,33 @@ supabase/migrations/20260601143000_add_local_worker_image_jobs.sql
 ```
 
 该迁移会让 `image_jobs.job_type` 支持 `print_extraction`，并增加待处理子任务索引。
+
+## 侵权检测模块
+
+新增的 `/infringement-check` 页面用于在素材进入套图、商品草稿和导出前做风险分流。当前版本先落地轻量规则引擎：
+
+- 扫描素材文件名、原图 URL、来源字段，以及该素材关联的商品草稿标题、描述、标签、五点描述、SKU 和产品类型。
+- 命中影视动漫游戏 IP、知名品牌、名人、球队赛事、Logo / 商标词和高风险平台文案后，写入 `infringement_checks` 表。
+- 自动检测只会把高风险素材同步标记为 `risky` 或 `forbidden`；未命中不会自动改成“可商用”，避免把机器检测当作授权证明。
+- 人工复核可以把素材标记为可商用、有风险或禁用，并保存授权依据 / 备注。
+- 套图生成、商品创建和导出只放行 `owned` / `commercial_ok` 素材；`unknown`、`risky`、`forbidden` 都会要求先完成复核。
+
+需要执行数据库迁移：
+
+```text
+supabase/migrations/20260603100000_create_infringement_checks.sql
+```
+
+后续可在该表的 `detection_source = visual_ai` 基础上接入豆包 / 即梦 / 千问视觉模型，补充 OCR、Logo 检测、主体识别、相似图 / pHash 检索等能力。
+
+参考口径：
+
+- USPTO Trademark Basics: https://www.uspto.gov/trademarks/basics
+- USPTO Trademark / Patent / Copyright 区分: https://www.uspto.gov/trademarks/basics/trademark-patent-copyright
+- U.S. Copyright Office FAQ: https://www.copyright.gov/help/faq/faq-general.html
+- Etsy Intellectual Property Policy: https://www.etsy.com/legal/ip/
+- Amazon Brand Registry: https://sell.amazon.com/brand-registry/
+- Amazon Report a Violation: https://sell.amazon.com/blog/report-a-violation-to-amazon
 
 ## 部署文档
 
