@@ -14,6 +14,8 @@ const severityScore = {
   critical: 98,
 } as const;
 
+const SAFE_COPYRIGHT_STATUSES = new Set(["owned", "commercial_ok"]);
+
 function normalizeText(value: string) {
   return value
     .toLowerCase()
@@ -45,6 +47,40 @@ function matchTerm(text: string, term: string) {
   return pattern.test(text);
 }
 
+function hasMeaningfulText(value?: string | null) {
+  if (!value) return false;
+  const normalized = value.trim();
+  if (normalized.length < 3) return false;
+  return /[a-zA-Z\u4e00-\u9fa5]/.test(normalized);
+}
+
+function isLowInformationFilename(filename: string) {
+  const baseName = filename
+    .replace(/\.[a-z0-9]{2,5}$/i, "")
+    .replace(/[_\s]+/g, "-")
+    .toLowerCase();
+
+  if (!baseName) return true;
+  if (/^\d{5,}$/.test(baseName)) return true;
+  if (/^[a-f0-9-]{16,}$/.test(baseName)) return true;
+  if (/^(image|photo|picture|upload|download|screenshot|img|ai-generated)(-\d+|-[a-f0-9]+)?$/.test(baseName)) {
+    return true;
+  }
+
+  return !/[a-z\u4e00-\u9fa5]{3,}/i.test(baseName);
+}
+
+function hasMeaningfulProductText(productTexts: InfringementDetectionInput["productTexts"]) {
+  return (productTexts ?? []).some((product) => (
+    hasMeaningfulText(product.title) ||
+    hasMeaningfulText(product.description) ||
+    hasMeaningfulText(product.product_type) ||
+    hasMeaningfulText(product.sku) ||
+    (product.tags ?? []).some(hasMeaningfulText) ||
+    (product.bullet_points ?? []).some(hasMeaningfulText)
+  ));
+}
+
 function getFields(input: InfringementDetectionInput) {
   const fields: Array<{ name: string; value: string }> = [
     { name: "filename", value: input.asset.filename },
@@ -66,7 +102,11 @@ function getFields(input: InfringementDetectionInput) {
   return fields.filter((field) => field.value.trim().length > 0);
 }
 
-function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number) {
+function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number, visualReviewRequired: boolean) {
+  if (visualReviewRequired) {
+    return "该素材缺少可用文字上下文，规则库无法判断图片内部是否包含名人肖像、球队、Logo、队服文字或不雅手势。请人工看图复核后再用于商品、套图或导出。";
+  }
+
   if (riskLevel === "critical") {
     return "检测到高危 IP / 品牌 / 角色命中，建议禁用该素材，除非能提供明确授权。";
   }
@@ -84,7 +124,7 @@ function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number)
   }
 
   return matchCount === 0
-    ? "服装印花规则库未发现明显命中。该结果不是法律意见，仍建议对商用素材保留授权证明。"
+    ? "服装印花规则库未发现明显文字命中。该结果不是法律意见，仍建议对商用素材保留授权证明。"
     : "存在规则命中，请人工复核后再决定是否上架。";
 }
 
@@ -129,9 +169,31 @@ function findRuleMatches(rule: InfringementRule, fields: Array<{ name: string; v
   return matches;
 }
 
+function shouldRequireVisualReview(input: InfringementDetectionInput, matches: InfringementRuleMatch[]) {
+  if (matches.length > 0) return false;
+  if (SAFE_COPYRIGHT_STATUSES.has(input.asset.copyright_status ?? "")) return false;
+  if (hasMeaningfulProductText(input.productTexts)) return false;
+
+  return isLowInformationFilename(input.asset.filename);
+}
+
+function createVisualReviewMatch(): InfringementRuleMatch {
+  return {
+    category: "visual_review",
+    description: "没有 OCR 或视觉识别结果时，纯图片素材不能仅凭文件名自动判定无风险。",
+    field: "image_visual_content",
+    label: "需要人工看图复核",
+    matched: "missing visual text evidence",
+    rule_id: "visual-review-required",
+    severity: "medium",
+  };
+}
+
 export function runInfringementDetection(input: InfringementDetectionInput): InfringementDetectionResult {
   const fields = getFields(input);
-  const matches = infringementRules.flatMap((rule) => findRuleMatches(rule, fields));
+  const textMatches = infringementRules.flatMap((rule) => findRuleMatches(rule, fields));
+  const visualReviewRequired = shouldRequireVisualReview(input, textMatches);
+  const matches = visualReviewRequired ? [...textMatches, createVisualReviewMatch()] : textMatches;
   const highestScore = matches.reduce((score, match) => Math.max(score, severityScore[match.severity]), 0);
   const scoreWithDensity = Math.min(100, highestScore + Math.max(0, matches.length - 1) * 3);
   const riskLevel = riskLevelFromScore(scoreWithDensity);
@@ -145,9 +207,13 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       rule_count: infringementRuleStats.totalRules,
       rule_engine_version: RULE_ENGINE_VERSION,
       rule_term_count: infringementRuleStats.totalTerms,
+      visual_review_reason: visualReviewRequired
+        ? "No textual context or OCR/vision signal is available for this image asset."
+        : undefined,
+      visual_review_required: visualReviewRequired,
     },
     matched_rules: matches,
-    recommendation: getRecommendation(riskLevel, matches.length),
+    recommendation: getRecommendation(riskLevel, matches.length, visualReviewRequired),
     risk_level: riskLevel,
     status,
   };

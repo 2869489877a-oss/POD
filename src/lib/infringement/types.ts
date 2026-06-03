@@ -11,7 +11,8 @@ export type InfringementRuleCategory =
   | "sports"
   | "copyright_phrase"
   | "logo"
-  | "marketplace";
+  | "marketplace"
+  | "visual_review";
 
 export type InfringementRule = {
   category: InfringementRuleCategory;
@@ -81,6 +82,8 @@ export type InfringementDetectionResult = {
     rule_count?: number;
     rule_engine_version: string;
     rule_term_count?: number;
+    visual_review_required?: boolean;
+    visual_review_reason?: string;
   };
   matched_rules: InfringementRuleMatch[];
   recommendation: string;

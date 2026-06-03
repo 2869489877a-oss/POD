@@ -90,6 +90,7 @@ const ruleCategoryLabels: Record<InfringementRuleCategory, { en: string; zh: str
   logo: { en: "Logo / Mark", zh: "Logo / 标识" },
   marketplace: { en: "Marketplace Copy", zh: "平台文案" },
   sports: { en: "Sports / Team", zh: "体育 / 球队" },
+  visual_review: { en: "Visual Review", zh: "视觉复核" },
 };
 
 const ruleSeverityLabels: Record<string, { en: string; zh: string }> = {

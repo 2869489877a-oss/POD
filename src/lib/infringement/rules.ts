@@ -325,6 +325,7 @@ const sportsRoots = [
   "super bowl",
   "formula 1",
   "f1",
+  "chicago bulls",
   "lakers",
   "warriors",
   "bulls",
@@ -349,6 +350,7 @@ const sportsRoots = [
   "ac milan",
   "湖人",
   "勇士",
+  "芝加哥公牛",
   "公牛",
   "凯尔特人",
   "洋基",
@@ -381,6 +383,8 @@ const celebrityRoots = [
   "kobe bryant",
   "lebron james",
   "michael jordan",
+  "dennis rodman",
+  "rodman",
   "lionel messi",
   "cristiano ronaldo",
   "ronaldo",
@@ -407,6 +411,8 @@ const celebrityRoots = [
   "科比",
   "詹姆斯",
   "迈克尔乔丹",
+  "丹尼斯罗德曼",
+  "罗德曼",
   "梅西",
   "C罗",
   "内马尔",
@@ -639,6 +645,7 @@ function createEmptyCategoryStats() {
     logo: 0,
     marketplace: 0,
     sports: 0,
+    visual_review: 0,
   } satisfies Record<InfringementRuleCategory, number>;
 }
 
