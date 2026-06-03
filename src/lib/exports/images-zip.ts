@@ -7,25 +7,20 @@ import {
   inferImageExtension,
   sanitizeFileSegment,
 } from "@/lib/exports/files";
+import { safeFetchBinary } from "@/lib/network/safe-fetch";
 import { getProductImageUrls } from "@/lib/exports/products";
 import type { ProductDraftView } from "@/lib/products/types";
 
 async function downloadImage(url: string) {
-  let response: Response;
-
-  try {
-    response = await fetch(url);
-  } catch {
-    throw new Error(`图片下载失败：${url}`);
-  }
-
-  if (!response.ok) {
-    throw new Error(`图片下载失败：HTTP ${response.status}，${url}`);
-  }
+  const image = await safeFetchBinary(url, {
+    allowedContentTypes: ["image/"],
+    maxBytes: 25 * 1024 * 1024,
+    timeoutMs: 30_000,
+  });
 
   return {
-    buffer: Buffer.from(await response.arrayBuffer()),
-    extension: inferImageExtension(url, response.headers.get("content-type")),
+    buffer: image.buffer,
+    extension: inferImageExtension(url, image.contentType),
   };
 }
 

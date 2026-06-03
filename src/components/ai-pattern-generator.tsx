@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Dynamic pattern previews can use arbitrary uploaded URLs. */
+
 import { type FormEvent, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { DropZone } from "@/components/drop-zone";

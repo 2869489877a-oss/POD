@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Dynamic local previews can use blob/data URLs. */
+
 import { type FormEvent, useState } from "react";
 import { DropZone } from "@/components/drop-zone";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";

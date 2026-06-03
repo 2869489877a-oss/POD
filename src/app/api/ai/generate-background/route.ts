@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,9 +18,11 @@ type GenerateBackgroundRequest = {
 };
 
 async function fetchImageBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("无法下载抠图图片");
-  return Buffer.from(await response.arrayBuffer());
+  return safeFetchBuffer(url, {
+    allowedContentTypes: ["image/"],
+    maxBytes: 25 * 1024 * 1024,
+    timeoutMs: 30_000,
+  });
 }
 
 export async function POST(request: Request) {
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
     ]);
 
     if (assetId) {
-      await supabase.from("image_derivatives").insert({
+      const { error: derivativeError } = await supabase.from("image_derivatives").insert({
         asset_id: assetId,
         derivative_type: "ai_background",
         output_url: compositeUrl,
@@ -94,6 +97,11 @@ export async function POST(request: Request) {
         height: imgHeight,
         options: { scene_description: sceneDescription, provider: resolved.providerType },
       });
+
+      if (derivativeError) {
+        await supabase.storage.from("assets").remove([bgPath, compositePath]);
+        throw new Error(`背景衍生记录写入失败: ${derivativeError.message}`);
+      }
     }
 
     return NextResponse.json({

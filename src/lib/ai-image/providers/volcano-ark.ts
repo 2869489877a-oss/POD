@@ -1,4 +1,5 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type VolcanoImageResponse = {
   data?: Array<{ b64_json?: string; url?: string }>;
@@ -95,11 +96,12 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     if (first?.url) {
-      const imgRes = await fetch(first.url, { signal: AbortSignal.timeout(30_000) });
-      if (!imgRes.ok) throw new Error(`${this.displayName} image download failed`);
-      const buf = await imgRes.arrayBuffer();
-      const mimeType = imgRes.headers.get("content-type")?.split(";")[0] || "image/png";
-      return { imageBase64: Buffer.from(buf).toString("base64"), mimeType };
+      const buf = await safeFetchBuffer(first.url, {
+        allowedContentTypes: ["image/"],
+        maxBytes: 25 * 1024 * 1024,
+        timeoutMs: 30_000,
+      });
+      return { imageBase64: buf.toString("base64"), mimeType: "image/png" };
     }
 
     throw new Error(`${this.displayName} did not return image data`);

@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Template backgrounds are user-managed asset URLs. */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { PrintArea } from "@/lib/mockups/scenes";

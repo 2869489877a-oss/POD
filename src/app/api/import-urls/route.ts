@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { assertSafeHttpUrl, safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
 
@@ -55,19 +56,17 @@ export async function POST(request: Request) {
 
 async function importSingleImage(sourceUrl: string): Promise<ImportResult> {
   try {
-    const res = await fetch(sourceUrl, {
+    const safeSourceUrl = assertSafeHttpUrl(sourceUrl);
+    const buffer = await safeFetchBuffer(safeSourceUrl, {
+      allowedContentTypes: ["image/"],
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
-      signal: AbortSignal.timeout(30000),
+      maxBytes: 25 * 1024 * 1024,
+      timeoutMs: 30_000,
     });
 
-    if (!res.ok) {
-      throw new Error(`下载失败：${res.status}`);
-    }
-
-    const buffer = Buffer.from(await res.arrayBuffer());
     const metadata = await sharp(buffer).metadata();
 
     if (!metadata.width || !metadata.height || !metadata.format) {
@@ -85,7 +84,7 @@ async function importSingleImage(sourceUrl: string): Promise<ImportResult> {
 
     const supabase = createSupabaseServiceRoleClient();
     const datePath = new Date().toISOString().slice(0, 10);
-    const filename = extractFilename(sourceUrl);
+    const filename = extractFilename(safeSourceUrl);
     const storagePath = `${datePath}/${randomUUID()}-${filename}`;
 
     const contentType = `image/${finalFormat}`;

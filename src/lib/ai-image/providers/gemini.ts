@@ -2,6 +2,10 @@ import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } fr
 
 export class GeminiProvider implements ImageProvider {
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
+    if (params.referenceUrl) {
+      throw new Error("Gemini 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
+    }
+
     const baseUrl = config.baseUrl || "https://generativelanguage.googleapis.com";
     const url = `${baseUrl.replace(/\/+$/, "")}/v1beta/models/${config.modelId}:generateContent?key=${config.apiKey}`;
 

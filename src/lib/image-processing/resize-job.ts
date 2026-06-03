@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 
 import { resizeImageBuffer } from "@/lib/image-processing/resize-image";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import {
   getResizePreset,
   type ResizePreset,
@@ -71,13 +72,11 @@ function getPresetKeyFromOptions(options: unknown): ResizePresetKey | null {
 }
 
 async function downloadImage(inputUrl: string) {
-  const response = await fetch(inputUrl);
-
-  if (!response.ok) {
-    throw new Error(`原图下载失败：HTTP ${response.status}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer());
+  return safeFetchBuffer(inputUrl, {
+    allowedContentTypes: ["image/"],
+    maxBytes: 25 * 1024 * 1024,
+    timeoutMs: 30_000,
+  });
 }
 
 function buildOutputPath(jobId: string, asset: AssetRow, preset: ResizePreset) {

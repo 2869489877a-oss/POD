@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
 import * as cheerio from "cheerio";
+import { assertSafeHttpUrl, safeFetchText } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
 
 const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i;
-const MIN_SIZE = 200;
 
 function isValidImageUrl(url: string): boolean {
   try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:";
+    assertSafeHttpUrl(url);
+    return true;
   } catch {
     return false;
   }
@@ -38,23 +38,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const res = await fetch(pageUrl, {
+    const html = await safeFetchText(pageUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       },
-      signal: AbortSignal.timeout(15000),
+      maxBytes: 5 * 1024 * 1024,
+      timeoutMs: 15_000,
     });
-
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `页面请求失败：${res.status} ${res.statusText}` },
-        { status: 422 },
-      );
-    }
-
-    const html = await res.text();
     const $ = cheerio.load(html);
     const imageSet = new Set<string>();
 

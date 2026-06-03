@@ -1,4 +1,5 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type DashScopeMultimodalResponse = {
   output?: {
@@ -157,16 +158,14 @@ export class TongyiProvider implements ImageProvider {
       return { imageBase64: value.replace(/\s/g, ""), mimeType: "image/png" };
     }
 
-    const imageResponse = await fetch(value, { signal: AbortSignal.timeout(30_000) });
-    if (!imageResponse.ok) {
-      throw new Error(`Tongyi image download failed ${imageResponse.status}`);
-    }
-
-    const buffer = Buffer.from(await imageResponse.arrayBuffer());
-    const mimeType = imageResponse.headers.get("content-type")?.split(";")[0] || "image/png";
+    const buffer = await safeFetchBuffer(value, {
+      allowedContentTypes: ["image/"],
+      maxBytes: 25 * 1024 * 1024,
+      timeoutMs: 30_000,
+    });
     return {
       imageBase64: buffer.toString("base64"),
-      mimeType,
+      mimeType: "image/png",
     };
   }
 }

@@ -2,6 +2,10 @@ import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } fr
 
 export class OpenAIProvider implements ImageProvider {
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
+    if (params.referenceUrl) {
+      throw new Error("OpenAI 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
+    }
+
     const baseUrl = config.baseUrl || "https://api.openai.com";
     const url = `${baseUrl.replace(/\/+$/, "")}/v1/images/generations`;
 

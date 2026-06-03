@@ -40,29 +40,6 @@ type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
 };
 
-type JobsResponse = {
-  error?: string;
-  jobs?: ImageJob[];
-};
-
-type JobDetailResponse = {
-  error?: string;
-  job?: ImageJobDetail;
-};
-
-type RetryJobResponse = {
-  error?: string;
-  job?: {
-    failed_count: number;
-    id: string;
-    retried_count: number;
-    status: ImageJobStatus;
-    success_count: number;
-    total_count: number;
-  };
-  message?: string;
-};
-
 type ImageJobsCenterProps = {
   initialError?: string | null;
   initialJobs: ImageJob[];

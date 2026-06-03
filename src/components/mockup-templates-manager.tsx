@@ -21,24 +21,6 @@ export type MockupTemplate = {
   updated_at: string;
 };
 
-type DeleteTemplateResponse = {
-  error?: string;
-  ok?: boolean;
-  output_count?: number;
-  requires_confirmation?: boolean;
-};
-
-type TemplatesResponse = {
-  error?: string;
-  templates?: MockupTemplate[];
-};
-
-
-type CreateTemplateResponse = {
-  error?: string;
-  template?: MockupTemplate;
-};
-
 type UploadBackgroundResult = {
   error?: string;
   filename: string;

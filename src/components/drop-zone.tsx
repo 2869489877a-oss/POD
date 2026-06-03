@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Upload previews use local object URLs. */
+
 import { type DragEvent, useRef, useState } from "react";
 import { useSettings } from "@/lib/settings/context";
 

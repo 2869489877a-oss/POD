@@ -49,28 +49,6 @@ type TemplateFormState = {
   customCronExpression: string;
 };
 
-type TemplatesResponse = {
-  error?: string;
-  templates?: ImageCollectionTemplate[];
-};
-
-type RunsResponse = {
-  error?: string;
-  runs?: RunWithTemplateName[];
-};
-
-type SaveTemplateResponse = {
-  error?: string;
-  template?: ImageCollectionTemplate;
-  templates?: ImageCollectionTemplate[];
-};
-
-type RunTemplateResponse = {
-  error?: string;
-  ok?: boolean;
-  run?: RunDetail;
-};
-
 function createLocalId() {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()

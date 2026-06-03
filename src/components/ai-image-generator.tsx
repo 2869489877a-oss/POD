@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Dynamic AI previews can use arbitrary asset URLs. */
+
 import { type FormEvent, useEffect, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 

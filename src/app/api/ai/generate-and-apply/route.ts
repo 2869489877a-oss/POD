@@ -3,12 +3,14 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 type GenerateAndApplyRequest = {
   garment_url?: unknown;
+  reference_url?: unknown;
   asset_id?: unknown;
   style_description?: unknown;
   provider_id?: unknown;
@@ -42,6 +44,7 @@ export async function POST(request: Request) {
   }
 
   const garmentUrl = typeof body.garment_url === "string" ? body.garment_url.trim() : "";
+  const referenceUrl = typeof body.reference_url === "string" ? body.reference_url.trim() : "";
   const assetId = typeof body.asset_id === "string" ? body.asset_id.trim() : null;
   const styleDescription = typeof body.style_description === "string" ? body.style_description.trim() : "";
   const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
@@ -57,9 +60,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const garmentResponse = await fetch(garmentUrl);
-    if (!garmentResponse.ok) throw new Error("无法下载衣服模板图片");
-    const garmentBuffer = Buffer.from(await garmentResponse.arrayBuffer());
+    const garmentBuffer = await safeFetchBuffer(garmentUrl, {
+      allowedContentTypes: ["image/"],
+      maxBytes: 25 * 1024 * 1024,
+      timeoutMs: 30_000,
+    });
     const garmentMeta = await sharp(garmentBuffer).metadata();
     const garmentWidth = garmentMeta.width || 1024;
     const garmentHeight = garmentMeta.height || 1024;
@@ -69,10 +74,15 @@ export async function POST(request: Request) {
 
     const resolved = await resolveProvider(providerId);
 
-    const prompt = `Generate a print pattern design for clothing: ${styleDescription}. The pattern should be on a transparent or white background, suitable for printing on fabric. Clean edges, high quality. Square format.`;
+    const prompt = [
+      `Generate a print pattern design for clothing: ${styleDescription}.`,
+      referenceUrl ? "Use the reference image as visual style and composition guidance." : "",
+      "The pattern should be on a transparent or white background, suitable for printing on fabric. Clean edges, high quality. Square format.",
+    ].filter(Boolean).join(" ");
 
     const result = await generateImage(resolved, {
       prompt,
+      referenceUrl: referenceUrl || undefined,
       width: patternWidth,
       height: patternHeight,
     });
@@ -116,16 +126,23 @@ export async function POST(request: Request) {
     const patternPath = `derivatives/${datePath}/${id}-ai-pattern.png`;
     const compositePath = `derivatives/${datePath}/${id}-applied.png`;
 
-    await Promise.all([
+    const [patternUpload, compositeUpload] = await Promise.all([
       supabase.storage.from("assets").upload(patternPath, patternBuffer, { contentType: "image/png", upsert: false }),
       supabase.storage.from("assets").upload(compositePath, composited, { contentType: "image/png", upsert: false }),
     ]);
+
+    if (patternUpload.error) {
+      throw new Error(`印花图上传失败: ${patternUpload.error.message}`);
+    }
+    if (compositeUpload.error) {
+      throw new Error(`合成图上传失败: ${compositeUpload.error.message}`);
+    }
 
     const patternUrl = supabase.storage.from("assets").getPublicUrl(patternPath).data.publicUrl;
     const compositeUrl = supabase.storage.from("assets").getPublicUrl(compositePath).data.publicUrl;
 
     if (assetId) {
-      await supabase.from("image_derivatives").insert({
+      const { error: derivativeError } = await supabase.from("image_derivatives").insert({
         asset_id: assetId,
         derivative_type: "ai_applied_pattern",
         output_url: compositeUrl,
@@ -134,8 +151,13 @@ export async function POST(request: Request) {
         status: "completed",
         width: garmentWidth,
         height: garmentHeight,
-        options: { style_description: styleDescription, provider: resolved.providerType, position, opacity, blend_mode: blendMode },
+        options: { reference_url: referenceUrl || null, style_description: styleDescription, provider: resolved.providerType, position, opacity, blend_mode: blendMode },
       });
+
+      if (derivativeError) {
+        await supabase.storage.from("assets").remove([patternPath, compositePath]);
+        throw new Error(`套用印花记录写入失败: ${derivativeError.message}`);
+      }
     }
 
     return NextResponse.json({

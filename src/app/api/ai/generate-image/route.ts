@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { data: job } = await supabase
+  const { data: job, error: jobError } = await supabase
     .from("ai_image_jobs")
     .insert({
       provider_id: resolved.id,
@@ -85,7 +85,14 @@ export async function POST(request: Request) {
     .select("id")
     .single();
 
+  if (jobError) {
+    return NextResponse.json({ error: `创建 AI 任务失败: ${jobError.message}` }, { status: 500 });
+  }
+
   const jobId = job?.id;
+  if (!jobId) {
+    return NextResponse.json({ error: "创建 AI 任务失败: 未返回任务 ID" }, { status: 500 });
+  }
 
   try {
     const result = await generateImage(resolved, {
@@ -125,56 +132,69 @@ export async function POST(request: Request) {
           upsert: false,
         });
 
-      if (!uploadError) {
-        const { data: publicUrlData } = supabase.storage
-          .from("assets")
-          .getPublicUrl(storagePath);
-
-        resultUrl = publicUrlData.publicUrl;
-
-        const { data: asset } = await supabase
-          .from("assets")
-          .insert({
-            original_url: resultUrl,
-            filename: `ai-generated-${randomUUID().slice(0, 8)}.${ext}`,
-            file_size: outputBuffer.length,
-            width: outputWidth,
-            height: outputHeight,
-            format: ext === "png" ? "png" : "jpeg",
-            source: "ai",
-            status: "uploaded",
-            copyright_status: "owned",
-          })
-          .select("id")
-          .single();
-
-        assetId = asset?.id ?? null;
+      if (uploadError) {
+        throw new Error(`AI 结果上传失败: ${uploadError.message}`);
       }
-    }
 
-    if (jobId) {
-      await supabase
-        .from("ai_image_jobs")
-        .update({ status: "completed", result_url: resultUrl, asset_id: assetId })
-        .eq("id", jobId);
+      const { data: publicUrlData } = supabase.storage
+        .from("assets")
+        .getPublicUrl(storagePath);
+
+      resultUrl = publicUrlData.publicUrl;
+
+      const { data: asset, error: assetInsertError } = await supabase
+        .from("assets")
+        .insert({
+          original_url: resultUrl,
+          filename: `ai-generated-${randomUUID().slice(0, 8)}.${ext}`,
+          file_size: outputBuffer.length,
+          width: outputWidth,
+          height: outputHeight,
+          format: ext === "png" ? "png" : "jpeg",
+          source: "ai",
+          status: "uploaded",
+          copyright_status: "owned",
+        })
+        .select("id")
+        .single();
+
+      if (assetInsertError) {
+        await supabase.storage.from("assets").remove([storagePath]);
+        throw new Error(`AI 结果写入素材库失败: ${assetInsertError.message}`);
+      }
+
+      assetId = asset.id;
     }
 
     if (productDraftId && assetId) {
-      const { data: draft } = await supabase
+      const { data: draft, error: draftError } = await supabase
         .from("product_drafts")
         .select("images")
         .eq("id", productDraftId)
         .single();
 
+      if (draftError) {
+        throw new Error(`读取商品草稿失败: ${draftError.message}`);
+      }
+
       if (draft) {
         const images = Array.isArray(draft.images) ? draft.images : [];
         images.push({ url: resultUrl, asset_id: assetId, source: "ai", created_at: new Date().toISOString() });
-        await supabase
+        const { error: draftUpdateError } = await supabase
           .from("product_drafts")
           .update({ images })
           .eq("id", productDraftId);
+
+        if (draftUpdateError) {
+          throw new Error(`更新商品草稿图片失败: ${draftUpdateError.message}`);
+        }
       }
     }
+
+    await supabase
+      .from("ai_image_jobs")
+      .update({ status: "completed", result_url: resultUrl, asset_id: assetId })
+      .eq("id", jobId);
 
     return NextResponse.json({
       job_id: jobId,

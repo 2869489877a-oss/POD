@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { fetchMockupJobs, createMockupJob } from "@/lib/actions/mockup-jobs";
+import { createMockupJob } from "@/lib/actions/mockup-jobs";
 import { useSettings } from "@/lib/settings/context";
 
 import type { MockupScene } from "@/lib/mockups/scenes";
@@ -40,11 +40,6 @@ type MockupJobResult = {
   status: "completed" | "failed" | "partial_failed";
   success_count: number;
   total_count: number;
-};
-
-type MockupJobResponse = {
-  error?: string;
-  job?: MockupJobResult;
 };
 
 type MockupOutputZipResponse = {

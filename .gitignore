@@ -19,6 +19,10 @@ __pycache__/
 /public/exports/*
 !/public/exports/.gitkeep
 
+# local test artifacts
+test_*.png
+pod-codespaces-submit.zip
+
 # misc
 .DS_Store
 *.pem

@@ -11,6 +11,7 @@ import {
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
+import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 const ASSETS_BUCKET = "assets";
@@ -101,13 +102,11 @@ function getRetryItemIds(value: unknown) {
 }
 
 async function downloadImage(url: string) {
-  const response = await fetch(url);
-
-  if (!response.ok) {
-    throw new Error(`图片下载失败：HTTP ${response.status}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer());
+  return safeFetchBuffer(url, {
+    allowedContentTypes: ["image/"],
+    maxBytes: 25 * 1024 * 1024,
+    timeoutMs: 30_000,
+  });
 }
 
 function buildResizeOutputPath(jobId: string, itemId: string, asset: AssetForRetry, preset: ResizePreset) {

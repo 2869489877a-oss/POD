@@ -28,11 +28,6 @@ export type Asset = {
   width: number;
 };
 
-type AssetsResponse = {
-  assets?: Asset[];
-  error?: string;
-};
-
 type DeleteAssetsResponse = {
   error?: string;
   failed_count?: number;
@@ -155,21 +150,6 @@ function formatDate(value: string, locale: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function buildAssetQuery(status: string, copyrightStatus: string) {
-  const params = new URLSearchParams();
-
-  if (status !== "all") {
-    params.set("status", status);
-  }
-
-  if (copyrightStatus !== "all") {
-    params.set("copyright_status", copyrightStatus);
-  }
-
-  const queryString = params.toString();
-  return queryString ? `/api/assets?${queryString}` : "/api/assets";
 }
 
 export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {

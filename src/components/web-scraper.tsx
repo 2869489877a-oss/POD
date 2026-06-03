@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Scraped image previews come from arbitrary remote domains. */
+
 import { useState } from "react";
 import { useSettings } from "@/lib/settings/context";
 

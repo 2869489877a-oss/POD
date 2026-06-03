@@ -46,6 +46,7 @@ export async function POST(request: Request) {
 
     const result = await generateImage(resolved, {
       prompt,
+      referenceUrl: referenceUrl || undefined,
       width,
       height,
     });
@@ -63,21 +64,7 @@ export async function POST(request: Request) {
 
     const patternUrl = supabase.storage.from("assets").getPublicUrl(storagePath).data.publicUrl;
 
-    if (assetId) {
-      await supabase.from("image_derivatives").insert({
-        asset_id: assetId,
-        derivative_type: "ai_pattern",
-        output_url: patternUrl,
-        preview_url: patternUrl,
-        source_url: referenceUrl || null,
-        status: "completed",
-        width,
-        height,
-        options: { style_description: styleDescription, provider: resolved.providerType },
-      });
-    }
-
-    const { data: newAsset } = await supabase
+    const { data: newAsset, error: assetInsertError } = await supabase
       .from("assets")
       .insert({
         original_url: patternUrl,
@@ -93,9 +80,39 @@ export async function POST(request: Request) {
       .select("id")
       .single();
 
+    if (assetInsertError) {
+      await supabase.storage.from("assets").remove([storagePath]);
+      throw new Error(`素材写入失败: ${assetInsertError.message}`);
+    }
+
+    if (!newAsset?.id) {
+      await supabase.storage.from("assets").remove([storagePath]);
+      throw new Error("素材写入失败: 未返回素材 ID");
+    }
+
+    if (assetId) {
+      const { error: derivativeError } = await supabase.from("image_derivatives").insert({
+        asset_id: assetId,
+        derivative_type: "ai_pattern",
+        output_url: patternUrl,
+        preview_url: patternUrl,
+        source_url: referenceUrl || null,
+        status: "completed",
+        width,
+        height,
+        options: { generated_asset_id: newAsset.id, style_description: styleDescription, provider: resolved.providerType },
+      });
+
+      if (derivativeError) {
+        await supabase.storage.from("assets").remove([storagePath]);
+        await supabase.from("assets").delete().eq("id", newAsset.id);
+        throw new Error(`印花衍生记录写入失败: ${derivativeError.message}`);
+      }
+    }
+
     return NextResponse.json({
       pattern_url: patternUrl,
-      asset_id: newAsset?.id ?? null,
+      asset_id: newAsset.id,
       provider: resolved.providerType,
       model: resolved.modelId,
     });
