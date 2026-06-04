@@ -78,8 +78,8 @@ function isRetryable(error: unknown): boolean {
   if (error instanceof Error) {
     if (error.name === "TimeoutError" || error.name === "AbortError") return true;
     const msg = error.message;
-    if (/\b(500|502|503|504)\b/.test(msg)) return true;
-    if (/network|ECONNRESET|ETIMEDOUT/i.test(msg)) return true;
+    if (/\b(408|429|500|502|503|504)\b/.test(msg)) return true;
+    if (/fetch failed|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|UND_ERR|socket|connection/i.test(msg)) return true;
   }
   return false;
 }
@@ -93,13 +93,19 @@ export async function generateImage(
     throw new Error(`不支持的模型类型: ${resolved.providerType}`);
   }
 
-  try {
-    return await provider.generate(resolved.config, params);
-  } catch (error) {
-    if (isRetryable(error)) {
-      await new Promise((r) => setTimeout(r, 1000));
-      return provider.generate(resolved.config, params);
+  const retryDelays = [1_000, 2_500];
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      return await provider.generate(resolved.config, params);
+    } catch (error) {
+      if (!isRetryable(error) || attempt === retryDelays.length) {
+        throw error;
+      }
+
+      const jitter = Math.floor(Math.random() * 300);
+      await new Promise((resolve) => setTimeout(resolve, retryDelays[attempt] + jitter));
     }
-    throw error;
   }
+
+  throw new Error("Image generation failed after retrying");
 }

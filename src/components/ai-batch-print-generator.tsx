@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Batch previews use local object URLs and generated asset URLs. */
 
 import Link from "next/link";
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
@@ -18,9 +18,11 @@ type BatchStatus = "queued" | "uploading" | "generating" | "completed" | "failed
 
 type BatchItem = {
   assetId?: string;
+  attempts: number;
   error?: string;
   file: File;
   id: string;
+  jobId?: string;
   model?: string;
   previewUrl: string;
   provider?: string;
@@ -32,9 +34,29 @@ type BatchItem = {
 type GenerateResult = {
   asset_id?: string;
   error?: string;
+  job_id?: string;
   model?: string;
   provider?: string;
   result_url?: string;
+};
+
+type GenerationJob = {
+  asset_id?: string | null;
+  created_at: string;
+  error_message?: string | null;
+  height: number;
+  id: string;
+  model_id: string;
+  prompt: string;
+  provider_type: string;
+  result_url?: string | null;
+  status: "pending" | "processing" | "completed" | "failed";
+  width: number;
+};
+
+type GenerationHistoryResult = {
+  error?: string;
+  jobs?: GenerationJob[];
 };
 
 type RunOptions = {
@@ -114,6 +136,24 @@ function imageExtension(url: string, contentType: string | null) {
   return match?.[1]?.toLowerCase() ?? "png";
 }
 
+async function readJsonResponse<T extends { error?: string }>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) return {} as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return { error: text.slice(0, 500) } as T;
+  }
+}
+
+async function fetchGenerationHistory() {
+  const response = await fetch("/api/ai/generate-image?limit=30", { cache: "no-store" });
+  const data = await readJsonResponse<GenerationHistoryResult>(response);
+  if (!response.ok) throw new Error(data.error || "Failed to load generation history");
+  return data.jobs ?? [];
+}
+
 export function AiBatchPrintGenerator() {
   const { accent, isDark, language, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
@@ -130,6 +170,8 @@ export function AiBatchPrintGenerator() {
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [history, setHistory] = useState<GenerationJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
   const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
@@ -154,9 +196,38 @@ export function AiBatchPrintGenerator() {
   const completedItems = queue.filter((item) => item.status === "completed" && item.resultUrl);
   const canRun = queue.some((item) => item.status === "queued" || item.status === "failed") && Boolean(prompt.trim()) && providers.length > 0;
 
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistory(await fetchGenerationHistory());
+    } catch {
+      setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     queueRef.current = queue;
   }, [queue]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void fetchGenerationHistory()
+      .then((jobs) => {
+        if (!cancelled) setHistory(jobs);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +275,7 @@ export function AiBatchPrintGenerator() {
     if (imageFiles.length === 0) return;
 
     const newItems = imageFiles.map((file) => ({
+      attempts: 0,
       file,
       id: createItemId(),
       previewUrl: URL.createObjectURL(file),
@@ -260,7 +332,7 @@ export function AiBatchPrintGenerator() {
     const formData = new FormData();
     formData.append("files", file);
     const response = await fetch("/api/upload", { body: formData, method: "POST" });
-    const data = await response.json();
+    const data = await readJsonResponse<{ error?: string; results?: UploadApiResult[] }>(response);
     const uploadResult = data.results?.[0] as UploadApiResult | undefined;
     const imageUrl = getUploadedImageUrl(uploadResult);
 
@@ -276,7 +348,10 @@ export function AiBatchPrintGenerator() {
     if (!item) return;
 
     updateItem(id, {
+      assetId: undefined,
+      attempts: item.attempts + 1,
       error: undefined,
+      jobId: undefined,
       model: undefined,
       provider: undefined,
       resultUrl: undefined,
@@ -301,14 +376,16 @@ export function AiBatchPrintGenerator() {
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
-      const data = (await response.json()) as GenerateResult;
+      const data = await readJsonResponse<GenerateResult>(response);
 
       if (!response.ok || !data.result_url) {
+        if (data.job_id) updateItem(id, { jobId: data.job_id });
         throw new Error(data.error || t("生成失败", "Generation failed"));
       }
 
       updateItem(id, {
         assetId: data.asset_id,
+        jobId: data.job_id,
         model: data.model,
         provider: data.provider,
         resultUrl: data.result_url,
@@ -342,6 +419,7 @@ export function AiBatchPrintGenerator() {
     }
 
     await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
+    await loadHistory();
     setRunning(false);
     setMessage(t("批量队列处理完成", "Batch queue complete"));
   }
@@ -350,7 +428,27 @@ export function AiBatchPrintGenerator() {
     if (running || !prompt.trim()) return;
     setRunning(true);
     await processItem(id, buildRunOptions());
+    await loadHistory();
     setRunning(false);
+  }
+
+  async function downloadImage(url: string, baseName: string) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(response.statusText || `HTTP ${response.status}`);
+      const blob = await response.blob();
+      const ext = imageExtension(url, response.headers.get("content-type"));
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `${sanitizeName(baseName)}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("涓嬭浇澶辫触", "Download failed"));
+    }
   }
 
   async function downloadZip() {
@@ -619,9 +717,8 @@ export function AiBatchPrintGenerator() {
               ) : (
                 <div className="divide-y divide-white/[0.06]">
                   {queue.map((item, index) => (
-                    <button
+                    <div
                       key={item.id}
-                      type="button"
                       onClick={() => setSelectedId(item.id)}
                       className={`grid w-full grid-cols-[56px_1fr] gap-3 p-3 text-left transition ${
                         selectedItem?.id === item.id
@@ -649,8 +746,40 @@ export function AiBatchPrintGenerator() {
                           {item.model ? <span className={`text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>{item.model}</span> : null}
                         </span>
                         {item.error ? <span className="mt-1 line-clamp-1 block text-xs text-red-400">{item.error}</span> : null}
+                        <span className="mt-2 flex flex-wrap items-center gap-2">
+                          {item.attempts > 0 ? (
+                            <span className={`text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                              {t(`已尝试 ${item.attempts} 次`, `${item.attempts} attempt(s)`)}
+                            </span>
+                          ) : null}
+                          {item.status === "failed" ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void retryItem(item.id);
+                              }}
+                              disabled={running}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40 ${isDark ? "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+                            >
+                              {t("重试", "Retry")}
+                            </button>
+                          ) : null}
+                          {item.resultUrl ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void downloadImage(item.resultUrl!, `${sanitizeName(item.file.name)}-print`);
+                              }}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${isDark ? "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20" : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"}`}
+                            >
+                              {t("下载", "Download")}
+                            </button>
+                          ) : null}
+                        </span>
                       </span>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -666,6 +795,7 @@ export function AiBatchPrintGenerator() {
                         {t(statusLabel[selectedItem.status].zh, statusLabel[selectedItem.status].en)}
                         {selectedItem.provider ? ` · ${selectedItem.provider}` : ""}
                         {selectedItem.model ? ` / ${selectedItem.model}` : ""}
+                        {selectedItem.attempts > 0 ? ` / ${t(`已尝试 ${selectedItem.attempts} 次`, `${selectedItem.attempts} attempt(s)`)}` : ""}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -737,6 +867,13 @@ export function AiBatchPrintGenerator() {
                       >
                         {t("打开结果图", "Open Result")}
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => void downloadImage(selectedItem.resultUrl!, `${sanitizeName(selectedItem.file.name)}-print`)}
+                        className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDark ? "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20" : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"}`}
+                      >
+                        {t("下载图片", "Download Image")}
+                      </button>
                       <span className={`rounded-lg px-3 py-2 text-xs ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
                         {t("已自动保存到素材库", "Saved to Assets")}
                       </span>
@@ -759,6 +896,106 @@ export function AiBatchPrintGenerator() {
           </div>
         </section>
       </div>
+
+      <section className={panelClass}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
+              {t("生图记录", "Generation History")}
+            </h2>
+            <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+              {t("保留最近 30 条成功和失败记录，失败原因可用于后续重试排查。", "The latest 30 successful and failed jobs are retained for retry diagnostics.")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setHistoryLoading(true);
+              void loadHistory();
+            }}
+            disabled={historyLoading}
+            className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-black/[0.03]"}`}
+          >
+            {historyLoading ? t("刷新中...", "Refreshing...") : t("刷新记录", "Refresh History")}
+          </button>
+        </div>
+
+        {historyLoading && history.length === 0 ? (
+          <p className={`mt-5 text-sm ${isDark ? "text-slate-500" : "text-slate-500"}`}>{t("正在加载生图记录...", "Loading generation history...")}</p>
+        ) : history.length === 0 ? (
+          <p className={`mt-5 text-sm ${isDark ? "text-slate-500" : "text-slate-500"}`}>{t("暂无生图记录。", "No generation history yet.")}</p>
+        ) : (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {history.map((job) => {
+              const statusText =
+                job.status === "completed"
+                  ? t("已完成", "Completed")
+                  : job.status === "failed"
+                    ? t("失败", "Failed")
+                    : job.status === "processing"
+                      ? t("处理中", "Processing")
+                      : t("等待中", "Pending");
+              const statusClass =
+                job.status === "completed"
+                  ? "bg-emerald-500/10 text-emerald-400"
+                  : job.status === "failed"
+                    ? "bg-red-500/10 text-red-400"
+                    : "bg-amber-500/10 text-amber-400";
+              const retryTarget = queue.find((item) => item.jobId === job.id && item.status === "failed");
+
+              return (
+                <article
+                  key={job.id}
+                  className={`rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.025]" : "border-black/[0.05] bg-white/80"}`}
+                >
+                  <div className="flex gap-3">
+                    <div className={`flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${isDark ? "border-white/[0.08] bg-slate-950/30" : "border-black/[0.05] bg-slate-50"}`}>
+                      {job.result_url ? (
+                        <img src={job.result_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className={`px-2 text-center text-[11px] ${job.status === "failed" ? "text-red-400" : "text-slate-500"}`}>{statusText}</span>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>{statusText}</span>
+                        <span className={`truncate text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>{job.provider_type}</span>
+                      </div>
+                      <p className={`mt-2 truncate text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-900"}`}>{job.model_id}</p>
+                      <p className={`mt-1 text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                        {new Date(job.created_at).toLocaleString(language === "zh" ? "zh-CN" : "en-US")}
+                      </p>
+                      <p className={`mt-1 text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>{job.width} x {job.height}</p>
+                    </div>
+                  </div>
+                  <p className={`mt-3 line-clamp-2 text-xs ${job.error_message ? "text-red-400" : isDark ? "text-slate-400" : "text-slate-600"}`}>
+                    {job.error_message || job.prompt}
+                  </p>
+                  {retryTarget ? (
+                    <button
+                      type="button"
+                      onClick={() => void retryItem(retryTarget.id)}
+                      disabled={running}
+                      className={`mt-3 w-full rounded-lg px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${isDark ? "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+                    >
+                      {t("重试失败任务", "Retry Failed Job")}
+                    </button>
+                  ) : null}
+                  {job.result_url ? (
+                    <button
+                      type="button"
+                      onClick={() => void downloadImage(job.result_url!, `ai-generation-${job.id.slice(0, 8)}`)}
+                      className={`mt-3 w-full rounded-lg px-3 py-2 text-xs font-semibold transition ${isDark ? "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20" : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"}`}
+                    >
+                      {t("下载图片", "Download Image")}
+                    </button>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

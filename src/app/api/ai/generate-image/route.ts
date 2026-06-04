@@ -29,6 +29,23 @@ function optionalNumber(value: unknown, fallback: number, min: number, max: numb
   return Math.max(min, Math.min(max, numeric));
 }
 
+export async function GET(request: Request) {
+  const requestUrl = new URL(request.url);
+  const limit = optionalNumber(requestUrl.searchParams.get("limit"), 30, 1, 100);
+  const supabase = createSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("ai_image_jobs")
+    .select("id, provider_type, model_id, prompt, width, height, status, result_url, asset_id, error_message, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    return NextResponse.json({ error: `Failed to load generation history: ${error.message}` }, { status: 500 });
+  }
+
+  return NextResponse.json({ jobs: data ?? [] });
+}
+
 export async function POST(request: Request) {
   let body: GenerateImageRequest;
 
@@ -207,7 +224,10 @@ export async function POST(request: Request) {
       product_draft_id: productDraftId,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "生图失败";
+    const rawErrorMessage = error instanceof Error ? error.message : "生图失败";
+    const errorMessage = /fetch failed|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|UND_ERR|socket|connection/i.test(rawErrorMessage)
+      ? "上游模型连接失败，系统已自动重试 3 次，请稍后点击重试"
+      : rawErrorMessage;
 
     if (jobId) {
       await supabase
@@ -216,6 +236,6 @@ export async function POST(request: Request) {
         .eq("id", jobId);
     }
 
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, job_id: jobId }, { status: 500 });
   }
 }
