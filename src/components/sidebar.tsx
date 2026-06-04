@@ -102,7 +102,7 @@ export function Sidebar() {
                     ? "text-white"
                     : "text-slate-900"
                   : isDark
-                    ? "text-slate-400 hover:bg-white/[0.04] hover:text-white"
+                    ? "text-slate-200 hover:bg-white/[0.06] hover:text-white"
                     : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900",
               ].join(" ")}
               style={
@@ -159,16 +159,16 @@ export function Sidebar() {
               <div className="animate-pulse-glow absolute inset-0 rounded-full" style={{ background: colors.primary, filter: "blur(3px)" }} />
             </div>
             <div>
-              <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+              <p className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-slate-400"}`}>
                 {t("系统状态", "System Status")}
               </p>
-              <p className={`text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+              <p className={`text-xs font-semibold ${isDark ? "text-white" : "text-slate-700"}`}>
                 {t("系统运行中", "Running")}
               </p>
             </div>
           </div>
           <div className={`rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-black/10" : "border-black/[0.04] bg-white/55"}`}>
-            <p className={`text-[10px] font-medium ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            <p className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-slate-400"}`}>
               {t("当前默认模型", "Current Default Model")}
             </p>
             <p
@@ -178,7 +178,7 @@ export function Sidebar() {
               {currentProvider?.display_name ?? t("暂无启用模型", "No active model")}
             </p>
             {currentProvider && (
-              <p className={`mt-0.5 truncate text-[10px] ${isDark ? "text-slate-500" : "text-slate-400"}`} title={currentProvider.model_id}>
+              <p className={`mt-0.5 truncate text-[10px] ${isDark ? "text-slate-300" : "text-slate-400"}`} title={currentProvider.model_id}>
                 {currentProvider.model_id}
               </p>
             )}
