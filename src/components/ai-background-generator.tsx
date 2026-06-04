@@ -14,10 +14,14 @@ type ProviderOption = {
 };
 
 type GenerateResult = {
+  error?: string;
   result_url?: string;
   provider?: string;
   model?: string;
 };
+
+type GenerationStatus = "idle" | "uploading" | "generating" | "success" | "failed";
+type GenerationStage = "uploading" | "generating";
 
 const PRINT_AVOID_TERMS = [
   "衣服",
@@ -158,7 +162,8 @@ export function AiBackgroundGenerator() {
   const [templateIndex, setTemplateIndex] = useState(0);
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
+  const [failedStage, setFailedStage] = useState<GenerationStage | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const colors = ACCENT_COLORS[accent];
@@ -167,12 +172,68 @@ export function AiBackgroundGenerator() {
       ? PRINT_PROMPT_TEMPLATES[templateIndex]?.promptZh ?? ""
       : PRINT_PROMPT_TEMPLATES[templateIndex]?.promptEn ?? "";
   const prompt = customPrompt ?? currentTemplatePrompt;
+  const generating = generationStatus === "uploading" || generationStatus === "generating";
+  const statusLabel =
+    generationStatus === "uploading"
+      ? t("上传中", "Uploading")
+      : generationStatus === "generating"
+        ? t("生成中", "Generating")
+        : generationStatus === "success"
+          ? t("生成成功", "Completed")
+          : generationStatus === "failed"
+            ? t("生成失败", "Failed")
+            : t("等待开始", "Ready");
+  const statusDescription =
+    generationStatus === "uploading"
+      ? t("正在上传原图并准备可访问地址。", "Uploading the source image and preparing an accessible URL.")
+      : generationStatus === "generating"
+        ? t("原图上传完成，AI 正在提取印花。", "Upload complete. AI is extracting the print.")
+        : generationStatus === "success"
+          ? t("图片生成完成，并已保存到素材库。", "The image was generated and saved to Assets.")
+          : generationStatus === "failed"
+            ? t("任务未完成，请查看错误信息后重试。", "The task did not complete. Review the error and retry.")
+            : t("上传原图并点击生成后，状态会显示在这里。", "Upload a source image and start generation to see progress here.");
+  const statusTone =
+    generationStatus === "success"
+      ? "bg-emerald-500/10 text-emerald-400"
+      : generationStatus === "failed"
+        ? "bg-red-500/10 text-red-400"
+        : generating
+          ? "bg-amber-500/10 text-amber-400"
+          : isDark
+            ? "bg-white/[0.06] text-slate-400"
+            : "bg-slate-100 text-slate-600";
+  const statusSteps: Array<{ id: "uploading" | "generating" | "success"; label: string }> = [
+    { id: "uploading", label: t("上传", "Upload") },
+    { id: "generating", label: t("生成", "Generate") },
+    { id: "success", label: t("成功", "Success") },
+  ];
+  const activeStepIndex =
+    generationStatus === "uploading"
+      ? 0
+      : generationStatus === "generating"
+        ? 1
+        : generationStatus === "success"
+          ? 2
+          : generationStatus === "failed"
+            ? failedStage === "generating" ? 1 : 0
+            : -1;
+  const completedStepIndex =
+    generationStatus === "success"
+      ? 2
+      : generationStatus === "generating" || (generationStatus === "failed" && failedStage === "generating")
+        ? 0
+        : -1;
 
   const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
 
   function handleFile(f: File | null) {
     setFile(f);
     setPreview(f ? URL.createObjectURL(f) : null);
+    setGenerationStatus("idle");
+    setFailedStage(null);
+    setResult(null);
+    setError(null);
   }
 
   useEffect(() => {
@@ -202,9 +263,11 @@ export function AiBackgroundGenerator() {
     const finalPrompt = [prompt.trim(), backgroundPrompt ? (language === "zh" ? backgroundPrompt.promptZh : backgroundPrompt.promptEn) : ""]
       .filter(Boolean)
       .join(" ");
-    setGenerating(true);
+    setGenerationStatus("uploading");
+    setFailedStage(null);
     setError(null);
     setResult(null);
+    let activeStage: GenerationStage = "uploading";
     try {
       const fd = new FormData();
       fd.append("files", file);
@@ -214,6 +277,8 @@ export function AiBackgroundGenerator() {
       const imageUrl = getUploadedImageUrl(uploadData.results[0] as UploadApiResult);
       if (!imageUrl) throw new Error(t("图片上传成功，但缺少可访问的图片 URL", "Image uploaded, but no accessible image URL was returned"));
 
+      activeStage = "generating";
+      setGenerationStatus("generating");
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -227,10 +292,11 @@ export function AiBackgroundGenerator() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || t("生成失败", "Generation failed"));
       setResult(data);
+      setGenerationStatus("success");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("生成失败", "Generation failed"));
-    } finally {
-      setGenerating(false);
+      setFailedStage(activeStage);
+      setGenerationStatus("failed");
     }
   }
 
@@ -252,6 +318,60 @@ export function AiBackgroundGenerator() {
           >
             {t("打开批量生图页面", "Open Batch Page")}
           </Link>
+        </div>
+
+        <div
+          aria-live="polite"
+          className={`rounded-2xl border p-3.5 ${isDark ? "border-white/[0.08] bg-slate-950/20" : "border-black/[0.05] bg-slate-50/80"}`}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className={`text-xs font-semibold uppercase ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                {t("任务状态", "Task Status")}
+              </p>
+              <p className={`mt-1 text-xs ${isDark ? "text-slate-400" : "text-slate-600"}`}>{statusDescription}</p>
+            </div>
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusTone}`}>
+              {statusLabel}
+            </span>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            {statusSteps.map((step, index) => {
+              const active = index === activeStepIndex;
+              const completed = index <= completedStepIndex;
+              const failed = generationStatus === "failed" && active;
+              return (
+                <div
+                  key={step.id}
+                  className={`flex min-h-12 items-center gap-2 rounded-xl border px-3 py-2 transition-colors ${
+                    failed
+                      ? isDark ? "border-red-400/30 bg-red-500/10 text-red-300" : "border-red-200 bg-red-50 text-red-700"
+                      : active
+                        ? isDark ? "border-amber-400/30 bg-amber-500/10 text-amber-300" : "border-amber-200 bg-amber-50 text-amber-700"
+                        : completed
+                          ? isDark ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-300" : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : isDark ? "border-white/[0.06] text-slate-500" : "border-black/[0.05] text-slate-400"
+                  }`}
+                >
+                  <span
+                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                      failed
+                        ? "bg-red-500 text-white"
+                        : completed
+                          ? "bg-emerald-500 text-white"
+                          : active
+                            ? "bg-amber-500 text-white"
+                            : isDark ? "bg-white/[0.06] text-slate-500" : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {completed ? "✓" : index + 1}
+                  </span>
+                  <span className="truncate text-xs font-semibold">{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -344,7 +464,13 @@ export function AiBackgroundGenerator() {
             `w-full rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`
           }
         >
-          {generating ? t("生成中...", "Generating...") : t("AI 提取印花", "AI Extract Print")}
+          {generationStatus === "uploading"
+            ? t("上传中...", "Uploading...")
+            : generationStatus === "generating"
+              ? t("生成中...", "Generating...")
+              : generationStatus === "failed"
+                ? t("重新生成", "Retry Generation")
+                : t("AI 提取印花", "AI Extract Print")}
         </button>
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
@@ -358,7 +484,7 @@ export function AiBackgroundGenerator() {
         {generating ? (
           <div className="relative z-10 text-center">
             <div className={`mx-auto h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-blue-400" : "border-blue-500"}`} />
-            <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("AI 正在生成图片...", "AI is generating the image...")}</p>
+            <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{statusDescription}</p>
           </div>
         ) : result?.result_url ? (
           <div className="relative z-10 space-y-3 text-center">
