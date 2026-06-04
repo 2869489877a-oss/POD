@@ -37,30 +37,38 @@ export function PageShell({ title, description, titleZh, titleEn, descriptionZh,
           }}
         />
 
-        <span
-          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${
-            isDark
-              ? "border border-white/[0.08] bg-white/[0.05]"
-              : "border border-black/[0.05] bg-black/[0.03]"
-          }`}
-          style={{ color: colors.primary }}
-        >
+        {/* Soft accent orb */}
+        <div
+          className="animate-float pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full opacity-70 blur-3xl"
+          style={{ background: `radial-gradient(circle, ${colors.primary}40, transparent 70%)` }}
+        />
+
+        <div className="relative z-10">
           <span
-            className="h-1.5 w-1.5 rounded-full animate-pulse-glow"
-            style={{ background: colors.primary }}
-          />
-          {t("POD 工作台", "POD Workspace")}
-        </span>
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold ${
+              isDark
+                ? "border border-white/[0.08] bg-white/[0.05]"
+                : "border border-black/[0.05] bg-black/[0.03]"
+            }`}
+            style={{ color: colors.primary }}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full animate-pulse-glow"
+              style={{ background: colors.primary }}
+            />
+            {t("POD 工作台", "POD Workspace")}
+          </span>
 
-        <h2
-          className={`mt-4 text-[32px] font-bold leading-tight ${isDark ? "text-white" : "text-slate-900"}`}
-        >
-          {resolvedTitle}
-        </h2>
+          <h2
+            className={`mt-4 text-[32px] font-bold leading-tight tracking-tight ${isDark ? "text-white" : "text-slate-900"}`}
+          >
+            {resolvedTitle}
+          </h2>
 
-        <p className={`mt-2 max-w-3xl text-sm leading-6 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-          {resolvedDescription}
-        </p>
+          <p className={`mt-2 max-w-3xl text-sm leading-6 ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+            {resolvedDescription}
+          </p>
+        </div>
       </div>
       {children}
     </section>

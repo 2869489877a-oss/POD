@@ -94,16 +94,25 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
+              aria-current={isActive ? "page" : undefined}
               className={[
                 "group relative flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition-all duration-200",
                 isActive
                   ? isDark
-                    ? "bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)]"
-                    : "bg-black/[0.04] text-slate-900 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)]"
+                    ? "text-white"
+                    : "text-slate-900"
                   : isDark
                     ? "text-slate-400 hover:bg-white/[0.04] hover:text-white"
                     : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900",
               ].join(" ")}
+              style={
+                isActive
+                  ? {
+                      background: isDark ? `${colors.primary}1f` : `${colors.primary}14`,
+                      boxShadow: `inset 0 0 0 1px ${colors.primary}3a`,
+                    }
+                  : undefined
+              }
             >
               {isActive && (
                 <div
