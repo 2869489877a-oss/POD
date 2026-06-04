@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 import {
   resizePresets,
@@ -680,29 +681,17 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
       ) : null}
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
-          <button
-            type="button"
-            disabled={page <= 1}
-            onClick={() => { const p = page - 1; setPage(p); void fetchAssets(status, copyrightStatus, p); }}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("上一页", "Previous")}
-          </button>
-          <span className="text-sm text-slate-600">
-            {t(`第 ${page} / ${totalPages} 页（共 ${total} 张）`, `Page ${page} / ${totalPages} (${total} total)`)}
-          </span>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => { const p = page + 1; setPage(p); void fetchAssets(status, copyrightStatus, p); }}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {t("下一页", "Next")}
-          </button>
-        </div>
-      )}
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        unitZh="张"
+        unitEn="assets"
+        onChange={(p) => {
+          setPage(p);
+          void fetchAssets(status, copyrightStatus, p);
+        }}
+      />
 
       {isResizeDialogOpen ? (
         <div

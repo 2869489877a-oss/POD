@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 
 import { fetchImageJobs, fetchImageJobDetail, retryImageJob } from "@/lib/actions/image-jobs";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const JOBS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 8;
 
 export type ImageJobStatus =
   | "pending"
@@ -99,6 +103,8 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
   const [failedOnly, setFailedOnly] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [retryTargetIds, setRetryTargetIds] = useState<string[]>([]);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [itemsPage, setItemsPage] = useState(1);
 
   const visibleItems = useMemo(() => {
     if (!selectedJob) {
@@ -127,6 +133,19 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       totalCount: retryTargetIds.length,
     };
   }, [retryTargetIds, selectedJob]);
+
+  const jobsTotalPages = Math.max(1, Math.ceil(jobs.length / JOBS_PER_PAGE));
+  const currentJobsPage = Math.min(jobsPage, jobsTotalPages);
+  const pagedJobs = useMemo(
+    () => jobs.slice((currentJobsPage - 1) * JOBS_PER_PAGE, currentJobsPage * JOBS_PER_PAGE),
+    [jobs, currentJobsPage],
+  );
+  const itemsTotalPages = Math.max(1, Math.ceil(visibleItems.length / ITEMS_PER_PAGE));
+  const currentItemsPage = Math.min(itemsPage, itemsTotalPages);
+  const pagedItems = useMemo(
+    () => visibleItems.slice((currentItemsPage - 1) * ITEMS_PER_PAGE, currentItemsPage * ITEMS_PER_PAGE),
+    [visibleItems, currentItemsPage],
+  );
 
   async function refreshJobs() {
     setIsRefreshing(true);
@@ -274,13 +293,16 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-200 bg-white">
-                {jobs.map((job) => {
+                {pagedJobs.map((job) => {
                   const isSelected = selectedJob?.id === job.id;
 
                   return (
                     <tr
                       key={job.id}
-                      onClick={() => void loadJobDetail(job.id)}
+                      onClick={() => {
+                        setItemsPage(1);
+                        void loadJobDetail(job.id);
+                      }}
                       className={[
                         "cursor-pointer transition hover:bg-zinc-50",
                         isSelected ? "bg-emerald-50/60" : "",
@@ -311,6 +333,19 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
             </table>
           </div>
         )}
+
+        {jobs.length > 0 ? (
+          <div className="px-5 pb-5">
+            <Pagination
+              page={currentJobsPage}
+              totalPages={jobsTotalPages}
+              total={jobs.length}
+              unitZh="个任务"
+              unitEn="jobs"
+              onChange={setJobsPage}
+            />
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-md border border-zinc-200 bg-white">
@@ -327,7 +362,10 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
               <input
                 type="checkbox"
                 checked={failedOnly}
-                onChange={(event) => setFailedOnly(event.target.checked)}
+                onChange={(event) => {
+                  setFailedOnly(event.target.checked);
+                  setItemsPage(1);
+                }}
                 disabled={!selectedJob}
                 className="h-4 w-4 rounded border-zinc-300"
               />
@@ -387,7 +425,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
 
         {selectedJob && visibleItems.length > 0 ? (
           <div className="divide-y divide-zinc-200">
-            {visibleItems.map((item) => (
+            {pagedItems.map((item) => (
               <div key={item.id} className="grid gap-4 p-5 lg:grid-cols-[160px_160px_1fr]">
                 <div>
                   <p className="mb-2 text-xs font-medium text-zinc-500">{t("原图", "Input")}</p>
@@ -463,6 +501,19 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                 </div>
               </div>
             ))}
+          </div>
+        ) : null}
+
+        {selectedJob && visibleItems.length > 0 ? (
+          <div className="px-5 pb-5">
+            <Pagination
+              page={currentItemsPage}
+              totalPages={itemsTotalPages}
+              total={visibleItems.length}
+              unitZh="项"
+              unitEn="items"
+              onChange={setItemsPage}
+            />
           </div>
         ) : null}
       </section>

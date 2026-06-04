@@ -13,7 +13,10 @@ import {
 } from "@/lib/infringement/reference-library";
 import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
 import type { InfringementReferenceLibraryType, InfringementRuleCategory } from "@/lib/infringement/types";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const CHECKS_PER_PAGE = 8;
 
 type CheckStatus = "pending" | "clear" | "review" | "risky" | "blocked";
 type RiskLevel = "unknown" | "low" | "medium" | "high" | "critical";
@@ -237,6 +240,7 @@ export function InfringementChecksManager({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<"all" | CheckStatus | "unchecked">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(initialError);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -281,6 +285,13 @@ export function InfringementChecksManager({
       return searchable.includes(keyword);
     });
   }, [filter, items, searchQuery]);
+
+  const checksTotalPages = Math.max(1, Math.ceil(visibleItems.length / CHECKS_PER_PAGE));
+  const currentPage = Math.min(page, checksTotalPages);
+  const pagedItems = useMemo(
+    () => visibleItems.slice((currentPage - 1) * CHECKS_PER_PAGE, currentPage * CHECKS_PER_PAGE),
+    [visibleItems, currentPage],
+  );
 
   const visibleRuleEntries = useMemo(() => {
     const keyword = ruleSearchQuery.trim().toLowerCase();
@@ -585,7 +596,10 @@ export function InfringementChecksManager({
             <input
               id="infringement-search"
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
               placeholder={t("文件名、URL、命中词、规则", "Filename, URL, match, rule")}
               className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             />
@@ -598,7 +612,10 @@ export function InfringementChecksManager({
             <select
               id="infringement-filter"
               value={filter}
-              onChange={(event) => setFilter(event.target.value as typeof filter)}
+              onChange={(event) => {
+                setFilter(event.target.value as typeof filter);
+                setPage(1);
+              }}
               className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             >
               {filterOptions.map((option) => (
@@ -1063,7 +1080,7 @@ export function InfringementChecksManager({
       ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {visibleItems.map((item) => {
+        {pagedItems.map((item) => {
           const status = getLatestStatus(item);
           const checkStatus = status === "unchecked" ? "pending" : status;
           const riskLevel = getRiskLevel(item.latest_check);
@@ -1188,6 +1205,17 @@ export function InfringementChecksManager({
           );
         })}
       </div>
+
+      {visibleItems.length > 0 ? (
+        <Pagination
+          page={currentPage}
+          totalPages={checksTotalPages}
+          total={visibleItems.length}
+          unitZh="张"
+          unitEn="assets"
+          onChange={setPage}
+        />
+      ) : null}
 
       {selectedItem ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6" role="dialog" aria-modal="true">

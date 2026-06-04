@@ -3,7 +3,10 @@
 import { type FormEvent, useMemo, useState } from "react";
 
 import { fetchProducts } from "@/lib/actions/products";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const PRODUCTS_PER_PAGE = 8;
 
 import type {
   MockupOutputOption,
@@ -85,6 +88,7 @@ export function ProductsManager({
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
   const [isDownloadingImages, setIsDownloadingImages] = useState(false);
   const [imageZipResult, setImageZipResult] = useState<ProductImagesZipResponse | null>(null);
 
@@ -119,6 +123,13 @@ export function ProductsManager({
         .some((value) => String(value).toLowerCase().includes(keyword)),
       );
   }, [products, searchQuery]);
+  const productTotalPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
+  const currentPage = Math.min(page, productTotalPages);
+  const pagedProducts = useMemo(
+    () => visibleProducts.slice((currentPage - 1) * PRODUCTS_PER_PAGE, currentPage * PRODUCTS_PER_PAGE),
+    [visibleProducts, currentPage],
+  );
+
   const selectedProductImages = useMemo(
     () =>
       selectedProduct
@@ -482,7 +493,10 @@ export function ProductsManager({
               <input
                 id="product-search"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  setPage(1);
+                }}
                 placeholder={t("搜索标题、SKU、类型", "Search title, SKU, or type")}
                 className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
               />
@@ -495,7 +509,7 @@ export function ProductsManager({
             <div className="p-8 text-sm text-zinc-500">{t("没有匹配的商品草稿。", "No matching product drafts.")}</div>
           ) : (
             <div className="divide-y divide-zinc-200">
-              {visibleProducts.map((product) => {
+              {pagedProducts.map((product) => {
                 const isSelected = selectedProduct?.id === product.id;
 
                 return (
@@ -545,6 +559,19 @@ export function ProductsManager({
               })}
             </div>
           )}
+
+          {visibleProducts.length > 0 ? (
+            <div className="px-5 pb-5">
+              <Pagination
+                page={currentPage}
+                totalPages={productTotalPages}
+                total={visibleProducts.length}
+                unitZh="个"
+                unitEn="drafts"
+                onChange={setPage}
+              />
+            </div>
+          ) : null}
         </section>
       </div>
 

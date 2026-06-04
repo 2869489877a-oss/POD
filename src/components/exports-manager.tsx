@@ -7,7 +7,10 @@ import type {
   ProductDraftView,
 } from "@/lib/products/types";
 import type { ExportRecordView } from "@/lib/exports/records";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const PRODUCTS_PER_PAGE = 8;
 
 type ExportsManagerProps = {
   exportRecords: ExportRecordView[];
@@ -85,12 +88,19 @@ export function ExportsManager({
   const [excelResult, setExcelResult] = useState<ExportResponse | null>(null);
   const [zipResult, setZipResult] = useState<ExportResponse | null>(null);
   const [records, setRecords] = useState<ExportRecordView[]>(exportRecords);
+  const [page, setPage] = useState(1);
 
   const selectedProducts = useMemo(
     () => products.filter((product) => selectedIds.includes(product.id)),
     [products, selectedIds],
   );
   const allSelected = products.length > 0 && selectedIds.length === products.length;
+  const productsTotalPages = Math.max(1, Math.ceil(products.length / PRODUCTS_PER_PAGE));
+  const currentPage = Math.min(page, productsTotalPages);
+  const pagedProducts = useMemo(
+    () => products.slice((currentPage - 1) * PRODUCTS_PER_PAGE, currentPage * PRODUCTS_PER_PAGE),
+    [products, currentPage],
+  );
 
   function toggleProduct(productId: string) {
     setSelectedIds((current) =>
@@ -304,7 +314,7 @@ export function ExportsManager({
           <div className="p-8 text-sm text-zinc-500">{t("暂无可导出的商品草稿。", "No exportable product drafts.")}</div>
         ) : (
           <div className="divide-y divide-zinc-200">
-            {products.map((product) => {
+            {pagedProducts.map((product) => {
               const checked = selectedIds.includes(product.id);
 
               return (
@@ -358,6 +368,19 @@ export function ExportsManager({
             })}
           </div>
         )}
+
+        {products.length > 0 ? (
+          <div className="px-5 pb-5">
+            <Pagination
+              page={currentPage}
+              totalPages={productsTotalPages}
+              total={products.length}
+              unitZh="个"
+              unitEn="products"
+              onChange={setPage}
+            />
+          </div>
+        ) : null}
       </section>
     </div>
   );

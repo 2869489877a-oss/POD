@@ -8,8 +8,11 @@ import {
   type MockupScene,
   type PrintArea,
 } from "@/lib/mockups/scenes";
+import { Pagination } from "@/components/pagination";
 import { SceneEditor } from "@/components/scene-editor";
 import { useSettings } from "@/lib/settings/context";
+
+const TEMPLATES_PER_PAGE = 8;
 
 export type MockupTemplate = {
   created_at: string;
@@ -149,8 +152,15 @@ export function MockupTemplatesManager({
   const [isUploadingBackgrounds, setIsUploadingBackgrounds] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [deletingTemplateId, setDeletingTemplateId] = useState<string | null>(null);
+  const [templatesPage, setTemplatesPage] = useState(1);
 
   const selectedScenes = useMemo(() => selectedTemplate?.scenes ?? [], [selectedTemplate]);
+  const templatesTotalPages = Math.max(1, Math.ceil(templates.length / TEMPLATES_PER_PAGE));
+  const currentTemplatesPage = Math.min(templatesPage, templatesTotalPages);
+  const pagedTemplates = useMemo(
+    () => templates.slice((currentTemplatesPage - 1) * TEMPLATES_PER_PAGE, currentTemplatesPage * TEMPLATES_PER_PAGE),
+    [templates, currentTemplatesPage],
+  );
 
   function handleBackgroundFilesChange(event: ChangeEvent<HTMLInputElement>) {
     setBackgroundFiles(Array.from(event.target.files ?? []));
@@ -577,7 +587,7 @@ export function MockupTemplatesManager({
             <div className="p-8 text-sm text-zinc-500">{t("暂无套图模板。", "No mockup templates yet.")}</div>
           ) : (
             <div className="divide-y divide-zinc-200">
-              {templates.map((template) => {
+              {pagedTemplates.map((template) => {
                 const isSelected = selectedTemplate?.id === template.id;
 
                 return (
@@ -625,6 +635,19 @@ export function MockupTemplatesManager({
               })}
             </div>
           )}
+
+          {templates.length > 0 ? (
+            <div className="px-5 pb-5">
+              <Pagination
+                page={currentTemplatesPage}
+                totalPages={templatesTotalPages}
+                total={templates.length}
+                unitZh="个"
+                unitEn="templates"
+                onChange={setTemplatesPage}
+              />
+            </div>
+          ) : null}
         </section>
 
         <section className="rounded-md border border-zinc-200 bg-white">

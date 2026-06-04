@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchCollectionTemplates, fetchCollectionRuns, saveCollectionTemplate, archiveCollectionTemplate, runCollectionTemplate } from "@/lib/actions/image-collector";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 import type {
   ImageCollectionRun,
@@ -10,6 +11,9 @@ import type {
   ImageCollectionSourceInput,
   ImageCollectionTemplate,
 } from "@/types/image-collector";
+
+const RUNS_PER_PAGE = 10;
+const RUN_ITEMS_PER_PAGE = 12;
 
 type RunWithTemplateName = ImageCollectionRun & {
   template_name: string | null;
@@ -188,10 +192,25 @@ export function ImageCollectorManager() {
   const [lastRun, setLastRun] = useState<RunDetail | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [runsPage, setRunsPage] = useState(1);
+  const [runItemsPage, setRunItemsPage] = useState(1);
 
   const activeTemplates = useMemo(
     () => templates.filter((template) => template.status === "active"),
     [templates],
+  );
+  const runsTotalPages = Math.max(1, Math.ceil(runs.length / RUNS_PER_PAGE));
+  const currentRunsPage = Math.min(runsPage, runsTotalPages);
+  const pagedRuns = useMemo(
+    () => runs.slice((currentRunsPage - 1) * RUNS_PER_PAGE, currentRunsPage * RUNS_PER_PAGE),
+    [runs, currentRunsPage],
+  );
+  const runItems = useMemo(() => lastRun?.items ?? [], [lastRun]);
+  const runItemsTotalPages = Math.max(1, Math.ceil(runItems.length / RUN_ITEMS_PER_PAGE));
+  const currentRunItemsPage = Math.min(runItemsPage, runItemsTotalPages);
+  const pagedRunItems = useMemo(
+    () => runItems.slice((currentRunItemsPage - 1) * RUN_ITEMS_PER_PAGE, currentRunItemsPage * RUN_ITEMS_PER_PAGE),
+    [runItems, currentRunItemsPage],
   );
 
   const refreshTemplates = useCallback(async () => {
@@ -320,6 +339,7 @@ export function ImageCollectorManager() {
       if (data.error) throw new Error(data.error);
 
       setLastRun(data.run as RunDetail | null);
+      setRunItemsPage(1);
       setMessage(t("采集任务已提交", "Collection job submitted"));
       await refreshRuns();
     } catch (requestError) {
@@ -453,7 +473,7 @@ export function ImageCollectorManager() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200">
-                  {runs.map((run) => (
+                  {pagedRuns.map((run) => (
                     <tr key={run.id}>
                       <td className="px-5 py-3 text-zinc-900">{run.template_name ?? t("模板已删除", "Template deleted")}</td>
                       <td className="px-5 py-3 text-zinc-600">{statusLabel(run.status, t)}</td>
@@ -468,6 +488,19 @@ export function ImageCollectorManager() {
               </table>
             </div>
           )}
+
+          {runs.length > 0 ? (
+            <div className="px-5 pb-5">
+              <Pagination
+                page={currentRunsPage}
+                totalPages={runsTotalPages}
+                total={runs.length}
+                unitZh="次"
+                unitEn="runs"
+                onChange={setRunsPage}
+              />
+            </div>
+          ) : null}
         </div>
 
         {lastRun ? (
@@ -500,7 +533,7 @@ export function ImageCollectorManager() {
               <div className="p-5 text-sm text-zinc-500">{t("本次运行没有写入图片明细。", "This run did not write any image details.")}</div>
             ) : (
               <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
-                {lastRun.items.map((item) => {
+                {pagedRunItems.map((item) => {
                   const previewUrl = item.asset_original_url ?? item.image_url;
 
                   return (
@@ -549,6 +582,19 @@ export function ImageCollectorManager() {
                 })}
               </div>
             )}
+
+            {runItems.length > 0 ? (
+              <div className="px-5 pb-5">
+                <Pagination
+                  page={currentRunItemsPage}
+                  totalPages={runItemsTotalPages}
+                  total={runItems.length}
+                  unitZh="张"
+                  unitEn="images"
+                  onChange={setRunItemsPage}
+                />
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>

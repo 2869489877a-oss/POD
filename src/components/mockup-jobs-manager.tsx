@@ -3,7 +3,10 @@
 import { useMemo, useState } from "react";
 
 import { createMockupJob } from "@/lib/actions/mockup-jobs";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const ASSETS_PER_PAGE = 12;
 
 import type { MockupScene } from "@/lib/mockups/scenes";
 
@@ -78,6 +81,7 @@ export function MockupJobsManager({
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadingOutputId, setDownloadingOutputId] = useState<string | null>(null);
   const [downloadResults, setDownloadResults] = useState<Record<string, MockupOutputZipResponse>>({});
+  const [assetsPage, setAssetsPage] = useState(1);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === templateId) ?? null,
@@ -86,6 +90,12 @@ export function MockupJobsManager({
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedAssetIds.has(asset.id)),
     [assets, selectedAssetIds],
+  );
+  const assetsTotalPages = Math.max(1, Math.ceil(assets.length / ASSETS_PER_PAGE));
+  const currentAssetsPage = Math.min(assetsPage, assetsTotalPages);
+  const pagedAssets = useMemo(
+    () => assets.slice((currentAssetsPage - 1) * ASSETS_PER_PAGE, currentAssetsPage * ASSETS_PER_PAGE),
+    [assets, currentAssetsPage],
   );
 
   function toggleAsset(assetId: string) {
@@ -259,7 +269,7 @@ export function MockupJobsManager({
           <div className="p-8 text-sm text-zinc-500">{t("暂无素材，请先上传图片。", "No assets yet. Upload images first.")}</div>
         ) : (
           <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
-            {assets.map((asset) => {
+            {pagedAssets.map((asset) => {
               const isSelected = selectedAssetIds.has(asset.id);
               const previewUrl = asset.processed_url ?? asset.original_url;
 
@@ -297,6 +307,19 @@ export function MockupJobsManager({
             })}
           </div>
         )}
+
+        {assets.length > 0 ? (
+          <div className="px-5 pb-5">
+            <Pagination
+              page={currentAssetsPage}
+              totalPages={assetsTotalPages}
+              total={assets.length}
+              unitZh="张"
+              unitEn="assets"
+              onChange={setAssetsPage}
+            />
+          </div>
+        ) : null}
       </section>
 
       {jobResult ? (

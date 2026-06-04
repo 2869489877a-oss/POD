@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchAssetsForProcessing } from "@/lib/actions/common";
+import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+
+const ASSETS_PER_PAGE = 10;
 
 type ProcessingKind = "cutout" | "print_extraction";
 
@@ -138,12 +141,19 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
   const [error, setError] = useState<string | null>(initialError);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [page, setPage] = useState(1);
   const selectedCount = selectedIds.size;
   const resultLabel = kind === "cutout" ? t("抠图结果", "cutout result") : t("印花提取结果", "print extraction result");
   const modeOptions = kind === "cutout" ? cutoutModes : printModes;
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedIds.has(asset.id)),
     [assets, selectedIds],
+  );
+  const assetsTotalPages = Math.max(1, Math.ceil(assets.length / ASSETS_PER_PAGE));
+  const currentPage = Math.min(page, assetsTotalPages);
+  const pagedAssets = useMemo(
+    () => assets.slice((currentPage - 1) * ASSETS_PER_PAGE, currentPage * ASSETS_PER_PAGE),
+    [assets, currentPage],
   );
 
   const refreshAssets = useCallback(async () => {
@@ -320,7 +330,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
               </div>
             ) : (
               <div className="mt-4 grid max-h-[620px] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
-                {assets.map((asset) => {
+                {pagedAssets.map((asset) => {
                   const isSelected = selectedIds.has(asset.id);
                   const existingResultUrl = getExistingResultUrl(asset, kind);
 
@@ -378,6 +388,17 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                 })}
               </div>
             )}
+
+            {assets.length > 0 ? (
+              <Pagination
+                page={currentPage}
+                totalPages={assetsTotalPages}
+                total={assets.length}
+                unitZh="张"
+                unitEn="assets"
+                onChange={setPage}
+              />
+            ) : null}
           </div>
 
           <aside className="rounded-md bg-zinc-50 p-4">
