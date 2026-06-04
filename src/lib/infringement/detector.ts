@@ -1,4 +1,8 @@
 import { infringementRules, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
+import {
+  builtInHighRiskReferenceItems,
+  matchReferenceItems,
+} from "@/lib/infringement/reference-library";
 import type {
   InfringementDetectionInput,
   InfringementDetectionResult,
@@ -189,21 +193,56 @@ function createVisualReviewMatch(): InfringementRuleMatch {
   };
 }
 
+function createReferenceRuleMatch(
+  match: ReturnType<typeof matchReferenceItems>[number],
+): InfringementRuleMatch {
+  return {
+    category: match.category,
+    description: match.libraryType === "allowlist"
+      ? "白名单参考库命中。"
+      : "高风险图片参考库命中。",
+    field: match.field,
+    label: match.libraryType === "allowlist" ? `白名单：${match.title}` : `高风险参考：${match.title}`,
+    matched: match.matched,
+    rule_id: `reference:${match.id}`,
+    severity: match.severity,
+  };
+}
+
 export function runInfringementDetection(input: InfringementDetectionInput): InfringementDetectionResult {
   const fields = getFields(input);
   const textMatches = infringementRules.flatMap((rule) => findRuleMatches(rule, fields));
-  const visualReviewRequired = shouldRequireVisualReview(input, textMatches);
-  const matches = visualReviewRequired ? [...textMatches, createVisualReviewMatch()] : textMatches;
+  const referenceItems = [
+    ...builtInHighRiskReferenceItems,
+    ...(input.referenceItems ?? []),
+  ];
+  const referenceMatches = matchReferenceItems(referenceItems, fields, input.asset.image_hash);
+  const highRiskReferenceMatches = referenceMatches.filter((match) => match.libraryType === "high_risk");
+  const allowlistMatches = referenceMatches.filter((match) => match.libraryType === "allowlist");
+  const highRiskMatches = [
+    ...textMatches,
+    ...highRiskReferenceMatches.map(createReferenceRuleMatch),
+  ];
+  const allowlistMatched = allowlistMatches.length > 0 && highRiskMatches.length === 0;
+  const visualReviewRequired = !allowlistMatched && shouldRequireVisualReview(input, highRiskMatches);
+  const matches = visualReviewRequired ? [...highRiskMatches, createVisualReviewMatch()] : highRiskMatches;
   const highestScore = matches.reduce((score, match) => Math.max(score, severityScore[match.severity]), 0);
-  const scoreWithDensity = Math.min(100, highestScore + Math.max(0, matches.length - 1) * 3);
-  const riskLevel = riskLevelFromScore(scoreWithDensity);
-  const status = statusFromRiskLevel(riskLevel);
+  const scoreWithDensity = allowlistMatched
+    ? 0
+    : Math.min(100, highestScore + Math.max(0, matches.length - 1) * 3);
+  const riskLevel = allowlistMatched ? "unknown" : riskLevelFromScore(scoreWithDensity);
+  const status = allowlistMatched ? "clear" : statusFromRiskLevel(riskLevel);
 
   return {
     confidence: scoreWithDensity,
     evidence: {
+      allowlist_matched: allowlistMatched,
+      allowlist_matches: allowlistMatches,
       fields_scanned: fields.map((field) => field.name),
+      high_risk_reference_count: builtInHighRiskReferenceItems.length,
+      high_risk_reference_matches: highRiskReferenceMatches,
       product_text_count: input.productTexts?.length ?? 0,
+      reference_library_count: referenceItems.length,
       rule_count: infringementRuleStats.totalRules,
       rule_engine_version: RULE_ENGINE_VERSION,
       rule_term_count: infringementRuleStats.totalTerms,
@@ -213,7 +252,9 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       visual_review_required: visualReviewRequired,
     },
     matched_rules: matches,
-    recommendation: getRecommendation(riskLevel, matches.length, visualReviewRequired),
+    recommendation: allowlistMatched
+      ? "白名单参考库命中，且未发现其它高风险规则命中。可作为低风险素材继续使用，但仍建议保留授权或来源记录。"
+      : getRecommendation(riskLevel, matches.length, visualReviewRequired),
     risk_level: riskLevel,
     status,
   };

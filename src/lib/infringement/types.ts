@@ -4,6 +4,8 @@ export type InfringementRiskLevel = "unknown" | "low" | "medium" | "high" | "cri
 
 export type InfringementCheckStatus = "pending" | "clear" | "review" | "risky" | "blocked";
 
+export type InfringementReferenceLibraryType = "high_risk" | "allowlist";
+
 export type InfringementRuleCategory =
   | "brand"
   | "character"
@@ -56,11 +58,41 @@ export type InfringementRuleMatch = {
   severity: InfringementSeverity;
 };
 
+export type InfringementReferenceItem = {
+  category: InfringementRuleCategory;
+  description?: string | null;
+  id: string;
+  imageHash?: string | null;
+  imageUrl?: string | null;
+  isActive?: boolean;
+  libraryType: InfringementReferenceLibraryType;
+  notes?: string | null;
+  riskLevel: InfringementRiskLevel;
+  severity: InfringementSeverity;
+  source: "built_in" | "database";
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
+  terms: string[];
+  title: string;
+};
+
+export type InfringementReferenceMatch = {
+  category: InfringementRuleCategory;
+  field: string;
+  id: string;
+  libraryType: InfringementReferenceLibraryType;
+  matched: string;
+  matchType: "text" | "image_hash";
+  severity: InfringementSeverity;
+  title: string;
+};
+
 export type InfringementDetectionInput = {
   asset: {
     copyright_status?: string;
     filename: string;
     id: string;
+    image_hash?: string | null;
     original_url?: string | null;
     source?: string | null;
   };
@@ -72,13 +104,19 @@ export type InfringementDetectionInput = {
     tags?: string[];
     title?: string | null;
   }>;
+  referenceItems?: InfringementReferenceItem[];
 };
 
 export type InfringementDetectionResult = {
   confidence: number;
   evidence: {
     fields_scanned: string[];
+    allowlist_matched?: boolean;
+    allowlist_matches?: InfringementReferenceMatch[];
+    high_risk_reference_count?: number;
+    high_risk_reference_matches?: InfringementReferenceMatch[];
     product_text_count: number;
+    reference_library_count?: number;
     rule_count?: number;
     rule_engine_version: string;
     rule_term_count?: number;

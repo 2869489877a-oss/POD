@@ -4,7 +4,16 @@ import {
   mapDetectionStatusToAssetCopyrightStatus,
   runInfringementDetection,
 } from "@/lib/infringement/detector";
-import type { InfringementCheckStatus } from "@/lib/infringement/types";
+import { computeAverageHashFromUrl } from "@/lib/infringement/image-hash";
+import {
+  builtInHighRiskReferenceItems,
+  normalizeReferenceRow,
+} from "@/lib/infringement/reference-library";
+import type {
+  InfringementCheckStatus,
+  InfringementDetectionResult,
+  InfringementReferenceItem,
+} from "@/lib/infringement/types";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -35,6 +44,23 @@ type ProductTextRow = {
 
 type CreateChecksRequest = {
   asset_ids?: unknown;
+};
+
+type ReferenceRow = {
+  category: string | null;
+  description: string | null;
+  id: string;
+  image_hash: string | null;
+  image_url: string | null;
+  is_active: boolean | null;
+  library_type: string | null;
+  notes: string | null;
+  risk_level: string | null;
+  severity: string | null;
+  source_label: string | null;
+  source_url: string | null;
+  terms: string[] | null;
+  title: string | null;
 };
 
 const checkColumns = [
@@ -77,6 +103,46 @@ function arrayOrEmpty(value: string[] | null) {
   return Array.isArray(value) ? value : [];
 }
 
+async function fetchReferenceItems(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+): Promise<InfringementReferenceItem[]> {
+  const { data, error } = await supabase
+    .from("infringement_reference_items")
+    .select("id,library_type,category,title,terms,image_url,image_hash,risk_level,severity,description,source_label,source_url,notes,is_active")
+    .eq("is_active", true)
+    .limit(5000);
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (error.code === "42P01" || message.includes("infringement_reference_items")) {
+      return [];
+    }
+
+    throw new Error(error.message);
+  }
+
+  return ((data ?? []) as unknown as ReferenceRow[]).map(normalizeReferenceRow);
+}
+
+async function computeAssetHashes(
+  assets: AssetRow[],
+  shouldComputeHashes: boolean,
+) {
+  if (!shouldComputeHashes) return new Map<string, string>();
+
+  const pairs = await Promise.all(
+    assets.map(async (asset) => {
+      try {
+        return [asset.id, await computeAverageHashFromUrl(asset.original_url)] as const;
+      } catch {
+        return [asset.id, null] as const;
+      }
+    }),
+  );
+
+  return new Map(pairs.filter((item): item is readonly [string, string] => Boolean(item[1])));
+}
+
 export async function GET() {
   const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
@@ -104,6 +170,7 @@ export async function POST(request: Request) {
   try {
     const assetIds = parseAssetIds(body.asset_ids);
     const supabase = createSupabaseServiceRoleClient();
+    const databaseReferenceItems = await fetchReferenceItems(supabase);
     const { data: assetData, error: assetError } = await supabase
       .from("assets")
       .select("id,filename,original_url,source,copyright_status")
@@ -135,9 +202,19 @@ export async function POST(request: Request) {
       productsByAssetId.set(product.asset_id, current);
     }
 
+    const assetHashesById = await computeAssetHashes(
+      assets,
+      databaseReferenceItems.some((item) => Boolean(item.imageHash)) ||
+        builtInHighRiskReferenceItems.some((item) => Boolean(item.imageHash)),
+    );
+    const resultsByAssetId = new Map<string, InfringementDetectionResult>();
+
     const insertRows = assets.map((asset) => {
       const result = runInfringementDetection({
-        asset,
+        asset: {
+          ...asset,
+          image_hash: assetHashesById.get(asset.id) ?? null,
+        },
         productTexts: (productsByAssetId.get(asset.id) ?? []).map((product) => ({
           bullet_points: arrayOrEmpty(product.bullet_points),
           description: product.description,
@@ -146,7 +223,9 @@ export async function POST(request: Request) {
           tags: arrayOrEmpty(product.tags),
           title: product.title,
         })),
+        referenceItems: databaseReferenceItems,
       });
+      resultsByAssetId.set(asset.id, result);
 
       return {
         asset_id: asset.id,
@@ -180,14 +259,18 @@ export async function POST(request: Request) {
           check.status,
           asset.copyright_status,
         );
+        const result = resultsByAssetId.get(asset.id);
+        const resolvedCopyrightStatus = result?.evidence.allowlist_matched
+          ? "commercial_ok"
+          : nextCopyrightStatus;
 
-        if (nextCopyrightStatus === asset.copyright_status) {
+        if (resolvedCopyrightStatus === asset.copyright_status) {
           return Promise.resolve();
         }
 
         return supabase
           .from("assets")
-          .update({ copyright_status: nextCopyrightStatus })
+          .update({ copyright_status: resolvedCopyrightStatus })
           .eq("id", asset.id)
           .then(({ error }) => {
             if (error) throw new Error(error.message);

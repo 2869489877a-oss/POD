@@ -1,14 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   fetchInfringementDashboard,
   type InfringementCheckRow,
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
+import {
+  builtInHighRiskReferenceItems,
+  builtInReferenceStats,
+} from "@/lib/infringement/reference-library";
 import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
-import type { InfringementRuleCategory } from "@/lib/infringement/types";
+import type { InfringementReferenceLibraryType, InfringementRuleCategory } from "@/lib/infringement/types";
 import { useSettings } from "@/lib/settings/context";
 
 type CheckStatus = "pending" | "clear" | "review" | "risky" | "blocked";
@@ -35,6 +39,36 @@ type ReviewResponse = {
   check?: InfringementCheckRow;
   error?: string;
   ok?: boolean;
+};
+
+type ReferenceLibraryItemRow = {
+  category: InfringementRuleCategory;
+  id: string;
+  imageHash?: string | null;
+  imageUrl?: string | null;
+  libraryType: InfringementReferenceLibraryType;
+  notes?: string | null;
+  riskLevel: string;
+  severity: string;
+  source: "built_in" | "database";
+  sourceLabel?: string | null;
+  sourceUrl?: string | null;
+  terms: string[];
+  title: string;
+};
+
+type ReferenceLibraryResponse = {
+  built_in?: {
+    high_risk_count?: number;
+  };
+  error?: string;
+  items?: ReferenceLibraryItemRow[];
+  setup_required?: boolean;
+};
+
+type CreateReferenceResponse = {
+  error?: string;
+  item?: ReferenceLibraryItemRow;
 };
 
 type InfringementChecksManagerProps = {
@@ -213,6 +247,15 @@ export function InfringementChecksManager({
   const [isReviewSaving, setIsReviewSaving] = useState(false);
   const [ruleSearchQuery, setRuleSearchQuery] = useState("");
   const [ruleCategoryFilter, setRuleCategoryFilter] = useState<"all" | InfringementRuleCategory>("all");
+  const [referenceItems, setReferenceItems] = useState<ReferenceLibraryItemRow[]>([]);
+  const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
+  const [referenceSetupRequired, setReferenceSetupRequired] = useState(false);
+  const [referenceSearchQuery, setReferenceSearchQuery] = useState("");
+  const [newReferenceType, setNewReferenceType] = useState<InfringementReferenceLibraryType>("high_risk");
+  const [newReferenceTitle, setNewReferenceTitle] = useState("");
+  const [newReferenceTerms, setNewReferenceTerms] = useState("");
+  const [newReferenceImageUrl, setNewReferenceImageUrl] = useState("");
+  const [isReferenceSaving, setIsReferenceSaving] = useState(false);
 
   const visibleItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -281,6 +324,75 @@ export function InfringementChecksManager({
   }, [items]);
   const numberFormatter = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const displayedRuleEntries = visibleRuleEntries.slice(0, 80);
+  const referenceKeyword = referenceSearchQuery.trim().toLowerCase();
+  const displayedHighRiskReferences = useMemo(() => {
+    return builtInHighRiskReferenceItems
+      .filter((item) => {
+        if (!referenceKeyword) return true;
+        return [
+          item.title,
+          item.description,
+          item.category,
+          item.sourceLabel,
+          ...item.terms,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(referenceKeyword);
+      })
+      .sort((left, right) => {
+        if (left.imageHash && !right.imageHash) return -1;
+        if (!left.imageHash && right.imageHash) return 1;
+        if (left.category === "celebrity" && right.category !== "celebrity") return -1;
+        if (left.category !== "celebrity" && right.category === "celebrity") return 1;
+        return left.title.localeCompare(right.title);
+      })
+      .slice(0, 80);
+  }, [referenceKeyword]);
+  const displayedDatabaseReferences = useMemo(() => {
+    return referenceItems
+      .filter((item) => {
+        if (!referenceKeyword) return true;
+        return [
+          item.title,
+          item.category,
+          item.sourceLabel,
+          item.imageUrl,
+          ...item.terms,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(referenceKeyword);
+      })
+      .slice(0, 12);
+  }, [referenceItems, referenceKeyword]);
+  const databaseHighRiskCount = referenceItems.filter((item) => item.libraryType === "high_risk").length;
+  const databaseAllowlistCount = referenceItems.filter((item) => item.libraryType === "allowlist").length;
+
+  async function loadReferenceLibrary() {
+    try {
+      const response = await fetch("/api/infringement-reference-library", { cache: "no-store" });
+      const data = (await response.json()) as ReferenceLibraryResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error ?? t("读取参考库失败", "Failed to load reference library"));
+      }
+
+      setReferenceItems(data.items ?? []);
+      setReferenceSetupRequired(Boolean(data.setup_required));
+      setReferenceLibraryError(null);
+    } catch (requestError) {
+      setReferenceLibraryError(
+        requestError instanceof Error ? requestError.message : t("读取参考库失败", "Failed to load reference library"),
+      );
+    }
+  }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadReferenceLibrary();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function refreshDashboard() {
     setIsRefreshing(true);
@@ -390,6 +502,52 @@ export function InfringementChecksManager({
       setError(requestError instanceof Error ? requestError.message : t("保存复核结果失败", "Failed to save review result"));
     } finally {
       setIsReviewSaving(false);
+    }
+  }
+
+  async function saveReferenceItem() {
+    const title = newReferenceTitle.trim();
+    const terms = newReferenceTerms.trim();
+    const imageUrl = newReferenceImageUrl.trim();
+
+    if (!title && !terms && !imageUrl) {
+      setReferenceLibraryError(t("请至少填写标题、关键词或图片 URL", "Enter at least a title, terms or image URL"));
+      return;
+    }
+
+    setIsReferenceSaving(true);
+    setReferenceLibraryError(null);
+
+    try {
+      const response = await fetch("/api/infringement-reference-library", {
+        body: JSON.stringify({
+          category: newReferenceType === "allowlist" ? "marketplace" : "celebrity",
+          image_url: imageUrl || undefined,
+          library_type: newReferenceType,
+          risk_level: newReferenceType === "allowlist" ? "unknown" : "high",
+          severity: newReferenceType === "allowlist" ? "low" : "high",
+          terms,
+          title,
+        }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = (await response.json()) as CreateReferenceResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error ?? t("保存参考项失败", "Failed to save reference item"));
+      }
+
+      setNewReferenceTitle("");
+      setNewReferenceTerms("");
+      setNewReferenceImageUrl("");
+      await loadReferenceLibrary();
+    } catch (requestError) {
+      setReferenceLibraryError(
+        requestError instanceof Error ? requestError.message : t("保存参考项失败", "Failed to save reference item"),
+      );
+    } finally {
+      setIsReferenceSaving(false);
     }
   }
 
@@ -647,6 +805,242 @@ export function InfringementChecksManager({
             `Showing ${displayedRuleEntries.length} / ${visibleRuleEntries.length} filtered entries. The library is a risk screen, not legal advice; final listing still requires manual rights and source review.`,
           )}
         </p>
+      </section>
+
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
+              {t("高风险参考库 / 白名单库", "High-Risk Reference / Allowlist")}
+            </p>
+            <h2 className="mt-2 text-xl font-semibold text-zinc-950">
+              {t("明星、图片 hash 和授权白名单管理", "Celebrity, image hash and license allowlist management")}
+            </h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-600">
+              {t(
+                "内置库覆盖欧美为主的明星、乐队、运动员、演员和公众人物；图片不直接打包进仓库，用户可添加已确认来源的图片 URL，系统会保存感知 hash 用于后续相似图命中。",
+                "The built-in library covers mostly Western celebrities, bands, athletes, actors and public figures. Photos are not bundled in the repo; add verified image URLs to store perceptual hashes for later similar-image hits.",
+              )}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadReferenceLibrary()}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+          >
+            {t("刷新参考库", "Refresh Library")}
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border border-red-200 bg-red-50 p-4">
+            <p className="text-xs font-medium text-red-600">{t("内置高风险项", "Built-in High-Risk")}</p>
+            <p className="mt-2 text-2xl font-semibold text-red-900">
+              {numberFormatter.format(builtInReferenceStats.totalHighRisk)}
+            </p>
+            <p className="mt-1 text-xs text-red-700">
+              {numberFormatter.format(builtInReferenceStats.totalTerms)} {t("个匹配词", "terms")}
+            </p>
+          </div>
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
+            <p className="text-xs font-medium text-amber-700">{t("明星参考项", "Celebrity References")}</p>
+            <p className="mt-2 text-2xl font-semibold text-amber-900">
+              {numberFormatter.format(builtInReferenceStats.byCategory.celebrity ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-amber-700">{t("含演员、歌手、体育明星和组合", "Actors, musicians, athletes and groups")}</p>
+          </div>
+          <div className="rounded-md border border-orange-200 bg-orange-50 p-4">
+            <p className="text-xs font-medium text-orange-700">{t("用户高风险库", "User High-Risk")}</p>
+            <p className="mt-2 text-2xl font-semibold text-orange-900">{numberFormatter.format(databaseHighRiskCount)}</p>
+            <p className="mt-1 text-xs text-orange-700">{t("支持 URL 自动生成图片 hash", "URL to image hash supported")}</p>
+          </div>
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-xs font-medium text-emerald-700">{t("白名单", "Allowlist")}</p>
+            <p className="mt-2 text-2xl font-semibold text-emerald-900">{numberFormatter.format(databaseAllowlistCount)}</p>
+            <p className="mt-1 text-xs text-emerald-700">{t("用于已授权或自有素材", "For licensed or owned assets")}</p>
+          </div>
+        </div>
+
+        {referenceSetupRequired ? (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            {t(
+              "数据库参考库表尚未创建。请先执行最新 Supabase migration；内置高风险库仍会参与检测。",
+              "The database reference table has not been created. Run the latest Supabase migration first; the built-in high-risk library still participates in detection.",
+            )}
+          </div>
+        ) : null}
+
+        {referenceLibraryError ? (
+          <div className="mt-4 whitespace-pre-line rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {referenceLibraryError}
+          </div>
+        ) : null}
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+          <div>
+            <label htmlFor="reference-search" className="block text-sm font-medium text-zinc-950">
+              {t("搜索高风险参考库", "Search High-Risk References")}
+            </label>
+            <input
+              id="reference-search"
+              value={referenceSearchQuery}
+              onChange={(event) => setReferenceSearchQuery(event.target.value)}
+              placeholder={t("搜索明星、球队号码、乐队、图片来源或服装语境", "Search celebrities, jersey numbers, bands, image source or apparel context")}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+
+            <div className="mt-4 overflow-hidden rounded-md border border-zinc-200">
+              <div className="grid gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-zinc-500 md:grid-cols-[1fr_130px_1.3fr]">
+                <span>{t("参考项", "Reference")}</span>
+                <span>{t("分类", "Category")}</span>
+                <span>{t("命中词 / 图片来源", "Terms / Image Source")}</span>
+              </div>
+              <div className="max-h-[360px] overflow-y-auto divide-y divide-zinc-200 bg-white">
+                {displayedHighRiskReferences.map((item) => (
+                  <div key={item.id} className="grid gap-3 px-4 py-3 text-sm text-zinc-700 md:grid-cols-[1fr_130px_1.3fr]">
+                    <div>
+                      <p className="font-semibold text-zinc-950">{item.title}</p>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {item.imageHash ? t("含图片 hash 样例", "Image hash sample included") : item.sourceLabel}
+                      </p>
+                    </div>
+                    <span className="h-fit rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
+                      {t(ruleCategoryLabels[item.category].zh, ruleCategoryLabels[item.category].en)}
+                    </span>
+                    <div>
+                      <p className="line-clamp-2 text-xs leading-5 text-zinc-600">
+                        {item.terms.slice(0, 8).join(", ")}
+                      </p>
+                      {item.sourceUrl ? (
+                        <a
+                          href={item.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex text-xs font-medium text-emerald-700 hover:text-emerald-800"
+                        >
+                          {item.category === "celebrity"
+                            ? t("查看公开图片来源", "Open public image source")
+                            : t("查看规则来源", "Open rule source")}
+                        </a>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="mt-3 text-xs leading-5 text-zinc-500">
+              {t(
+                `当前显示 ${displayedHighRiskReferences.length} 条。明星照片本体不会内置到仓库；需要图片级识别时，请把已确认来源的图片 URL 加到用户高风险库或白名单。`,
+                `Showing ${displayedHighRiskReferences.length} entries. Celebrity photos are not bundled in the repo; add verified image URLs to the user high-risk library or allowlist when image-level matching is needed.`,
+              )}
+            </p>
+          </div>
+
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <h3 className="text-sm font-semibold text-zinc-950">{t("添加参考项", "Add Reference")}</h3>
+            <p className="mt-1 text-xs leading-5 text-zinc-500">
+              {t(
+                "高风险用于拦截侵权嫌疑，白名单用于已授权/自有素材。填写图片 URL 时会自动计算 hash，不会保存图片文件。",
+                "High-risk items block suspicious assets; allowlist items mark licensed or owned assets. Image URLs are hashed without storing image files.",
+              )}
+            </p>
+
+            <label htmlFor="reference-type" className="mt-4 block text-xs font-medium text-zinc-600">
+              {t("库类型", "Library Type")}
+            </label>
+            <select
+              id="reference-type"
+              value={newReferenceType}
+              onChange={(event) => setNewReferenceType(event.target.value as InfringementReferenceLibraryType)}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              <option value="high_risk">{t("高风险库", "High-Risk Library")}</option>
+              <option value="allowlist">{t("白名单库", "Allowlist")}</option>
+            </select>
+
+            <label htmlFor="reference-title" className="mt-4 block text-xs font-medium text-zinc-600">
+              {t("标题", "Title")}
+            </label>
+            <input
+              id="reference-title"
+              value={newReferenceTitle}
+              onChange={(event) => setNewReferenceTitle(event.target.value)}
+              placeholder={t("例如：Dennis Rodman 样例 / 自有天使翅膀图", "Example: Dennis Rodman sample / Owned angel wings")}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+
+            <label htmlFor="reference-terms" className="mt-4 block text-xs font-medium text-zinc-600">
+              {t("关键词 / 别名", "Terms / Aliases")}
+            </label>
+            <textarea
+              id="reference-terms"
+              value={newReferenceTerms}
+              onChange={(event) => setNewReferenceTerms(event.target.value)}
+              rows={4}
+              placeholder={t("一行一个，或用逗号分隔", "One per line, or comma-separated")}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+
+            <label htmlFor="reference-image-url" className="mt-4 block text-xs font-medium text-zinc-600">
+              {t("图片 URL（可选）", "Image URL (optional)")}
+            </label>
+            <input
+              id="reference-image-url"
+              value={newReferenceImageUrl}
+              onChange={(event) => setNewReferenceImageUrl(event.target.value)}
+              placeholder="https://..."
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            />
+
+            <button
+              type="button"
+              onClick={() => void saveReferenceItem()}
+              disabled={isReferenceSaving}
+              className="mt-4 w-full rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            >
+              {isReferenceSaving ? t("保存中...", "Saving...") : t("保存参考项", "Save Reference")}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-md border border-zinc-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-950">{t("用户维护参考项", "User-Maintained References")}</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                {t("这里展示数据库中的高风险库和白名单项。", "Database high-risk and allowlist entries are shown here.")}
+              </p>
+            </div>
+            <span className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-zinc-600">
+              {numberFormatter.format(referenceItems.length)} {t("项", "items")}
+            </span>
+          </div>
+          <div className="divide-y divide-zinc-200 bg-white">
+            {displayedDatabaseReferences.length > 0 ? (
+              displayedDatabaseReferences.map((item) => (
+                <div key={item.id} className="grid gap-3 px-4 py-3 text-sm text-zinc-700 md:grid-cols-[1fr_120px_1.5fr]">
+                  <div>
+                    <p className="font-semibold text-zinc-950">{item.title}</p>
+                    <p className="mt-1 text-xs text-zinc-500">{item.imageHash ? t("已保存图片 hash", "Image hash stored") : t("仅关键词", "Terms only")}</p>
+                  </div>
+                  <span className={[
+                    "h-fit rounded-md px-2.5 py-1 text-xs font-medium",
+                    item.libraryType === "allowlist" ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700",
+                  ].join(" ")}>
+                    {item.libraryType === "allowlist" ? t("白名单", "Allowlist") : t("高风险", "High-Risk")}
+                  </span>
+                  <p className="line-clamp-2 text-xs leading-5 text-zinc-600">
+                    {[...item.terms.slice(0, 8), item.imageUrl ? t("含图片 URL", "image URL") : ""].filter(Boolean).join(", ")}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <div className="px-4 py-6 text-sm text-zinc-500">
+                {t("暂无用户维护参考项。", "No user-maintained references yet.")}
+              </div>
+            )}
+          </div>
+        </div>
       </section>
 
       {message ? (
