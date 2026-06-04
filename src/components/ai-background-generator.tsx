@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Dynamic AI previews can use arbitrary asset URLs. */
 
 import { type FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { DropZone } from "@/components/drop-zone";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
@@ -236,6 +237,23 @@ export function AiBackgroundGenerator() {
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(500px,0.92fr)_minmax(500px,1fr)]">
       <form onSubmit={handleGenerate} className={`space-y-4 rounded-[20px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/60"}`}>
+        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/70"}`}>
+          <div>
+            <p className={`text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-900"}`}>
+              {t("单图提取模式", "Single Image Mode")}
+            </p>
+            <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+              {t("需要多张图对应多张印花时，进入批量队列页面。", "Use the batch queue when multiple images need matching outputs.")}
+            </p>
+          </div>
+          <Link
+            href="/ai-image/batch"
+            className={`rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-2 text-sm font-semibold text-white shadow-lg ${colors.shadow} transition hover:brightness-110`}
+          >
+            {t("打开批量生图页面", "Open Batch Page")}
+          </Link>
+        </div>
+
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("选择模型", "Model")}</label>
           {providers.length === 0 ? (
