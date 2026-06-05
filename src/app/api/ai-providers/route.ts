@@ -84,8 +84,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "请填写显示名称" }, { status: 400 });
   }
 
-  const apiKey = body.api_key;
-  if (typeof apiKey !== "string" || apiKey.trim().length === 0) {
+  const apiKeys = parseApiKeys(body.api_key);
+  if (apiKeys.length === 0) {
     return NextResponse.json({ error: "请填写 API Key" }, { status: 400 });
   }
 
@@ -101,15 +101,18 @@ export async function POST(request: Request) {
   const priority = typeof body.priority === "number" ? body.priority : 0;
   const dailyLimit = parseDailyLimit(body.daily_limit);
   const today = new Date().toISOString().slice(0, 10);
-  const baseInsert: ProviderInsert = {
+  const baseInsert: Omit<ProviderInsert, "api_key"> = {
     provider_type: providerType,
     display_name: displayName.trim(),
-    api_key: apiKey.trim(),
     model_id: modelId.trim(),
     base_url: baseUrl,
     is_active: true,
     priority,
   };
+  const insertRows = apiKeys.map((apiKey) => ({
+    ...baseInsert,
+    api_key: apiKey,
+  }));
 
   let supabase: ReturnType<typeof createSupabaseServiceRoleClient>;
   try {
@@ -120,29 +123,29 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase
     .from("ai_providers")
-    .insert({
-      ...baseInsert,
+    .insert(insertRows.map((row) => ({
+      ...row,
       daily_limit: dailyLimit,
       daily_used: 0,
       daily_window_start: today,
       health_status: "healthy",
-    })
-    .select("id")
-    .single();
+    })))
+    .select("id");
 
   if (error && isMissingRotationColumnError(error.message)) {
     const fallback = await supabase
       .from("ai_providers")
-      .insert(baseInsert)
-      .select("id")
-      .single();
+      .insert(insertRows)
+      .select("id");
 
     if (fallback.error) {
       return NextResponse.json({ error: fallback.error.message }, { status: 500 });
     }
 
     return NextResponse.json({
-      id: fallback.data.id,
+      id: fallback.data?.[0]?.id,
+      created_count: fallback.data?.length ?? insertRows.length,
+      ids: (fallback.data ?? []).map((row) => row.id),
       warning: "模型已保存，但健康轮询字段尚未迁移，额度统计暂不可用。",
     }, { status: 201 });
   }
@@ -151,7 +154,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ id: data.id }, { status: 201 });
+  return NextResponse.json({
+    id: data?.[0]?.id,
+    created_count: data?.length ?? insertRows.length,
+    ids: (data ?? []).map((row) => row.id),
+  }, { status: 201 });
 }
 
 function parseDailyLimit(value: unknown): number | null {
@@ -159,6 +166,22 @@ function parseDailyLimit(value: unknown): number | null {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric) || numeric < 0) return null;
   return Math.floor(numeric);
+}
+
+function parseApiKeys(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  const seen = new Set<string>();
+  const keys = value
+    .split(/[\s,;，；]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+
+  return keys;
 }
 
 function numberOrZero(value: unknown) {

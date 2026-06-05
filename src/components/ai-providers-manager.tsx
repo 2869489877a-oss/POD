@@ -101,6 +101,10 @@ function sortProviders(providers: Provider[]) {
   });
 }
 
+function providerGroupKey(provider: Pick<Provider, "base_url" | "model_id" | "provider_type">) {
+  return `${provider.provider_type}::${provider.model_id}::${provider.base_url || ""}`;
+}
+
 function numberOrZero(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
@@ -145,6 +149,14 @@ export function AiProvidersManager() {
   const orderedProviders = useMemo(() => sortProviders(providers), [providers]);
   const activeProviders = useMemo(() => providers.filter((provider) => provider.is_active), [providers]);
   const currentProvider = useMemo(() => sortProviders(activeProviders)[0] ?? null, [activeProviders]);
+  const modelKeyCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    providers.forEach((provider) => {
+      const key = providerGroupKey(provider);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return counts;
+  }, [providers]);
   const nextDefaultPriority = useMemo(() => {
     const maxPriority = providers.reduce((max, provider) => Math.max(max, provider.priority), 0);
     return maxPriority + 1;
@@ -223,6 +235,19 @@ export function AiProvidersManager() {
   function startEditing(provider: Provider) {
     setEditingId(provider.id);
     setEditData({
+      provider_type: provider.provider_type,
+      display_name: provider.display_name,
+      api_key: "",
+      base_url: provider.base_url ?? "",
+      model_id: provider.model_id,
+      priority: provider.priority,
+      daily_limit: provider.daily_limit == null ? "" : String(provider.daily_limit),
+    });
+  }
+
+  function startAddingBackupKey(provider: Provider) {
+    setShowForm(true);
+    setFormData({
       provider_type: provider.provider_type,
       display_name: provider.display_name,
       api_key: "",
@@ -477,6 +502,7 @@ export function AiProvidersManager() {
               const successCount = numberOrZero(provider.success_count);
               const requestCount = numberOrZero(provider.request_count);
               const successRate = requestCount > 0 ? `${Math.round((successCount / requestCount) * 100)}%` : "-";
+              const keyCount = modelKeyCounts.get(providerGroupKey(provider)) ?? 1;
 
               return (
                 <article
@@ -535,6 +561,7 @@ export function AiProvidersManager() {
                           <InfoPill label={t("Model ID", "Model ID")} value={provider.model_id} isDark={isDark} />
                           <InfoPill label={t("Endpoint", "Endpoint")} value={provider.base_url || t("使用默认接口", "Use default endpoint")} isDark={isDark} />
                           <InfoPill label={t("Key / 优先级", "Key / Priority")} value={`${provider.api_key} · P${provider.priority}`} isDark={isDark} />
+                          <InfoPill label={t("同模型 Key", "Model Keys")} value={`${keyCount}`} isDark={isDark} />
                           <InfoPill label={t("本地额度", "Local Quota")} value={dailyLimit == null ? `${dailyUsed} / ∞` : `${dailyUsed} / ${dailyLimit}`} isDark={isDark} />
                           <InfoPill label={t("成功率", "Success Rate")} value={`${successRate} · ${successCount}/${requestCount}`} isDark={isDark} />
                           <InfoPill label={t("最近成功", "Last Success")} value={formatDateTime(provider.last_success_at)} isDark={isDark} />
@@ -588,6 +615,13 @@ export function AiProvidersManager() {
                             className={`rounded-lg px-3 py-2 text-xs font-bold transition ${isDark ? "bg-white/[0.06] text-slate-300 hover:bg-white/[0.1]" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                           >
                             {t("编辑", "Edit")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => startAddingBackupKey(provider)}
+                            className={`rounded-lg px-3 py-2 text-xs font-bold transition ${isDark ? "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15" : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"}`}
+                          >
+                            {t("添加备用 Key", "Add Backup Key")}
                           </button>
                           <button
                             type="button"
@@ -682,14 +716,28 @@ function ProviderFields({
       </div>
       <div>
         <label className={labelClass}>API Key</label>
-        <input
-          type="password"
-          value={data.api_key}
-          onChange={(e) => onChange({ api_key: e.target.value })}
-          placeholder={requireApiKey ? "sk-..." : t("留空则保留原 Key", "Leave blank to keep existing key")}
-          className={inputClass}
-          required={requireApiKey}
-        />
+        {requireApiKey ? (
+          <>
+            <textarea
+              value={data.api_key}
+              onChange={(e) => onChange({ api_key: e.target.value })}
+              placeholder={t("可粘贴多个 Key，每行一个", "Paste multiple keys, one per line")}
+              className={`${inputClass} min-h-24 resize-y`}
+              required
+            />
+            <p className={helpClass}>
+              {t("多个 Key 会保存到同一个模型配置下，系统按健康状态和最近使用时间自动轮询。", "Multiple keys are saved under the same model and rotated by health and last-used time.")}
+            </p>
+          </>
+        ) : (
+          <input
+            type="password"
+            value={data.api_key}
+            onChange={(e) => onChange({ api_key: e.target.value })}
+            placeholder={t("留空则保留原 Key", "Leave blank to keep existing key")}
+            className={inputClass}
+          />
+        )}
       </div>
       <div>
         <label className={labelClass}>{t("模型 ID", "Model ID")}</label>

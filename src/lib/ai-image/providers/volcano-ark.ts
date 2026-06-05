@@ -6,6 +6,14 @@ type VolcanoImageResponse = {
   data?: Array<{ b64_json?: string; url?: string }>;
 };
 
+const SEEDREAM_MIN_PIXELS = 3_686_400;
+const SEEDREAM_MAX_SIDE = 4096;
+const SIZE_STEP = 16;
+
+function roundToStep(value: number) {
+  return Math.max(SIZE_STEP, Math.ceil(value / SIZE_STEP) * SIZE_STEP);
+}
+
 export class VolcanoArkProvider implements ImageProvider {
   constructor(private readonly displayName: string) {}
 
@@ -16,7 +24,11 @@ export class VolcanoArkProvider implements ImageProvider {
     return `${normalized}/api/v3/images/generations`;
   }
 
-  private resolveSize(width?: number, height?: number): string {
+  private resolveSize(modelId: string, width?: number, height?: number): string {
+    if (this.isSeedreamModel(modelId)) {
+      return this.resolveSeedreamSize(width, height);
+    }
+
     if (width && height) {
       return `${Math.round(width)}x${Math.round(height)}`;
     }
@@ -25,6 +37,35 @@ export class VolcanoArkProvider implements ImageProvider {
     if (longestSide >= 4096) return "4k";
     if (longestSide >= 3072) return "3k";
     return "2k";
+  }
+
+  private resolveSeedreamSize(width?: number, height?: number): string {
+    if (!width && !height) return "2k";
+
+    const sourceWidth = Math.max(1, width || height || 2048);
+    const sourceHeight = Math.max(1, height || width || 2048);
+    const currentPixels = sourceWidth * sourceHeight;
+    let scale = 1;
+
+    if (currentPixels < SEEDREAM_MIN_PIXELS) {
+      scale = Math.sqrt(SEEDREAM_MIN_PIXELS / currentPixels);
+    }
+
+    let safeWidth = roundToStep(sourceWidth * scale);
+    let safeHeight = roundToStep(sourceHeight * scale);
+
+    const maxSide = Math.max(safeWidth, safeHeight);
+    if (maxSide > SEEDREAM_MAX_SIDE) {
+      const maxScale = SEEDREAM_MAX_SIDE / maxSide;
+      safeWidth = roundToStep(safeWidth * maxScale);
+      safeHeight = roundToStep(safeHeight * maxScale);
+    }
+
+    if (safeWidth * safeHeight < SEEDREAM_MIN_PIXELS) {
+      return "2k";
+    }
+
+    return `${safeWidth}x${safeHeight}`;
   }
 
   private isSeedreamModel(modelId: string): boolean {
@@ -41,7 +82,7 @@ export class VolcanoArkProvider implements ImageProvider {
       model: config.modelId,
       prompt: promptParts.join("\n"),
       n: 1,
-      size: this.resolveSize(params.width, params.height),
+      size: this.resolveSize(config.modelId, params.width, params.height),
       response_format: "url",
       watermark: false,
     };
