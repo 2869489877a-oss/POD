@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ImageCropDialog } from "@/components/image-crop-dialog";
 import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -14,11 +15,12 @@ type ProviderOption = {
   is_active: boolean;
 };
 
-type BatchStatus = "queued" | "uploading" | "generating" | "completed" | "failed";
+type BatchStatus = "queued" | "uploading" | "generating" | "completed" | "failed" | "cancelled";
 
 type BatchItem = {
   assetId?: string;
   attempts: number;
+  cropped?: boolean;
   error?: string;
   file: File;
   id: string;
@@ -109,6 +111,7 @@ const BACKGROUND_COLOR_OPTIONS = [
 ] as const;
 
 const statusLabel: Record<BatchStatus, { en: string; zh: string }> = {
+  cancelled: { en: "Cancelled", zh: "已取消" },
   completed: { en: "Completed", zh: "已完成" },
   failed: { en: "Failed", zh: "失败" },
   generating: { en: "Generating", zh: "生成中" },
@@ -159,6 +162,8 @@ export function AiBatchPrintGenerator() {
   const colors = ACCENT_COLORS[accent];
   const inputRef = useRef<HTMLInputElement>(null);
   const queueRef = useRef<BatchItem[]>([]);
+  const itemAbortControllersRef = useRef<Map<string, AbortController>>(new Map());
+  const batchCancelledRef = useRef(false);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [templateIndex, setTemplateIndex] = useState(0);
@@ -167,6 +172,7 @@ export function AiBatchPrintGenerator() {
   const [concurrency, setConcurrency] = useState(2);
   const [queue, setQueue] = useState<BatchItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [cropTargetId, setCropTargetId] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [running, setRunning] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -189,10 +195,11 @@ export function AiBatchPrintGenerator() {
         current[item.status] += 1;
         return current;
       },
-      { completed: 0, failed: 0, generating: 0, queued: 0, total: 0, uploading: 0 },
+      { cancelled: 0, completed: 0, failed: 0, generating: 0, queued: 0, total: 0, uploading: 0 },
     );
   }, [queue]);
   const selectedItem = queue.find((item) => item.id === selectedId) ?? queue[0] ?? null;
+  const cropTargetItem = queue.find((item) => item.id === cropTargetId) ?? null;
   const completedItems = queue.filter((item) => item.status === "completed" && item.resultUrl);
   const canRun = queue.some((item) => item.status === "queued" || item.status === "failed") && Boolean(prompt.trim()) && providers.length > 0;
 
@@ -251,7 +258,11 @@ export function AiBatchPrintGenerator() {
   }, []);
 
   useEffect(() => {
+    const itemAbortControllers = itemAbortControllersRef.current;
     return () => {
+      for (const controller of itemAbortControllers.values()) {
+        controller.abort();
+      }
       for (const item of queueRef.current) {
         URL.revokeObjectURL(item.previewUrl);
       }
@@ -276,6 +287,7 @@ export function AiBatchPrintGenerator() {
 
     const newItems = imageFiles.map((file) => ({
       attempts: 0,
+      cropped: false,
       file,
       id: createItemId(),
       previewUrl: URL.createObjectURL(file),
@@ -294,6 +306,8 @@ export function AiBatchPrintGenerator() {
   }
 
   function removeItem(id: string) {
+    itemAbortControllersRef.current.get(id)?.abort();
+    itemAbortControllersRef.current.delete(id);
     const item = queueRef.current.find((current) => current.id === id);
     if (item) URL.revokeObjectURL(item.previewUrl);
     updateQueue((items) => items.filter((current) => current.id !== id));
@@ -313,6 +327,53 @@ export function AiBatchPrintGenerator() {
     if (!onlyCompleted) setSelectedId(null);
   }
 
+  function applyCropToItem(id: string, croppedFile: File) {
+    const item = queueRef.current.find((current) => current.id === id);
+    if (!item) return;
+
+    URL.revokeObjectURL(item.previewUrl);
+    updateItem(id, {
+      assetId: undefined,
+      cropped: true,
+      error: undefined,
+      file: croppedFile,
+      jobId: undefined,
+      model: undefined,
+      previewUrl: URL.createObjectURL(croppedFile),
+      provider: undefined,
+      resultUrl: undefined,
+      status: "queued",
+      uploadUrl: undefined,
+    });
+    setCropTargetId(null);
+    setMessage(null);
+  }
+
+  function cancelItem(id: string) {
+    const item = queueRef.current.find((current) => current.id === id);
+    if (!item || item.status === "completed") return;
+
+    const controller = itemAbortControllersRef.current.get(id);
+    if (controller) {
+      controller.abort();
+      setMessage(t("正在取消当前任务...", "Cancelling current task..."));
+      return;
+    }
+
+    if (item.status === "queued" || item.status === "failed" || item.status === "cancelled") {
+      updateItem(id, { error: t("已取消", "Cancelled"), status: "cancelled" });
+    }
+  }
+
+  function cancelBatch() {
+    if (!running) return;
+    batchCancelledRef.current = true;
+    for (const controller of itemAbortControllersRef.current.values()) {
+      controller.abort();
+    }
+    setMessage(t("正在取消批量队列，未开始的任务会保留。", "Cancelling the batch. Tasks not started will stay queued."));
+  }
+
   function buildRunOptions(): RunOptions {
     const backgroundPrompt = BACKGROUND_COLOR_OPTIONS.find((option) => option.id === selectedBackgroundColor);
     const finalPrompt = [
@@ -328,10 +389,10 @@ export function AiBatchPrintGenerator() {
     };
   }
 
-  async function uploadSourceImage(file: File) {
+  async function uploadSourceImage(file: File, signal: AbortSignal) {
     const formData = new FormData();
     formData.append("files", file);
-    const response = await fetch("/api/upload", { body: formData, method: "POST" });
+    const response = await fetch("/api/upload", { body: formData, method: "POST", signal });
     const data = await readJsonResponse<{ error?: string; results?: UploadApiResult[] }>(response);
     const uploadResult = data.results?.[0] as UploadApiResult | undefined;
     const imageUrl = getUploadedImageUrl(uploadResult);
@@ -343,9 +404,13 @@ export function AiBatchPrintGenerator() {
     return imageUrl;
   }
 
-  async function processItem(id: string, options: RunOptions) {
+  async function processItem(id: string, options: RunOptions, allowCancelled = false) {
     const item = queueRef.current.find((current) => current.id === id);
     if (!item) return;
+    if (item.status === "cancelled" && !allowCancelled) return;
+
+    const controller = new AbortController();
+    itemAbortControllersRef.current.set(id, controller);
 
     updateItem(id, {
       assetId: undefined,
@@ -359,7 +424,7 @@ export function AiBatchPrintGenerator() {
     });
 
     try {
-      const imageUrl = item.uploadUrl ?? await uploadSourceImage(item.file);
+      const imageUrl = item.uploadUrl ?? await uploadSourceImage(item.file, controller.signal);
       if (!item.uploadUrl) {
         updateItem(id, { status: "generating", uploadUrl: imageUrl });
       }
@@ -375,6 +440,7 @@ export function AiBatchPrintGenerator() {
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
+        signal: controller.signal,
       });
       const data = await readJsonResponse<GenerateResult>(response);
 
@@ -392,10 +458,20 @@ export function AiBatchPrintGenerator() {
         status: "completed",
       });
     } catch (error) {
+      if (controller.signal.aborted) {
+        updateItem(id, {
+          error: t("已取消", "Cancelled"),
+          status: "cancelled",
+        });
+        return;
+      }
+
       updateItem(id, {
         error: error instanceof Error ? error.message : t("生成失败", "Generation failed"),
         status: "failed",
       });
+    } finally {
+      itemAbortControllersRef.current.delete(id);
     }
   }
 
@@ -406,12 +482,13 @@ export function AiBatchPrintGenerator() {
       .filter((item) => item.status === "queued" || item.status === "failed")
       .map((item) => item.id);
 
+    batchCancelledRef.current = false;
     setRunning(true);
     setMessage(t(`正在处理 ${targets.length} 张图片...`, `Processing ${targets.length} image(s)...`));
 
     let cursor = 0;
     async function worker() {
-      while (cursor < targets.length) {
+      while (cursor < targets.length && !batchCancelledRef.current) {
         const id = targets[cursor];
         cursor += 1;
         await processItem(id, options);
@@ -421,13 +498,18 @@ export function AiBatchPrintGenerator() {
     await Promise.all(Array.from({ length: Math.min(concurrency, targets.length) }, () => worker()));
     await loadHistory();
     setRunning(false);
-    setMessage(t("批量队列处理完成", "Batch queue complete"));
+    setMessage(
+      batchCancelledRef.current
+        ? t("批量队列已取消，未开始的任务仍保留在队列中。", "Batch queue cancelled. Tasks not started remain queued.")
+        : t("批量队列处理完成", "Batch queue complete"),
+    );
+    batchCancelledRef.current = false;
   }
 
   async function retryItem(id: string) {
     if (running || !prompt.trim()) return;
     setRunning(true);
-    await processItem(id, buildRunOptions());
+    await processItem(id, buildRunOptions(), true);
     await loadHistory();
     setRunning(false);
   }
@@ -651,7 +733,7 @@ export function AiBatchPrintGenerator() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => void runBatch()}
@@ -659,6 +741,14 @@ export function AiBatchPrintGenerator() {
               className={`rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none`}
             >
               {running ? t("批量处理中...", "Batch running...") : t("开始批量提取", "Start Batch Extraction")}
+            </button>
+            <button
+              type="button"
+              onClick={cancelBatch}
+              disabled={!running}
+              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${isDark ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "border-red-200 text-red-600 hover:bg-red-50"}`}
+            >
+              {t("取消批量", "Cancel Batch")}
             </button>
             <button
               type="button"
@@ -693,13 +783,14 @@ export function AiBatchPrintGenerator() {
         </section>
 
         <section className={panelClass}>
-          <div className="grid gap-3 sm:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-6">
             {[
               { label: t("总数", "Total"), value: stats.total },
               { label: t("待处理", "Queued"), value: stats.queued },
               { label: t("处理中", "Running"), value: stats.uploading + stats.generating },
               { label: t("成功", "Done"), value: stats.completed },
               { label: t("失败", "Failed"), value: stats.failed },
+              { label: t("已取消", "Cancelled"), value: stats.cancelled },
             ].map((stat) => (
               <div key={stat.label} className={`rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
                 <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>{stat.label}</p>
@@ -737,6 +828,8 @@ export function AiBatchPrintGenerator() {
                               ? "bg-emerald-500/10 text-emerald-400"
                               : item.status === "failed"
                                 ? "bg-red-500/10 text-red-400"
+                                : item.status === "cancelled"
+                                  ? "bg-slate-500/10 text-slate-400"
                                 : item.status === "queued"
                                   ? isDark ? "bg-white/[0.06] text-slate-400" : "bg-slate-200 text-slate-600"
                                   : "bg-amber-500/10 text-amber-400"
@@ -752,7 +845,24 @@ export function AiBatchPrintGenerator() {
                               {t(`已尝试 ${item.attempts} 次`, `${item.attempts} attempt(s)`)}
                             </span>
                           ) : null}
-                          {item.status === "failed" ? (
+                          {item.cropped ? (
+                            <span className={`text-[11px] font-semibold ${isDark ? "text-emerald-300" : "text-emerald-700"}`}>
+                              {t("已裁剪", "Cropped")}
+                            </span>
+                          ) : null}
+                          {item.status !== "uploading" && item.status !== "generating" ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setCropTargetId(item.id);
+                              }}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${isDark ? "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20" : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"}`}
+                            >
+                              {t("裁剪", "Crop")}
+                            </button>
+                          ) : null}
+                          {item.status === "failed" || item.status === "cancelled" ? (
                             <button
                               type="button"
                               onClick={(event) => {
@@ -763,6 +873,18 @@ export function AiBatchPrintGenerator() {
                               className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-40 ${isDark ? "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
                             >
                               {t("重试", "Retry")}
+                            </button>
+                          ) : null}
+                          {item.status === "queued" || item.status === "uploading" || item.status === "generating" ? (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                cancelItem(item.id);
+                              }}
+                              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${isDark ? "bg-red-500/10 text-red-300 hover:bg-red-500/20" : "bg-red-50 text-red-600 hover:bg-red-100"}`}
+                            >
+                              {t("取消", "Cancel")}
                             </button>
                           ) : null}
                           {item.resultUrl ? (
@@ -799,7 +921,16 @@ export function AiBatchPrintGenerator() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {selectedItem.status === "failed" ? (
+                      {selectedItem.status !== "uploading" && selectedItem.status !== "generating" ? (
+                        <button
+                          type="button"
+                          onClick={() => setCropTargetId(selectedItem.id)}
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDark ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-700"}`}
+                        >
+                          {t("裁剪原图", "Crop Source")}
+                        </button>
+                      ) : null}
+                      {selectedItem.status === "failed" || selectedItem.status === "cancelled" ? (
                         <button
                           type="button"
                           onClick={() => void retryItem(selectedItem.id)}
@@ -807,6 +938,15 @@ export function AiBatchPrintGenerator() {
                           className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDark ? "bg-amber-500/10 text-amber-300" : "bg-amber-50 text-amber-700"}`}
                         >
                           {t("重试", "Retry")}
+                        </button>
+                      ) : null}
+                      {selectedItem.status === "queued" || selectedItem.status === "uploading" || selectedItem.status === "generating" ? (
+                        <button
+                          type="button"
+                          onClick={() => cancelItem(selectedItem.id)}
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDark ? "bg-red-500/10 text-red-300" : "bg-red-50 text-red-600"}`}
+                        >
+                          {t("取消", "Cancel")}
                         </button>
                       ) : null}
                       <button
@@ -822,7 +962,14 @@ export function AiBatchPrintGenerator() {
 
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div>
-                      <p className={`mb-2 text-xs font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("原图", "Source")}</p>
+                      <p className={`mb-2 flex items-center gap-2 text-xs font-semibold ${isDark ? "text-slate-400" : "text-slate-500"}`}>
+                        <span>{t("原图", "Source")}</span>
+                        {selectedItem.cropped ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
+                            {t("已裁剪", "Cropped")}
+                          </span>
+                        ) : null}
+                      </p>
                       <div className={`flex min-h-[360px] items-center justify-center rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/30" : "border-black/[0.05] bg-slate-50"}`}>
                         <img src={selectedItem.previewUrl} alt={selectedItem.file.name} className="max-h-[340px] rounded-xl object-contain" />
                       </div>
@@ -996,6 +1143,15 @@ export function AiBatchPrintGenerator() {
           </div>
         )}
       </section>
+      {cropTargetItem ? (
+        <ImageCropDialog
+          file={cropTargetItem.file}
+          onApply={(croppedFile) => applyCropToItem(cropTargetItem.id, croppedFile)}
+          onCancel={() => setCropTargetId(null)}
+          open={Boolean(cropTargetItem)}
+          previewUrl={cropTargetItem.previewUrl}
+        />
+      ) : null}
     </div>
   );
 }

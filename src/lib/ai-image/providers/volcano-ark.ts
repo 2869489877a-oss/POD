@@ -16,10 +16,14 @@ export class VolcanoArkProvider implements ImageProvider {
   }
 
   private resolveSize(width?: number, height?: number): string {
-    const longestSide = Math.max(width || 1024, height || 1024);
-    if (longestSide >= 2048) return "4K";
-    if (longestSide >= 1024) return "2K";
-    return "1K";
+    if (width && height) {
+      return `${Math.round(width)}x${Math.round(height)}`;
+    }
+
+    const longestSide = Math.max(width || 2048, height || 2048);
+    if (longestSide >= 4096) return "4k";
+    if (longestSide >= 3072) return "3k";
+    return "2k";
   }
 
   private isSeedreamModel(modelId: string): boolean {

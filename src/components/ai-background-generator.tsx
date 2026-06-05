@@ -2,9 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element -- Dynamic AI previews can use arbitrary asset URLs. */
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { DropZone } from "@/components/drop-zone";
+import { ImageCropDialog } from "@/components/image-crop-dialog";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -20,7 +21,7 @@ type GenerateResult = {
   model?: string;
 };
 
-type GenerationStatus = "idle" | "uploading" | "generating" | "success" | "failed";
+type GenerationStatus = "idle" | "uploading" | "generating" | "success" | "failed" | "cancelled";
 type GenerationStage = "uploading" | "generating";
 
 const PRINT_AVOID_TERMS = [
@@ -155,10 +156,13 @@ const BACKGROUND_COLOR_OPTIONS = [
 
 export function AiBackgroundGenerator() {
   const { isDark, accent, language, t } = useSettings();
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [isCropped, setIsCropped] = useState(false);
+  const [cropOpen, setCropOpen] = useState(false);
   const [templateIndex, setTemplateIndex] = useState(0);
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string | null>(null);
@@ -182,7 +186,9 @@ export function AiBackgroundGenerator() {
           ? t("生成成功", "Completed")
           : generationStatus === "failed"
             ? t("生成失败", "Failed")
-            : t("等待开始", "Ready");
+            : generationStatus === "cancelled"
+              ? t("已取消", "Cancelled")
+              : t("等待开始", "Ready");
   const statusDescription =
     generationStatus === "uploading"
       ? t("正在上传原图并准备可访问地址。", "Uploading the source image and preparing an accessible URL.")
@@ -192,7 +198,9 @@ export function AiBackgroundGenerator() {
           ? t("图片生成完成，并已保存到素材库。", "The image was generated and saved to Assets.")
           : generationStatus === "failed"
             ? t("任务未完成，请查看错误信息后重试。", "The task did not complete. Review the error and retry.")
-            : t("上传原图并点击生成后，状态会显示在这里。", "Upload a source image and start generation to see progress here.");
+            : generationStatus === "cancelled"
+              ? t("任务已取消，可以调整图片后重新生成。", "The task was cancelled. Adjust the image and generate again.")
+              : t("上传原图并点击生成后，状态会显示在这里。", "Upload a source image and start generation to see progress here.");
   const statusTone =
     generationStatus === "success"
       ? "bg-emerald-500/10 text-emerald-400"
@@ -228,12 +236,30 @@ export function AiBackgroundGenerator() {
   const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
 
   function handleFile(f: File | null) {
+    if (preview) URL.revokeObjectURL(preview);
     setFile(f);
     setPreview(f ? URL.createObjectURL(f) : null);
+    setIsCropped(false);
     setGenerationStatus("idle");
     setFailedStage(null);
     setResult(null);
     setError(null);
+  }
+
+  function handleApplyCrop(croppedFile: File) {
+    if (preview) URL.revokeObjectURL(preview);
+    setFile(croppedFile);
+    setPreview(URL.createObjectURL(croppedFile));
+    setIsCropped(true);
+    setCropOpen(false);
+    setGenerationStatus("idle");
+    setFailedStage(null);
+    setResult(null);
+    setError(null);
+  }
+
+  function cancelGeneration() {
+    abortControllerRef.current?.abort();
   }
 
   useEffect(() => {
@@ -256,6 +282,13 @@ export function AiBackgroundGenerator() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      if (preview) URL.revokeObjectURL(preview);
+    };
+  }, [preview]);
+
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
     if (!file || !prompt.trim()) return;
@@ -268,10 +301,12 @@ export function AiBackgroundGenerator() {
     setError(null);
     setResult(null);
     let activeStage: GenerationStage = "uploading";
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     try {
       const fd = new FormData();
       fd.append("files", file);
-      const uploadRes = await fetch("/api/upload", { method: "POST", body: fd });
+      const uploadRes = await fetch("/api/upload", { body: fd, method: "POST", signal: controller.signal });
       const uploadData = await uploadRes.json();
       if (!uploadData.results?.[0]?.success) throw new Error(t("图片上传失败", "Image upload failed"));
       const imageUrl = getUploadedImageUrl(uploadData.results[0] as UploadApiResult);
@@ -281,6 +316,7 @@ export function AiBackgroundGenerator() {
       setGenerationStatus("generating");
       const res = await fetch("/api/ai/generate-image", {
         method: "POST",
+        signal: controller.signal,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: finalPrompt,
@@ -294,13 +330,23 @@ export function AiBackgroundGenerator() {
       setResult(data);
       setGenerationStatus("success");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("生成失败", "Generation failed"));
-      setFailedStage(activeStage);
-      setGenerationStatus("failed");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setError(null);
+        setGenerationStatus("cancelled");
+      } else {
+        setError(err instanceof Error ? err.message : t("生成失败", "Generation failed"));
+        setFailedStage(activeStage);
+        setGenerationStatus("failed");
+      }
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
     }
   }
 
   return (
+    <>
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(500px,0.92fr)_minmax(500px,1fr)]">
       <form onSubmit={handleGenerate} className={`space-y-4 rounded-[20px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/60"}`}>
         <div className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/70"}`}>
@@ -390,6 +436,23 @@ export function AiBackgroundGenerator() {
         <div>
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("上传原图", "Upload Source Image")}</label>
           <DropZone file={file} preview={preview} onFileChange={handleFile} label={t("拖拽图片到此处，或点击选择", "Drag an image here, or click to choose")} hint={t("支持 jpg、png、webp", "Supports jpg, png, and webp")} />
+          {file && preview ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCropOpen(true)}
+                disabled={generating}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-40 ${isDark ? "border-white/[0.08] text-cyan-300 hover:bg-cyan-500/10" : "border-black/[0.06] text-cyan-700 hover:bg-cyan-50"}`}
+              >
+                {t("裁剪原图", "Crop Source")}
+              </button>
+              {isCropped ? (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${isDark ? "bg-emerald-500/10 text-emerald-300" : "bg-emerald-50 text-emerald-700"}`}>
+                  {t("已裁剪", "Cropped")}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div>
@@ -457,21 +520,32 @@ export function AiBackgroundGenerator() {
           </div>
         </div>
 
-        <button
-          type="submit"
-          disabled={generating || !file || providers.length === 0}
-          className={
-            `w-full rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`
-          }
-        >
-          {generationStatus === "uploading"
-            ? t("上传中...", "Uploading...")
-            : generationStatus === "generating"
-              ? t("生成中...", "Generating...")
-              : generationStatus === "failed"
-                ? t("重新生成", "Retry Generation")
-                : t("AI 提取印花", "AI Extract Print")}
-        </button>
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <button
+            type="submit"
+            disabled={generating || !file || providers.length === 0}
+            className={
+              `rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} hover:brightness-110 disabled:opacity-50 disabled:shadow-none transition-all`
+            }
+          >
+            {generationStatus === "uploading"
+              ? t("上传中...", "Uploading...")
+              : generationStatus === "generating"
+                ? t("生成中...", "Generating...")
+                : generationStatus === "failed" || generationStatus === "cancelled"
+                  ? t("重新生成", "Retry Generation")
+                  : t("AI 提取印花", "AI Extract Print")}
+          </button>
+          {generating ? (
+            <button
+              type="button"
+              onClick={cancelGeneration}
+              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${isDark ? "border-red-400/30 text-red-300 hover:bg-red-500/10" : "border-red-200 text-red-600 hover:bg-red-50"}`}
+            >
+              {t("取消", "Cancel")}
+            </button>
+          ) : null}
+        </div>
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
 
@@ -514,5 +588,15 @@ export function AiBackgroundGenerator() {
         )}
       </div>
     </div>
+    {file && preview ? (
+      <ImageCropDialog
+        file={file}
+        onApply={handleApplyCrop}
+        onCancel={() => setCropOpen(false)}
+        open={cropOpen}
+        previewUrl={preview}
+      />
+    ) : null}
+    </>
   );
 }
