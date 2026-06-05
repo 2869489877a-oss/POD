@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
@@ -52,15 +52,15 @@ export async function POST(request: Request) {
     const imgWidth = body.width && typeof body.width === "number" ? body.width : (cutoutMeta.width || 1024);
     const imgHeight = body.height && typeof body.height === "number" ? body.height : (cutoutMeta.height || 1024);
 
-    const resolved = await resolveProvider(providerId);
-
     const bgPrompt = `Generate a product photography background scene: ${sceneDescription}. The background should be clean and suitable for placing a product on top. No products or objects in the foreground. Resolution ${imgWidth}x${imgHeight}.`;
 
-    const bgResult = await generateImage(resolved, {
+    const generation = await generateImageWithFallback(providerId, {
       prompt: bgPrompt,
       width: imgWidth,
       height: imgHeight,
     });
+    const bgResult = generation.result;
+    const resolved = generation.resolved;
 
     const bgBuffer = Buffer.from(bgResult.imageBase64, "base64");
 
@@ -107,6 +107,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       background_url: bgUrl,
       composite_url: compositeUrl,
+      attempts: generation.attempts,
       provider: resolved.providerType,
       model: resolved.modelId,
     });

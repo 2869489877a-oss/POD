@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 export const runtime = "nodejs";
@@ -72,20 +72,20 @@ export async function POST(request: Request) {
     const patternWidth = position?.width || Math.round(garmentWidth * 0.4);
     const patternHeight = position?.height || Math.round(garmentHeight * 0.4);
 
-    const resolved = await resolveProvider(providerId);
-
     const prompt = [
       `Generate a print pattern design for clothing: ${styleDescription}.`,
       referenceUrl ? "Use the reference image as visual style and composition guidance." : "",
       "The pattern should be on a transparent or white background, suitable for printing on fabric. Clean edges, high quality. Square format.",
     ].filter(Boolean).join(" ");
 
-    const result = await generateImage(resolved, {
+    const generation = await generateImageWithFallback(providerId, {
       prompt,
       referenceUrl: referenceUrl || undefined,
       width: patternWidth,
       height: patternHeight,
     });
+    const result = generation.result;
+    const resolved = generation.resolved;
 
     const patternBuffer = Buffer.from(result.imageBase64, "base64");
 
@@ -163,6 +163,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       pattern_url: patternUrl,
       composite_url: compositeUrl,
+      attempts: generation.attempts,
       provider: resolved.providerType,
       model: resolved.modelId,
     });

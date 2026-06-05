@@ -1,4 +1,5 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { makeProviderError } from "../errors";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type VolcanoImageResponse = {
@@ -89,7 +90,7 @@ export class VolcanoArkProvider implements ImageProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`${this.displayName} API error ${response.status}: ${text}`);
+      throw makeProviderError(this.displayName, response.status, text, response.statusText);
     }
 
     const data = (await response.json()) as VolcanoImageResponse;

@@ -1,14 +1,14 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { makeProviderError, unsupportedProviderError } from "../errors";
 
 export class OpenAIProvider implements ImageProvider {
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
     if (params.referenceUrl) {
-      throw new Error("OpenAI 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
+      throw unsupportedProviderError("OpenAI 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
     }
 
     const baseUrl = config.baseUrl || "https://api.openai.com";
     const url = `${baseUrl.replace(/\/+$/, "")}/v1/images/generations`;
-
     const size = this.resolveSize(params.width, params.height);
 
     const body: Record<string, unknown> = {
@@ -35,7 +35,7 @@ export class OpenAIProvider implements ImageProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`OpenAI API error ${response.status}: ${text}`);
+      throw makeProviderError("OpenAI", response.status, text, response.statusText);
     }
 
     const data = await response.json() as {

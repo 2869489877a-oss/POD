@@ -1,22 +1,21 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { makeProviderError, unsupportedProviderError } from "../errors";
 
 export class GeminiProvider implements ImageProvider {
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
     if (params.referenceUrl) {
-      throw new Error("Gemini 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
+      throw unsupportedProviderError("Gemini 当前配置只支持文生图，图生图请使用 Seedream 或通义图像编辑模型");
     }
 
     const baseUrl = config.baseUrl || "https://generativelanguage.googleapis.com";
     const url = `${baseUrl.replace(/\/+$/, "")}/v1beta/models/${config.modelId}:generateContent?key=${config.apiKey}`;
 
-    const contents = [
-      {
-        parts: [{ text: params.prompt }],
-      },
-    ];
-
     const body: Record<string, unknown> = {
-      contents,
+      contents: [
+        {
+          parts: [{ text: params.prompt }],
+        },
+      ],
       generationConfig: {
         responseModalities: ["IMAGE", "TEXT"],
         imageDimensions: {
@@ -35,7 +34,7 @@ export class GeminiProvider implements ImageProvider {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`Gemini API error ${response.status}: ${text}`);
+      throw makeProviderError("Gemini", response.status, text, response.statusText);
     }
 
     const data = await response.json() as {

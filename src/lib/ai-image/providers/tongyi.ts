@@ -1,4 +1,5 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
+import { makeProviderError } from "../errors";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type DashScopeMultimodalResponse = {
@@ -65,8 +66,7 @@ export class TongyiProvider implements ImageProvider {
     const data = this.parseJson(text);
 
     if (!response.ok) {
-      const message = data?.message || data?.error?.message || text || response.statusText;
-      throw new Error(`Tongyi image request failed ${response.status}: ${message}`);
+      throw makeProviderError("Tongyi", response.status, text, response.statusText);
     }
 
     const imageValue = this.extractImageValue(data);

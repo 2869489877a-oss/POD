@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { generateImageWithFallback } from "@/lib/ai-image/router";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -36,20 +36,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const resolved = await resolveProvider(providerId);
-
     let prompt = `Generate a seamless print pattern design for clothing/apparel: ${styleDescription}. The pattern should have a transparent or solid color background, suitable for printing on fabric. High quality, clean edges, vector-like quality.`;
 
     if (referenceUrl) {
       prompt += ` Style reference: the pattern should be similar in style to an existing extracted print pattern.`;
     }
 
-    const result = await generateImage(resolved, {
+    const generation = await generateImageWithFallback(providerId, {
       prompt,
       referenceUrl: referenceUrl || undefined,
       width,
       height,
     });
+    const result = generation.result;
+    const resolved = generation.resolved;
 
     const supabase = createSupabaseServiceRoleClient();
     const buffer = Buffer.from(result.imageBase64, "base64");
@@ -113,6 +113,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       pattern_url: patternUrl,
       asset_id: newAsset.id,
+      attempts: generation.attempts,
       provider: resolved.providerType,
       model: resolved.modelId,
     });

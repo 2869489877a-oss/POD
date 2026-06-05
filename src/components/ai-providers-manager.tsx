@@ -12,6 +12,18 @@ type Provider = {
   model_id: string;
   is_active: boolean;
   priority: number;
+  cooldown_until?: string | null;
+  daily_limit?: number | null;
+  daily_used?: number | null;
+  failure_count?: number | null;
+  health_status?: string | null;
+  last_error_at?: string | null;
+  last_error_code?: string | null;
+  last_error_message?: string | null;
+  last_success_at?: string | null;
+  last_used_at?: string | null;
+  request_count?: number | null;
+  success_count?: number | null;
 };
 
 type ProviderFormData = {
@@ -21,6 +33,7 @@ type ProviderFormData = {
   base_url: string;
   model_id: string;
   priority: number;
+  daily_limit: string;
 };
 
 type ProvidersApiResponse = {
@@ -50,6 +63,7 @@ const EMPTY_FORM: ProviderFormData = {
   base_url: BASE_URL_DEFAULTS.tongyi,
   model_id: "qwen-image-edit-plus-2025-10-30",
   priority: 0,
+  daily_limit: "",
 };
 
 async function readJsonResponse(res: Response) {
@@ -85,6 +99,34 @@ function sortProviders(providers: Provider[]) {
     if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
     return b.priority - a.priority;
   });
+}
+
+function numberOrZero(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getHealthMeta(status?: string | null) {
+  switch (status) {
+    case "cooldown":
+      return { color: "text-sky-400", labelEn: "Cooling", labelZh: "冷却中", tone: "bg-sky-500/10" };
+    case "rate_limited":
+      return { color: "text-amber-400", labelEn: "Rate Limited", labelZh: "限流中", tone: "bg-amber-500/10" };
+    case "quota_exhausted":
+      return { color: "text-red-400", labelEn: "Quota Empty", labelZh: "额度耗尽", tone: "bg-red-500/10" };
+    case "invalid_key":
+      return { color: "text-red-400", labelEn: "Invalid Key", labelZh: "Key 无效", tone: "bg-red-500/10" };
+    case "error":
+      return { color: "text-orange-400", labelEn: "Error", labelZh: "异常", tone: "bg-orange-500/10" };
+    default:
+      return { color: "text-emerald-400", labelEn: "Healthy", labelZh: "健康", tone: "bg-emerald-500/10" };
+  }
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString();
 }
 
 export function AiProvidersManager() {
@@ -158,10 +200,14 @@ export function AiProvidersManager() {
     setSaving(true);
     setError(null);
     try {
+      const payload = {
+        ...formData,
+        daily_limit: formData.daily_limit.trim() ? Number(formData.daily_limit) : null,
+      };
       const res = await fetch("/api/ai-providers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       await readJsonResponse(res);
       setShowForm(false);
@@ -183,6 +229,7 @@ export function AiProvidersManager() {
       base_url: provider.base_url ?? "",
       model_id: provider.model_id,
       priority: provider.priority,
+      daily_limit: provider.daily_limit == null ? "" : String(provider.daily_limit),
     });
   }
 
@@ -196,6 +243,7 @@ export function AiProvidersManager() {
         model_id: editData.model_id,
         base_url: editData.base_url,
         priority: editData.priority,
+        daily_limit: editData.daily_limit.trim() ? Number(editData.daily_limit) : null,
       };
       if (editData.api_key.trim()) {
         body.api_key = editData.api_key.trim();
@@ -253,6 +301,24 @@ export function AiProvidersManager() {
     }
   }
 
+  async function resetProviderHealth(id: string) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/ai-providers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset_health: true }),
+      });
+      await readJsonResponse(res);
+      await fetchProviders();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("恢复模型健康状态失败", "Failed to reset model health"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function deleteProvider(id: string) {
     if (!confirm(t("确定删除这个模型配置？", "Delete this model configuration?"))) return;
     setBusyId(id);
@@ -290,7 +356,7 @@ export function AiProvidersManager() {
             {t("AI 模型配置", "AI Model Configuration")}
           </h3>
           <p className={`mt-1 text-sm ${mutedText}`}>
-            {t("统一管理接口 Key、Endpoint、模型 ID、启用状态和默认优先级。", "Manage API keys, endpoints, model IDs, status, and default priority.")}
+            {t("统一管理 API Key、Endpoint、模型 ID、健康状态、每日上限和轮询优先级。", "Manage API keys, endpoints, model IDs, health, daily limits, and routing priority.")}
           </p>
         </div>
         <button
@@ -381,7 +447,7 @@ export function AiProvidersManager() {
               {t("模型清单", "Model Inventory")}
             </h4>
             <p className={`mt-1 text-xs ${mutedText}`}>
-              {t("点击“设为默认”即可切换当前默认模型，系统会自动启用并调整优先级。", "Click Set Default to switch the current default model; the system will enable it and adjust priority automatically.")}
+              {t("系统会按健康状态、优先级和最近使用时间自动轮询；必要时可手动设为默认或恢复健康。", "The system routes by health, priority, and last-used time; you can still set default or reset health manually.")}
             </p>
           </div>
           {currentProvider && (
@@ -405,6 +471,12 @@ export function AiProvidersManager() {
               const meta = getProviderMeta(provider.provider_type);
               const isCurrent = currentProvider?.id === provider.id;
               const isEditing = editingId === provider.id && editData;
+              const health = getHealthMeta(provider.health_status);
+              const dailyUsed = numberOrZero(provider.daily_used);
+              const dailyLimit = typeof provider.daily_limit === "number" ? provider.daily_limit : null;
+              const successCount = numberOrZero(provider.success_count);
+              const requestCount = numberOrZero(provider.request_count);
+              const successRate = requestCount > 0 ? `${Math.round((successCount / requestCount) * 100)}%` : "-";
 
               return (
                 <article
@@ -441,6 +513,9 @@ export function AiProvidersManager() {
                             {t("默认使用", "Default")}
                           </span>
                         )}
+                        <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${health.tone} ${health.color}`}>
+                          {t(health.labelZh, health.labelEn)}
+                        </span>
                       </div>
 
                       {isEditing ? (
@@ -460,6 +535,16 @@ export function AiProvidersManager() {
                           <InfoPill label={t("Model ID", "Model ID")} value={provider.model_id} isDark={isDark} />
                           <InfoPill label={t("Endpoint", "Endpoint")} value={provider.base_url || t("使用默认接口", "Use default endpoint")} isDark={isDark} />
                           <InfoPill label={t("Key / 优先级", "Key / Priority")} value={`${provider.api_key} · P${provider.priority}`} isDark={isDark} />
+                          <InfoPill label={t("本地额度", "Local Quota")} value={dailyLimit == null ? `${dailyUsed} / ∞` : `${dailyUsed} / ${dailyLimit}`} isDark={isDark} />
+                          <InfoPill label={t("成功率", "Success Rate")} value={`${successRate} · ${successCount}/${requestCount}`} isDark={isDark} />
+                          <InfoPill label={t("最近成功", "Last Success")} value={formatDateTime(provider.last_success_at)} isDark={isDark} />
+                          <InfoPill label={t("冷却到", "Cooldown Until")} value={formatDateTime(provider.cooldown_until)} isDark={isDark} />
+                        </div>
+                      )}
+                      {!isEditing && provider.last_error_message && (
+                        <div className={`mt-3 rounded-xl border px-3 py-2 text-xs ${isDark ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700"}`}>
+                          <span className="font-bold">{t("最近错误", "Last Error")}:</span>{" "}
+                          <span title={provider.last_error_message}>{provider.last_error_code ? `${provider.last_error_code} · ` : ""}{provider.last_error_message}</span>
                         </div>
                       )}
                     </div>
@@ -515,6 +600,14 @@ export function AiProvidersManager() {
                             }`}
                           >
                             {provider.is_active ? t("禁用", "Disable") : t("启用", "Enable")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === provider.id}
+                            onClick={() => resetProviderHealth(provider.id)}
+                            className={`rounded-lg px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${isDark ? "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/15" : "bg-cyan-50 text-cyan-700 hover:bg-cyan-100"}`}
+                          >
+                            {t("恢复健康", "Reset Health")}
                           </button>
                           <button
                             type="button"
@@ -633,7 +726,19 @@ function ProviderFields({
           onChange={(e) => onChange({ priority: Number(e.target.value) })}
           className={inputClass}
         />
-        <p className={helpClass}>{t("启用模型中优先级最高者会作为当前默认模型。", "Highest active priority becomes the default model.")}</p>
+        <div className="mt-3">
+          <label className={labelClass}>{t("每日本地上限", "Daily Local Limit")}</label>
+          <input
+            type="number"
+            min={0}
+            value={data.daily_limit}
+            onChange={(e) => onChange({ daily_limit: e.target.value })}
+            placeholder={t("留空不限", "No local limit")}
+            className={inputClass}
+          />
+          <p className={helpClass}>{t("用于本系统轮询保护，不等同于官方实时余额。", "Used for routing protection; not official real-time balance.")}</p>
+        </div>
+        <p className={helpClass}>{t("启用模型中优先级最高者会作为默认模型；同优先级会按最近使用时间轮询。", "Highest active priority becomes the default; equal priority rotates by last-used time.")}</p>
       </div>
     </div>
   );
@@ -684,7 +789,7 @@ function DefaultModelPanel({
         <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-1">
           <MiniMetric label={t("Provider", "Provider")} value={provider ? providerName : "-"} isDark={isDark} />
           <MiniMetric label={t("Endpoint", "Endpoint")} value={provider?.base_url || t("默认接口", "Default endpoint")} isDark={isDark} />
-          <MiniMetric label={t("切换方式", "Switch Method")} value={t("设为默认", "Set Default")} isDark={isDark} />
+          <MiniMetric label={t("调度方式", "Routing")} value={t("健康优先轮询", "Health-aware rotation")} isDark={isDark} />
         </div>
       </div>
     </div>

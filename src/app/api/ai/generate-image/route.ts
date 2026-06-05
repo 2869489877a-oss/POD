@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { generateImage, resolveProvider } from "@/lib/ai-image/router";
+import { generateImageWithFallback, resolveProvider } from "@/lib/ai-image/router";
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
 
 export const runtime = "nodejs";
@@ -112,13 +112,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await generateImage(resolved, {
+    const generation = await generateImageWithFallback(providerId, {
       prompt,
       width,
       height,
       style,
       referenceUrl,
     });
+    const result = generation.result;
+    const finalProvider = generation.resolved;
 
     let resultUrl: string | null = null;
     let assetId: string | null = null;
@@ -210,7 +212,14 @@ export async function POST(request: Request) {
 
     await supabase
       .from("ai_image_jobs")
-      .update({ status: "completed", result_url: resultUrl, asset_id: assetId })
+      .update({
+        asset_id: assetId,
+        model_id: finalProvider.modelId,
+        provider_id: finalProvider.id,
+        provider_type: finalProvider.providerType,
+        result_url: resultUrl,
+        status: "completed",
+      })
       .eq("id", jobId);
 
     return NextResponse.json({
@@ -219,8 +228,9 @@ export async function POST(request: Request) {
       result_url: resultUrl,
       image_base64: saveToAssets ? undefined : outputBuffer.toString("base64"),
       mime_type: outputMimeType,
-      provider: resolved.providerType,
-      model: resolved.modelId,
+      attempts: generation.attempts,
+      provider: finalProvider.providerType,
+      model: finalProvider.modelId,
       product_draft_id: productDraftId,
     });
   } catch (error) {
