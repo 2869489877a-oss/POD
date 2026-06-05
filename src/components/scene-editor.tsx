@@ -16,6 +16,7 @@ type SceneEditorProps = {
 };
 
 type DragMode =
+  | "draw"
   | "move"
   | "nw"
   | "ne"
@@ -76,12 +77,17 @@ export function SceneEditor({
   );
 
   const clampArea = useCallback(
-    (area: PrintArea): PrintArea => ({
-      x: Math.max(0, Math.min(area.x, outputWidth - MIN_SIZE)),
-      y: Math.max(0, Math.min(area.y, outputHeight - MIN_SIZE)),
-      width: Math.max(MIN_SIZE, Math.min(area.width, outputWidth - area.x)),
-      height: Math.max(MIN_SIZE, Math.min(area.height, outputHeight - area.y)),
-    }),
+    (area: PrintArea): PrintArea => {
+      const x = Math.max(0, Math.min(area.x, outputWidth - MIN_SIZE));
+      const y = Math.max(0, Math.min(area.y, outputHeight - MIN_SIZE));
+
+      return {
+        x,
+        y,
+        width: Math.max(MIN_SIZE, Math.min(area.width, outputWidth - x)),
+        height: Math.max(MIN_SIZE, Math.min(area.height, outputHeight - y)),
+      };
+    },
     [outputWidth, outputHeight],
   );
 
@@ -99,6 +105,37 @@ export function SceneEditor({
     [printArea],
   );
 
+  const handleCanvasMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button !== 0) return;
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const x = Math.max(0, Math.min((e.clientX - rect.left) / scale, outputWidth - MIN_SIZE));
+      const y = Math.max(0, Math.min((e.clientY - rect.top) / scale, outputHeight - MIN_SIZE));
+
+      e.preventDefault();
+      setDragMode("draw");
+      dragStart.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        area: {
+          height: MIN_SIZE,
+          width: MIN_SIZE,
+          x: Math.round(x),
+          y: Math.round(y),
+        },
+      };
+      onPrintAreaChange({
+        height: MIN_SIZE,
+        width: MIN_SIZE,
+        x: Math.round(x),
+        y: Math.round(y),
+      });
+    },
+    [onPrintAreaChange, outputHeight, outputWidth, scale],
+  );
+
   useEffect(() => {
     if (!dragMode) return;
 
@@ -109,6 +146,14 @@ export function SceneEditor({
       let next: PrintArea;
 
       switch (dragMode) {
+        case "draw":
+          next = {
+            height: Math.abs(dy),
+            width: Math.abs(dx),
+            x: orig.x + Math.min(dx, 0),
+            y: orig.y + Math.min(dy, 0),
+          };
+          break;
         case "move":
           next = { ...orig, x: orig.x + dx, y: orig.y + dy };
           break;
@@ -174,8 +219,9 @@ export function SceneEditor({
   return (
     <div
       ref={containerRef}
-      className="relative w-full overflow-hidden rounded-md border border-zinc-300 bg-zinc-100"
+      className="relative w-full cursor-crosshair overflow-hidden rounded-md border border-zinc-300 bg-zinc-100"
       style={{ height: displayHeight || 300 }}
+      onMouseDown={handleCanvasMouseDown}
     >
       {backgroundUrl && !imgError && (
         <img

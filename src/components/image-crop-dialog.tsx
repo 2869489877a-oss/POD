@@ -13,10 +13,16 @@ type CropRect = {
   y: number;
 };
 
-type DragMode = "move" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+type Point = {
+  x: number;
+  y: number;
+};
+
+type DragMode = "draw" | "move" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
 type DragState = {
-  crop: CropRect;
+  anchor?: Point;
+  crop: CropRect | null;
   mode: DragMode;
   rect: DOMRect;
   startX: number;
@@ -33,19 +39,32 @@ type Props = {
   titleZh?: string;
 };
 
-const MIN_CROP_SIZE = 8;
+const MIN_CROP_SIZE = 2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
-function constrainCrop(crop: CropRect): CropRect {
-  const width = clamp(crop.width, MIN_CROP_SIZE, 100);
-  const height = clamp(crop.height, MIN_CROP_SIZE, 100);
-  const x = clamp(crop.x, 0, 100 - width);
-  const y = clamp(crop.y, 0, 100 - height);
+function normalizeCrop(crop: CropRect): CropRect {
+  const x1 = Math.min(crop.x, crop.x + crop.width);
+  const y1 = Math.min(crop.y, crop.y + crop.height);
+  const x2 = Math.max(crop.x, crop.x + crop.width);
+  const y2 = Math.max(crop.y, crop.y + crop.height);
+  const width = clamp(x2 - x1, MIN_CROP_SIZE, 100);
+  const height = clamp(y2 - y1, MIN_CROP_SIZE, 100);
+  const x = clamp(x1, 0, 100 - width);
+  const y = clamp(y1, 0, 100 - height);
 
   return { height, width, x, y };
+}
+
+function cropFromPoints(start: Point, end: Point): CropRect {
+  return normalizeCrop({
+    height: end.y - start.y,
+    width: end.x - start.x,
+    x: start.x,
+    y: start.y,
+  });
 }
 
 function cropFileName(name: string, mimeType: string) {
@@ -99,24 +118,39 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
   const colors = ACCENT_COLORS[accent];
   const imageBoxRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const [crop, setCrop] = useState<CropRect>({ height: 80, width: 80, x: 10, y: 10 });
+  const [crop, setCrop] = useState<CropRect | null>(null);
   const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const cropSizeLabel = useMemo(() => {
-    if (!imageSize.width || !imageSize.height) return "";
+    if (!crop || !imageSize.width || !imageSize.height) return "";
     const width = Math.round((crop.width / 100) * imageSize.width);
     const height = Math.round((crop.height / 100) * imageSize.height);
     return `${width} x ${height}`;
-  }, [crop.height, crop.width, imageSize.height, imageSize.width]);
+  }, [crop, imageSize.height, imageSize.width]);
 
   useEffect(() => {
+    function pointFromEvent(event: PointerEvent, rect: DOMRect): Point {
+      return {
+        x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+        y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+      };
+    }
+
     function handlePointerMove(event: PointerEvent) {
       const drag = dragRef.current;
       if (!drag) return;
 
       event.preventDefault();
+
+      if (drag.mode === "draw" && drag.anchor) {
+        setCrop(cropFromPoints(drag.anchor, pointFromEvent(event, drag.rect)));
+        return;
+      }
+
+      if (!drag.crop) return;
+
       const dx = ((event.clientX - drag.startX) / drag.rect.width) * 100;
       const dy = ((event.clientY - drag.startY) / drag.rect.height) * 100;
       const next = { ...drag.crop };
@@ -136,7 +170,7 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
         next.height -= dy;
       }
 
-      setCrop(constrainCrop(next));
+      setCrop(normalizeCrop(next));
     }
 
     function handlePointerUp() {
@@ -153,9 +187,34 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
 
   if (!open) return null;
 
-  function beginDrag(event: ReactPointerEvent, mode: DragMode) {
+  function getPoint(event: ReactPointerEvent, rect: DOMRect): Point {
+    return {
+      x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+      y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+    };
+  }
+
+  function beginDraw(event: ReactPointerEvent) {
+    if (event.button !== 0) return;
     const rect = imageBoxRef.current?.getBoundingClientRect();
     if (!rect) return;
+    const anchor = getPoint(event, rect);
+    event.preventDefault();
+    setError(null);
+    setCrop({ height: MIN_CROP_SIZE, width: MIN_CROP_SIZE, x: anchor.x, y: anchor.y });
+    dragRef.current = {
+      anchor,
+      crop: null,
+      mode: "draw",
+      rect,
+      startX: event.clientX,
+      startY: event.clientY,
+    };
+  }
+
+  function beginDrag(event: ReactPointerEvent, mode: Exclude<DragMode, "draw">) {
+    const rect = imageBoxRef.current?.getBoundingClientRect();
+    if (!rect || !crop) return;
     event.preventDefault();
     event.stopPropagation();
     dragRef.current = {
@@ -168,6 +227,11 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
   }
 
   async function applyCrop() {
+    if (!crop) {
+      setError(t("请先按住鼠标左键拖拽框选印花区域。", "Drag on the image first to select the print area."));
+      return;
+    }
+
     setApplying(true);
     setError(null);
     try {
@@ -179,16 +243,16 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
     }
   }
 
-  const handleClass = "absolute h-4 w-4 rounded-full border-2 border-white bg-cyan-400 shadow-lg";
+  const handleClass = "absolute h-4 w-4 rounded-[3px] border-2 border-white bg-emerald-400 shadow-lg";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className={`w-full max-w-5xl rounded-[24px] border p-5 shadow-2xl ${isDark ? "border-white/[0.1] bg-slate-950 text-slate-100" : "border-black/[0.06] bg-white text-slate-950"}`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="fixed inset-0 z-50 bg-black/65 p-4 backdrop-blur-sm">
+      <div className={`mx-auto flex h-[calc(100vh-2rem)] w-full max-w-[1600px] flex-col overflow-hidden rounded-[26px] border shadow-2xl ${isDark ? "border-white/[0.1] bg-slate-950 text-slate-100" : "border-black/[0.06] bg-white text-slate-950"}`}>
+        <div className="flex shrink-0 flex-wrap items-start justify-between gap-3 border-b border-black/5 px-6 py-4">
           <div>
             <h2 className="text-xl font-bold">{t(titleZh ?? "裁剪原图", titleEn ?? "Crop Source Image")}</h2>
             <p className={`mt-1 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>
-              {t("拖动裁剪框对准衣服印花区域，提交前会用裁剪后的图片上传给 AI。", "Drag the crop box over the garment print area. The cropped image will be sent to AI.")}
+              {t("按住鼠标左键拖拽框选印花区域；框选后可移动或拉伸边角微调。", "Hold the left mouse button and drag to select the print area. Move or resize the box after selecting.")}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -206,49 +270,73 @@ export function ImageCropDialog({ file, onApply, onCancel, open, previewUrl, tit
             >
               {t("居中 70%", "Center 70%")}
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCrop(null);
+                setError(null);
+              }}
+              className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${isDark ? "border-white/[0.1] text-slate-300 hover:bg-white/[0.06]" : "border-black/[0.08] text-slate-700 hover:bg-black/[0.03]"}`}
+            >
+              {t("重新框选", "Reselect")}
+            </button>
           </div>
         </div>
 
-        <div className={`mt-5 flex max-h-[62vh] items-center justify-center overflow-auto rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-slate-900/70" : "border-black/[0.06] bg-slate-50"}`}>
-          <div ref={imageBoxRef} className="relative inline-block max-h-[58vh] max-w-full select-none">
-            <img
-              src={previewUrl}
-              alt={file.name}
-              draggable={false}
-              onLoad={(event) => {
-                setImageSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth });
-                setCrop({ height: 80, width: 80, x: 10, y: 10 });
-                setError(null);
-              }}
-              className="max-h-[58vh] max-w-full rounded-xl object-contain"
-            />
+        <div className={`min-h-0 flex-1 p-6 ${isDark ? "bg-slate-900/70" : "bg-slate-100"}`}>
+          <div className={`flex h-full items-center justify-center overflow-auto rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-slate-950/50" : "border-black/[0.06] bg-white"}`}>
             <div
-              className="absolute cursor-move rounded-lg border-2 border-cyan-300 bg-cyan-300/10"
-              onPointerDown={(event) => beginDrag(event, "move")}
-              style={{
-                boxShadow: "0 0 0 9999px rgba(2, 6, 23, 0.48)",
-                height: `${crop.height}%`,
-                left: `${crop.x}%`,
-                top: `${crop.y}%`,
-                width: `${crop.width}%`,
-              }}
+              ref={imageBoxRef}
+              onPointerDown={beginDraw}
+              className="relative inline-block max-h-full max-w-full cursor-crosshair select-none"
             >
-              <span className="absolute left-2 top-2 rounded-md bg-black/70 px-2 py-1 text-[11px] font-semibold text-white">
-                {cropSizeLabel || t("裁剪区域", "Crop Area")}
-              </span>
-              <span onPointerDown={(event) => beginDrag(event, "nw")} className={`${handleClass} -left-2 -top-2 cursor-nwse-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "n")} className={`${handleClass} left-1/2 -top-2 -translate-x-1/2 cursor-ns-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "ne")} className={`${handleClass} -right-2 -top-2 cursor-nesw-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "e")} className={`${handleClass} -right-2 top-1/2 -translate-y-1/2 cursor-ew-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "se")} className={`${handleClass} -bottom-2 -right-2 cursor-nwse-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "s")} className={`${handleClass} -bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "sw")} className={`${handleClass} -bottom-2 -left-2 cursor-nesw-resize`} />
-              <span onPointerDown={(event) => beginDrag(event, "w")} className={`${handleClass} -left-2 top-1/2 -translate-y-1/2 cursor-ew-resize`} />
+              <img
+                src={previewUrl}
+                alt={file.name}
+                draggable={false}
+                onLoad={(event) => {
+                  setImageSize({ height: event.currentTarget.naturalHeight, width: event.currentTarget.naturalWidth });
+                  setCrop(null);
+                  setError(null);
+                }}
+                className="block max-h-[calc(100vh-220px)] max-w-full rounded-xl object-contain"
+              />
+              {crop ? (
+                <div
+                  className="absolute cursor-move border-2 border-emerald-400 bg-emerald-300/10"
+                  onPointerDown={(event) => beginDrag(event, "move")}
+                  style={{
+                    boxShadow: "0 0 0 9999px rgba(2, 6, 23, 0.52)",
+                    height: `${crop.height}%`,
+                    left: `${crop.x}%`,
+                    top: `${crop.y}%`,
+                    width: `${crop.width}%`,
+                  }}
+                >
+                  <span className="absolute -top-8 left-0 whitespace-nowrap rounded-md bg-black/75 px-2 py-1 text-xs font-semibold text-white">
+                    {cropSizeLabel || t("裁剪区域", "Crop Area")}
+                  </span>
+                  <span onPointerDown={(event) => beginDrag(event, "nw")} className={`${handleClass} -left-2 -top-2 cursor-nwse-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "n")} className={`${handleClass} left-1/2 -top-2 -translate-x-1/2 cursor-ns-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "ne")} className={`${handleClass} -right-2 -top-2 cursor-nesw-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "e")} className={`${handleClass} -right-2 top-1/2 -translate-y-1/2 cursor-ew-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "se")} className={`${handleClass} -bottom-2 -right-2 cursor-nwse-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "s")} className={`${handleClass} -bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "sw")} className={`${handleClass} -bottom-2 -left-2 cursor-nesw-resize`} />
+                  <span onPointerDown={(event) => beginDrag(event, "w")} className={`${handleClass} -left-2 top-1/2 -translate-y-1/2 cursor-ew-resize`} />
+                </div>
+              ) : (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/20">
+                  <span className="rounded-full bg-black/70 px-4 py-2 text-sm font-semibold text-white">
+                    {t("按住左键拖拽框选", "Drag to select")}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-black/5 px-6 py-4">
           <p className={`text-xs ${error ? "text-red-500" : isDark ? "text-slate-400" : "text-slate-500"}`}>
             {error || t("裁剪只影响本次 AI 上传，不会修改你本地原文件。", "Cropping only affects this AI upload and does not change the local file.")}
           </p>
