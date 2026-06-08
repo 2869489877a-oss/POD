@@ -174,7 +174,9 @@ function buildCelebrityReferenceItems() {
   return celebrityReferenceSeeds.map((seed, index): InfringementReferenceItem => {
     const baseTerms = cleanTerms([seed.name, ...(seed.aliases ?? [])]);
     const standaloneTerms = baseTerms.filter(shouldUseStandaloneCelebrityTerm);
-    const contextualTerms = baseTerms.flatMap((term) => celebrityApparelContexts.map((context) => `${term} ${context}`));
+    const contextualTerms = baseTerms
+      .filter((term) => !shouldUseStandaloneCelebrityTerm(term))
+      .flatMap((term) => celebrityApparelContexts.map((context) => `${term} ${context}`));
     const title = seed.name;
 
     return {
@@ -192,8 +194,8 @@ function buildCelebrityReferenceItems() {
       riskLevel: "high",
       severity: "high",
       source: "built_in",
-      sourceLabel: "Publicity-right apparel seed",
-      sourceUrl: commonsMediaSearchUrl(seed.name),
+      sourceLabel: seed.sourceUrl ? "Wikidata public-figure seed" : "Publicity-right apparel seed",
+      sourceUrl: seed.sourceUrl ?? commonsMediaSearchUrl(seed.name),
       terms: cleanTerms([...standaloneTerms, ...contextualTerms]),
       title,
     };

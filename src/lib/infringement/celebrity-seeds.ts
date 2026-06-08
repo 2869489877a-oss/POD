@@ -1,9 +1,12 @@
+import { generatedCelebrityReferenceSeeds } from "@/lib/infringement/generated-celebrity-seeds";
+
 export type CelebrityReferenceSeed = {
   aliases?: string[];
   imageHash?: string | null;
   imageUrl?: string | null;
   name: string;
   region: string;
+  sourceUrl?: string | null;
 };
 
 const northAmericaMusic = [
@@ -546,14 +549,39 @@ const imageHashes: Record<string, string> = {
   "Dennis Rodman": "1818087ebfbd3c26",
 };
 
+function normalizeSeedName(name: string) {
+  return name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ")
+    .trim();
+}
+
 function uniqueNames(names: readonly string[]) {
   const seen = new Set<string>();
   return names.filter((name) => {
-    const normalized = name.toLowerCase();
+    const normalized = normalizeSeedName(name);
     if (seen.has(normalized)) return false;
     seen.add(normalized);
     return true;
   });
+}
+
+function mergeAliases(...aliasLists: Array<readonly string[] | undefined>) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const aliases of aliasLists) {
+    for (const alias of aliases ?? []) {
+      const normalized = normalizeSeedName(alias);
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      result.push(alias);
+    }
+  }
+
+  return result;
 }
 
 const groupedNames = [
@@ -565,7 +593,7 @@ const groupedNames = [
   ...globalMusicAndGroups.map((name) => ({ name, region: "Global music and entertainment" })),
 ];
 
-export const celebrityReferenceSeeds: CelebrityReferenceSeed[] = uniqueNames(groupedNames.map((item) => item.name)).map(
+const manuallyCuratedCelebritySeeds: CelebrityReferenceSeed[] = uniqueNames(groupedNames.map((item) => item.name)).map(
   (name) => {
     const original = groupedNames.find((item) => item.name === name);
     return {
@@ -577,3 +605,36 @@ export const celebrityReferenceSeeds: CelebrityReferenceSeed[] = uniqueNames(gro
     };
   },
 );
+
+function mergeCelebritySeeds(seeds: CelebrityReferenceSeed[]) {
+  const byName = new Map<string, CelebrityReferenceSeed>();
+
+  for (const seed of seeds) {
+    const normalized = normalizeSeedName(seed.name);
+    if (!normalized) continue;
+
+    const existing = byName.get(normalized);
+    if (!existing) {
+      byName.set(normalized, {
+        ...seed,
+        aliases: mergeAliases(seed.aliases),
+      });
+      continue;
+    }
+
+    existing.aliases = mergeAliases(existing.aliases, seed.aliases);
+    existing.imageHash = existing.imageHash ?? seed.imageHash ?? null;
+    existing.imageUrl = existing.imageUrl ?? seed.imageUrl ?? null;
+    existing.sourceUrl = existing.sourceUrl ?? seed.sourceUrl ?? null;
+    if (!existing.region.includes(seed.region)) {
+      existing.region = `${existing.region}; ${seed.region}`;
+    }
+  }
+
+  return Array.from(byName.values());
+}
+
+export const celebrityReferenceSeeds: CelebrityReferenceSeed[] = mergeCelebritySeeds([
+  ...manuallyCuratedCelebritySeeds,
+  ...generatedCelebrityReferenceSeeds,
+]);

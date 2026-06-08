@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:celebrity-seeds": "node tools/build-celebrity-seeds.mjs",
     "start": "next start",
     "lint": "eslint"
   },

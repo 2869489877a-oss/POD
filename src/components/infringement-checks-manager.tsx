@@ -7,10 +7,6 @@ import {
   type InfringementCheckRow,
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
-import {
-  builtInHighRiskReferenceItems,
-  builtInReferenceStats,
-} from "@/lib/infringement/reference-library";
 import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
 import type { InfringementReferenceLibraryType, InfringementRuleCategory } from "@/lib/infringement/types";
 import { Pagination } from "@/components/pagination";
@@ -46,6 +42,7 @@ type ReviewResponse = {
 
 type ReferenceLibraryItemRow = {
   category: InfringementRuleCategory;
+  description?: string | null;
   id: string;
   imageHash?: string | null;
   imageUrl?: string | null;
@@ -60,9 +57,17 @@ type ReferenceLibraryItemRow = {
   title: string;
 };
 
+type BuiltInReferenceStats = {
+  byCategory: Partial<Record<InfringementRuleCategory, number>>;
+  totalHighRisk: number;
+  totalTerms: number;
+};
+
 type ReferenceLibraryResponse = {
   built_in?: {
     high_risk_count?: number;
+    sample?: ReferenceLibraryItemRow[];
+    stats?: BuiltInReferenceStats;
   };
   error?: string;
   items?: ReferenceLibraryItemRow[];
@@ -186,6 +191,12 @@ const reviewOptions: Array<{ en: string; helperEn: string; helperZh: string; val
   },
 ];
 
+const emptyBuiltInReferenceStats: BuiltInReferenceStats = {
+  byCategory: {},
+  totalHighRisk: 0,
+  totalTerms: 0,
+};
+
 function isCheckStatus(value: string): value is CheckStatus {
   return ["pending", "clear", "review", "risky", "blocked"].includes(value);
 }
@@ -251,6 +262,9 @@ export function InfringementChecksManager({
   const [isReviewSaving, setIsReviewSaving] = useState(false);
   const [ruleSearchQuery, setRuleSearchQuery] = useState("");
   const [ruleCategoryFilter, setRuleCategoryFilter] = useState<"all" | InfringementRuleCategory>("all");
+  const [builtInReferenceItems, setBuiltInReferenceItems] = useState<ReferenceLibraryItemRow[]>([]);
+  const [builtInReferenceStats, setBuiltInReferenceStats] =
+    useState<BuiltInReferenceStats>(emptyBuiltInReferenceStats);
   const [referenceItems, setReferenceItems] = useState<ReferenceLibraryItemRow[]>([]);
   const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
   const [referenceSetupRequired, setReferenceSetupRequired] = useState(false);
@@ -337,7 +351,7 @@ export function InfringementChecksManager({
   const displayedRuleEntries = visibleRuleEntries.slice(0, 80);
   const referenceKeyword = referenceSearchQuery.trim().toLowerCase();
   const displayedHighRiskReferences = useMemo(() => {
-    return builtInHighRiskReferenceItems
+    return builtInReferenceItems
       .filter((item) => {
         if (!referenceKeyword) return true;
         return [
@@ -359,7 +373,7 @@ export function InfringementChecksManager({
         return left.title.localeCompare(right.title);
       })
       .slice(0, 80);
-  }, [referenceKeyword]);
+  }, [builtInReferenceItems, referenceKeyword]);
   const displayedDatabaseReferences = useMemo(() => {
     return referenceItems
       .filter((item) => {
@@ -389,6 +403,8 @@ export function InfringementChecksManager({
         throw new Error(data.error ?? t("读取参考库失败", "Failed to load reference library"));
       }
 
+      setBuiltInReferenceItems(data.built_in?.sample ?? []);
+      setBuiltInReferenceStats(data.built_in?.stats ?? emptyBuiltInReferenceStats);
       setReferenceItems(data.items ?? []);
       setReferenceSetupRequired(Boolean(data.setup_required));
       setReferenceLibraryError(null);
