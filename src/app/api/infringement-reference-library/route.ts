@@ -79,6 +79,8 @@ const referenceColumns = [
   "is_active",
 ].join(",");
 
+const builtInSampleLimit = 120;
+
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -106,6 +108,49 @@ function isMissingTableError(error: { code?: string; message?: string }) {
   return error.code === "42P01" || (error.message ?? "").toLowerCase().includes("infringement_reference_items");
 }
 
+function normalizeSearchText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/[\s_]+/g, " ")
+    .trim();
+}
+
+function builtInReferenceSearchText(item: InfringementReferenceItem) {
+  return normalizeSearchText(
+    [
+      item.title,
+      item.description,
+      item.category,
+      item.sourceLabel,
+      item.sourceUrl,
+      ...item.terms,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function sortBuiltInReferences(left: InfringementReferenceItem, right: InfringementReferenceItem) {
+  if (left.imageHash && !right.imageHash) return -1;
+  if (!left.imageHash && right.imageHash) return 1;
+  if (left.category === "celebrity" && right.category !== "celebrity") return -1;
+  if (left.category !== "celebrity" && right.category === "celebrity") return 1;
+  return left.title.localeCompare(right.title);
+}
+
+function getBuiltInSample(keyword: string) {
+  const normalizedKeyword = normalizeSearchText(keyword);
+  const matches = normalizedKeyword
+    ? builtInHighRiskReferenceItems.filter((item) => builtInReferenceSearchText(item).includes(normalizedKeyword))
+    : builtInHighRiskReferenceItems;
+
+  return {
+    items: [...matches].sort(sortBuiltInReferences).slice(0, builtInSampleLimit),
+    total: matches.length,
+  };
+}
+
 async function readDatabaseItems(): Promise<{ items: InfringementReferenceItem[]; setupRequired: boolean }> {
   const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
@@ -129,14 +174,18 @@ async function readDatabaseItems(): Promise<{ items: InfringementReferenceItem[]
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const searchParams = new URL(request.url).searchParams;
+    const keyword = stringValue(searchParams.get("q")).slice(0, 120);
+    const builtInSample = getBuiltInSample(keyword);
     const { items, setupRequired } = await readDatabaseItems();
     return NextResponse.json({
       built_in: {
         high_risk_count: builtInHighRiskReferenceItems.length,
+        sample: builtInSample.items,
+        search_total: builtInSample.total,
         stats: builtInReferenceStats,
-        sample: builtInHighRiskReferenceItems.slice(0, 120),
       },
       items,
       setup_required: setupRequired,

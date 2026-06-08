@@ -67,6 +67,7 @@ type ReferenceLibraryResponse = {
   built_in?: {
     high_risk_count?: number;
     sample?: ReferenceLibraryItemRow[];
+    search_total?: number;
     stats?: BuiltInReferenceStats;
   };
   error?: string;
@@ -265,6 +266,7 @@ export function InfringementChecksManager({
   const [builtInReferenceItems, setBuiltInReferenceItems] = useState<ReferenceLibraryItemRow[]>([]);
   const [builtInReferenceStats, setBuiltInReferenceStats] =
     useState<BuiltInReferenceStats>(emptyBuiltInReferenceStats);
+  const [builtInSearchTotal, setBuiltInSearchTotal] = useState(0);
   const [referenceItems, setReferenceItems] = useState<ReferenceLibraryItemRow[]>([]);
   const [referenceLibraryError, setReferenceLibraryError] = useState<string | null>(null);
   const [referenceSetupRequired, setReferenceSetupRequired] = useState(false);
@@ -394,9 +396,13 @@ export function InfringementChecksManager({
   const databaseHighRiskCount = referenceItems.filter((item) => item.libraryType === "high_risk").length;
   const databaseAllowlistCount = referenceItems.filter((item) => item.libraryType === "allowlist").length;
 
-  async function loadReferenceLibrary() {
+  async function loadReferenceLibrary(query = referenceSearchQuery, signal?: AbortSignal) {
     try {
-      const response = await fetch("/api/infringement-reference-library", { cache: "no-store" });
+      const keyword = query.trim();
+      const url = keyword
+        ? `/api/infringement-reference-library?q=${encodeURIComponent(keyword)}`
+        : "/api/infringement-reference-library";
+      const response = await fetch(url, { cache: "no-store", signal });
       const data = (await response.json()) as ReferenceLibraryResponse;
 
       if (!response.ok) {
@@ -405,10 +411,15 @@ export function InfringementChecksManager({
 
       setBuiltInReferenceItems(data.built_in?.sample ?? []);
       setBuiltInReferenceStats(data.built_in?.stats ?? emptyBuiltInReferenceStats);
+      setBuiltInSearchTotal(data.built_in?.search_total ?? data.built_in?.sample?.length ?? 0);
       setReferenceItems(data.items ?? []);
       setReferenceSetupRequired(Boolean(data.setup_required));
       setReferenceLibraryError(null);
     } catch (requestError) {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") {
+        return;
+      }
+
       setReferenceLibraryError(
         requestError instanceof Error ? requestError.message : t("读取参考库失败", "Failed to load reference library"),
       );
@@ -416,10 +427,20 @@ export function InfringementChecksManager({
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void loadReferenceLibrary();
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => {
+        void loadReferenceLibrary(referenceSearchQuery, controller.signal);
+      },
+      referenceSearchQuery.trim() ? 250 : 0,
+    );
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [referenceSearchQuery]);
 
   async function refreshDashboard() {
     setIsRefreshing(true);
@@ -963,8 +984,8 @@ export function InfringementChecksManager({
             </div>
             <p className="mt-3 text-xs leading-5 text-zinc-500">
               {t(
-                `当前显示 ${displayedHighRiskReferences.length} 条。明星照片本体不会内置到仓库；需要图片级识别时，请把已确认来源的图片 URL 加到用户高风险库或白名单。`,
-                `Showing ${displayedHighRiskReferences.length} entries. Celebrity photos are not bundled in the repo; add verified image URLs to the user high-risk library or allowlist when image-level matching is needed.`,
+                `当前显示 ${displayedHighRiskReferences.length} / ${builtInSearchTotal} 条匹配。搜索会查询完整内置库；需要图片级识别时，请把已确认来源的图片 URL 加到用户高风险库或白名单。`,
+                `Showing ${displayedHighRiskReferences.length} / ${builtInSearchTotal} matches. Search queries the full built-in library; add verified image URLs to the user high-risk library or allowlist when image-level matching is needed.`,
               )}
             </p>
           </div>
