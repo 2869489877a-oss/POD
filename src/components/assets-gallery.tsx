@@ -157,7 +157,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const { language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [status, setStatus] = useState<"all" | AssetStatus>("all");
   const [copyrightStatus, setCopyrightStatus] = useState<"all" | CopyrightStatus>("all");
   const [isLoading, setIsLoading] = useState(false);
@@ -178,6 +178,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedIds.has(asset.id)),
     [assets, selectedIds],
+  );
+  const selectedAsset = useMemo(
+    () => assets.find((asset) => asset.id === selectedAssetId) ?? null,
+    [assets, selectedAssetId],
   );
   const resizeCompletedCount = resizeJob
     ? resizeJob.success_count + resizeJob.failed_count
@@ -320,8 +324,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         return new Set(Array.from(current).filter((id) => !deletedIds.has(id)));
       });
 
-      if (selectedAsset && assetIds.includes(selectedAsset.id)) {
-        setSelectedAsset(null);
+      if (selectedAssetId && assetIds.includes(selectedAssetId)) {
+        setSelectedAssetId(null);
       }
 
       await fetchAssets(status, copyrightStatus);
@@ -329,6 +333,44 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       setError(requestError instanceof Error ? requestError.message : t("删除素材失败", "Failed to delete assets"));
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  function openAssetDetail(assetId: string) {
+    setSelectedAssetId(assetId);
+  }
+
+  function getAssetDownloadUrl(asset: Asset) {
+    return asset.processed_url ?? asset.original_url;
+  }
+
+  async function downloadAsset(asset: Asset) {
+    const url = getAssetDownloadUrl(asset);
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(response.statusText || `HTTP ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = asset.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = asset.filename;
+      link.target = "_blank";
+      link.rel = "noreferrer";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     }
   }
 
@@ -609,7 +651,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 <div className="relative aspect-[4/3] bg-zinc-100">
                   <button
                     type="button"
-                    onClick={() => setSelectedAsset(asset)}
+                    onClick={() => openAssetDetail(asset.id)}
                     className="h-full w-full bg-cover bg-center"
                     style={{ backgroundImage: `url("${previewUrl}")` }}
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
@@ -659,13 +701,22 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     </div>
                   </dl>
 
-                  <button
-                    type="button"
-                    onClick={() => setSelectedAsset(asset)}
-                    className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
-                  >
-                    {t("查看详情", "View Details")}
-                  </button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => openAssetDetail(asset.id)}
+                      className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                    >
+                      {t("查看详情", "View Details")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void downloadAsset(asset)}
+                      className="rounded-md border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      {t("下载到本地", "Download")}
+                    </button>
+                  </div>
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([asset.id])}
@@ -787,19 +838,28 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">{selectedAsset.filename}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedAsset(null)}
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
-              >
-                {t("关闭", "Close")}
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void downloadAsset(selectedAsset)}
+                  className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-800"
+                >
+                  {t("下载到本地", "Download")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedAssetId(null)}
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                >
+                  {t("关闭", "Close")}
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-6 p-6 lg:grid-cols-[1.4fr_0.8fr]">
               <div
                 className="min-h-[360px] rounded-md bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                style={{ backgroundImage: `url("${selectedAsset.original_url}")` }}
+                style={{ backgroundImage: `url("${getAssetDownloadUrl(selectedAsset)}")` }}
                 role="img"
                 aria-label={selectedAsset.filename}
               />
@@ -864,6 +924,21 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     </a>
                   </dd>
                 </div>
+                {selectedAsset.processed_url ? (
+                  <div>
+                    <dt className="text-zinc-500">{t("处理后地址", "Processed URL")}</dt>
+                    <dd className="mt-1">
+                      <a
+                        href={selectedAsset.processed_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        {selectedAsset.processed_url}
+                      </a>
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <button
                     type="button"
