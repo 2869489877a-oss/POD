@@ -75,9 +75,9 @@ const PRINT_AVOID_TERMS =
 const PRINT_AVOID_TERMS_EN =
   "clothing, model, person, body, background, wall, floor, fabric texture, wrinkles, shadows, pockets, drawstrings, sleeves, collar, pants, hands, low resolution, blur, noise, incomplete artwork, wrong text, garbled text, distorted text, extra text, watermark, logo, border, cropping, repeated pattern, photo lighting, product photo background, hanger, label, zipper, buttons, hair, skin";
 
-const GRID_PROMPT_ZH = `这张参考图是 2x2 四宫格拼图，每个格子对应一张不同衣服图片中的印花。请分别提取四个格子里的印花，不要把四个图案混合，不要跨格生成。输出仍保持 2x2 四宫格布局：左上、右上、左下、右下分别对应原始四张图的印花。每个格子只保留对应的独立印花图案，居中、边缘清晰、细节完整、适合 POD 服装印刷。不要包含：${PRINT_AVOID_TERMS}。`;
+const GRID_PROMPT_ZH = `这张参考图是 2x2 四宫格拼图，每个格子对应一张不同衣服图片中的印花。请分别提取四个格子里的印花，不要把四个图案混合，不要跨格生成。输出仍保持 2x2 四宫格布局：左上、右上、左下、右下分别对应原始四张图的印花。整张 2x2 母图需要保持高分辨率和高锐度，细节清晰，适合 300dpi POD 服装印刷；拆分后的每个子图也要保持清晰、完整、可直接用于印刷。每个格子只保留对应的独立印花图案，居中、边缘清晰、细节完整。不要包含：${PRINT_AVOID_TERMS}。`;
 
-const GRID_PROMPT_EN = `The reference image is a 2x2 grid. Each quadrant comes from a different garment photo and contains one print design. Extract the four print designs separately. Do not blend designs across quadrants. Keep the output as a 2x2 grid: top-left, top-right, bottom-left, and bottom-right must correspond to the original four sources. Each quadrant should contain only its matching standalone print artwork, centered, clean-edged, detailed, and suitable for POD garment printing. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
+const GRID_PROMPT_EN = `The reference image is a 2x2 grid. Each quadrant comes from a different garment photo and contains one print design. Extract the four print designs separately. Do not blend designs across quadrants. Keep the output as a 2x2 grid: top-left, top-right, bottom-left, and bottom-right must correspond to the original four sources. The full 2x2 master image must stay high-resolution, sharp, detailed, and suitable for 300dpi POD garment printing; each split quadrant should remain clear, complete, and ready for print use. Each quadrant should contain only its matching standalone print artwork, centered, clean-edged, and detailed. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
 
 const BACKGROUND_COLOR_OPTIONS = [
   { id: "transparent", zh: "透明", en: "Transparent", promptZh: "四个格子都换成透明底。", promptEn: "Change every quadrant background to transparent.", swatch: "transparent" },
