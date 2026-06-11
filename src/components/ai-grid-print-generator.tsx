@@ -69,30 +69,60 @@ type BuiltGridImage = {
   width: number;
 };
 
+type AiGridPrintGeneratorProps = {
+  gridSize?: 2 | 3;
+};
+
 const PRINT_AVOID_TERMS =
   "衣服，模特，人物，身体，背景，墙面，地面，布料纹理，褶皱，阴影，口袋，帽绳，袖子，衣领，裤子，手，低清晰度，模糊，噪点，图案残缺，文字错误，乱码文字，变形文字，多余文字，水印，logo，边框，裁切，重复图案，拍摄光影，商品照片背景，衣架，标签，拉链，纽扣，头发，皮肤";
 
 const PRINT_AVOID_TERMS_EN =
   "clothing, model, person, body, background, wall, floor, fabric texture, wrinkles, shadows, pockets, drawstrings, sleeves, collar, pants, hands, low resolution, blur, noise, incomplete artwork, wrong text, garbled text, distorted text, extra text, watermark, logo, border, cropping, repeated pattern, photo lighting, product photo background, hanger, label, zipper, buttons, hair, skin";
 
-const GRID_PROMPT_ZH = `这张参考图是 2x2 四宫格拼图，每个格子对应一张不同衣服图片中的印花。请分别提取四个格子里的印花，不要把四个图案混合，不要跨格生成。输出仍保持 2x2 四宫格布局：左上、右上、左下、右下分别对应原始四张图的印花。整张 2x2 母图需要保持高分辨率和高锐度，细节清晰，适合 300dpi POD 服装印刷；拆分后的每个子图也要保持清晰、完整、可直接用于印刷。每个格子只保留对应的独立印花图案，居中、边缘清晰、细节完整。不要包含：${PRINT_AVOID_TERMS}。`;
-
-const GRID_PROMPT_EN = `The reference image is a 2x2 grid. Each quadrant comes from a different garment photo and contains one print design. Extract the four print designs separately. Do not blend designs across quadrants. Keep the output as a 2x2 grid: top-left, top-right, bottom-left, and bottom-right must correspond to the original four sources. The full 2x2 master image must stay high-resolution, sharp, detailed, and suitable for 300dpi POD garment printing; each split quadrant should remain clear, complete, and ready for print use. Each quadrant should contain only its matching standalone print artwork, centered, clean-edged, and detailed. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
-
 const BACKGROUND_COLOR_OPTIONS = [
-  { id: "transparent", zh: "透明", en: "Transparent", promptZh: "四个格子都换成透明底。", promptEn: "Change every quadrant background to transparent.", swatch: "transparent" },
-  { id: "white", zh: "白色", en: "White", promptZh: "四个格子都换成白色底。", promptEn: "Change every quadrant background to white.", swatch: "#ffffff" },
-  { id: "black", zh: "黑色", en: "Black", promptZh: "四个格子都换成黑色底。", promptEn: "Change every quadrant background to black.", swatch: "#111827" },
-  { id: "gray", zh: "灰色", en: "Gray", promptZh: "四个格子都换成灰色底。", promptEn: "Change every quadrant background to gray.", swatch: "#9ca3af" },
-  { id: "red", zh: "红色", en: "Red", promptZh: "四个格子都换成红色底。", promptEn: "Change every quadrant background to red.", swatch: "#ef4444" },
-  { id: "orange", zh: "橙色", en: "Orange", promptZh: "四个格子都换成橙色底。", promptEn: "Change every quadrant background to orange.", swatch: "#f97316" },
-  { id: "yellow", zh: "黄色", en: "Yellow", promptZh: "四个格子都换成黄色底。", promptEn: "Change every quadrant background to yellow.", swatch: "#facc15" },
-  { id: "green", zh: "绿色", en: "Green", promptZh: "四个格子都换成绿色底。", promptEn: "Change every quadrant background to green.", swatch: "#22c55e" },
-  { id: "cyan", zh: "青色", en: "Cyan", promptZh: "四个格子都换成青色底。", promptEn: "Change every quadrant background to cyan.", swatch: "#06b6d4" },
-  { id: "blue", zh: "蓝色", en: "Blue", promptZh: "四个格子都换成蓝色底。", promptEn: "Change every quadrant background to blue.", swatch: "#3b82f6" },
-  { id: "purple", zh: "紫色", en: "Purple", promptZh: "四个格子都换成紫色底。", promptEn: "Change every quadrant background to purple.", swatch: "#8b5cf6" },
-  { id: "pink", zh: "粉色", en: "Pink", promptZh: "四个格子都换成粉色底。", promptEn: "Change every quadrant background to pink.", swatch: "#ec4899" },
+  { id: "transparent", zh: "透明", en: "Transparent", swatch: "transparent" },
+  { id: "white", zh: "白色", en: "White", swatch: "#ffffff" },
+  { id: "black", zh: "黑色", en: "Black", swatch: "#111827" },
+  { id: "gray", zh: "灰色", en: "Gray", swatch: "#9ca3af" },
+  { id: "red", zh: "红色", en: "Red", swatch: "#ef4444" },
+  { id: "orange", zh: "橙色", en: "Orange", swatch: "#f97316" },
+  { id: "yellow", zh: "黄色", en: "Yellow", swatch: "#facc15" },
+  { id: "green", zh: "绿色", en: "Green", swatch: "#22c55e" },
+  { id: "cyan", zh: "青色", en: "Cyan", swatch: "#06b6d4" },
+  { id: "blue", zh: "蓝色", en: "Blue", swatch: "#3b82f6" },
+  { id: "purple", zh: "紫色", en: "Purple", swatch: "#8b5cf6" },
+  { id: "pink", zh: "粉色", en: "Pink", swatch: "#ec4899" },
 ] as const;
+
+type BackgroundColorOption = (typeof BACKGROUND_COLOR_OPTIONS)[number];
+
+function gridDisplayName(gridSize: number, language: "zh" | "en") {
+  if (language === "zh") return gridSize === 2 ? "四宫格" : "九宫格";
+  return `${gridSize}x${gridSize} grid`;
+}
+
+function buildGridPrompt(gridSize: number, language: "zh" | "en") {
+  const label = `${gridSize}x${gridSize}`;
+  const total = gridSize * gridSize;
+  const zhName = gridDisplayName(gridSize, "zh");
+
+  if (language === "zh") {
+    return `这张参考图是 ${label} ${zhName}拼图，每个格子对应一张不同衣服图片中的印花。请按从左到右、从上到下的顺序分别提取 ${total} 个格子里的印花，不要把不同格子的图案混合，不要跨格生成。输出仍保持 ${label} ${zhName}布局，每个格子分别对应原始 ${total} 张图的印花。整张 ${label} 母图需要保持高分辨率和高锐度，细节清晰，适合 300dpi POD 服装印刷；拆分后的每个子图也要保持清晰、完整、可直接用于印刷。每个格子只保留对应的独立印花图案，居中、边缘清晰、细节完整。不要包含：${PRINT_AVOID_TERMS}。`;
+  }
+
+  return `The reference image is a ${label} grid. Each cell comes from a different garment photo and contains one print design. Extract the ${total} print designs separately from left to right and top to bottom. Do not blend designs across cells. Keep the output as a ${label} grid, with each cell corresponding to its original source image. The full ${label} master image must stay high-resolution, sharp, detailed, and suitable for 300dpi POD garment printing; each split cell should remain clear, complete, and ready for print use. Each cell should contain only its matching standalone print artwork, centered, clean-edged, and detailed. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
+}
+
+function buildBackgroundPrompt(option: BackgroundColorOption, totalCells: number, language: "zh" | "en") {
+  const colorZh = option.zh;
+  const colorEn = option.en.toLowerCase();
+
+  if (language === "zh") {
+    return `所有 ${totalCells} 个格子都换成${colorZh}底。`;
+  }
+
+  return `Change all ${totalCells} cell backgrounds to ${colorEn}.`;
+}
 
 function createItemId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -159,9 +189,11 @@ async function canvasToFile(canvas: HTMLCanvasElement, baseName: string) {
   return new File([webpBlob], `${baseName}.webp`, { type: "image/webp" });
 }
 
-async function buildGridImage(items: GridSourceItem[], autoCrop: boolean): Promise<BuiltGridImage> {
-  if (items.length !== 4) {
-    throw new Error("需要刚好 4 张图片才能生成 2x2 拼图");
+async function buildGridImage(items: GridSourceItem[], autoCrop: boolean, gridSize: number): Promise<BuiltGridImage> {
+  const totalCells = gridSize * gridSize;
+
+  if (items.length !== totalCells) {
+    throw new Error(`需要刚好 ${totalCells} 张图片才能生成 ${gridSize}x${gridSize} 拼图`);
   }
 
   const bitmaps = await Promise.all(items.map((item) => createImageBitmap(item.file)));
@@ -170,8 +202,8 @@ async function buildGridImage(items: GridSourceItem[], autoCrop: boolean): Promi
     const cellWidth = Math.max(...crops.map((crop) => crop.width));
     const cellHeight = Math.max(...crops.map((crop) => crop.height));
     const canvas = document.createElement("canvas");
-    canvas.width = cellWidth * 2;
-    canvas.height = cellHeight * 2;
+    canvas.width = cellWidth * gridSize;
+    canvas.height = cellHeight * gridSize;
 
     const context = canvas.getContext("2d");
     if (!context) {
@@ -184,8 +216,8 @@ async function buildGridImage(items: GridSourceItem[], autoCrop: boolean): Promi
 
     bitmaps.forEach((bitmap, index) => {
       const crop = crops[index];
-      const column = index % 2;
-      const row = Math.floor(index / 2);
+      const column = index % gridSize;
+      const row = Math.floor(index / gridSize);
       const dx = column * cellWidth + Math.floor((cellWidth - crop.width) / 2);
       const dy = row * cellHeight + Math.floor((cellHeight - crop.height) / 2);
       context.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, dx, dy, crop.width, crop.height);
@@ -194,10 +226,12 @@ async function buildGridImage(items: GridSourceItem[], autoCrop: boolean): Promi
     context.strokeStyle = "#ffffff";
     context.lineWidth = Math.max(8, Math.round(Math.min(cellWidth, cellHeight) * 0.008));
     context.beginPath();
-    context.moveTo(cellWidth, 0);
-    context.lineTo(cellWidth, canvas.height);
-    context.moveTo(0, cellHeight);
-    context.lineTo(canvas.width, cellHeight);
+    for (let line = 1; line < gridSize; line += 1) {
+      context.moveTo(cellWidth * line, 0);
+      context.lineTo(cellWidth * line, canvas.height);
+      context.moveTo(0, cellHeight * line);
+      context.lineTo(canvas.width, cellHeight * line);
+    }
     context.stroke();
 
     return {
@@ -229,9 +263,12 @@ function imageExtension(url: string, contentType: string | null) {
   return match?.[1]?.toLowerCase() ?? "png";
 }
 
-export function AiGridPrintGenerator() {
+export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps) {
   const { accent, isDark, language, t } = useSettings();
   const colors = ACCENT_COLORS[accent];
+  const totalCells = gridSize * gridSize;
+  const gridLabel = `${gridSize}x${gridSize}`;
+  const gridNameZh = gridDisplayName(gridSize, "zh");
   const inputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
@@ -243,7 +280,7 @@ export function AiGridPrintGenerator() {
   const [selectedBackgroundColor, setSelectedBackgroundColor] = useState<string | null>("transparent");
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
   const [gridPreviewUrl, setGridPreviewUrl] = useState<string | null>(null);
-  const [gridSize, setGridSize] = useState<{ height: number; width: number } | null>(null);
+  const [gridDimensions, setGridDimensions] = useState<{ height: number; width: number } | null>(null);
   const [uploadUrl, setUploadUrl] = useState<string | null>(null);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [splitPieces, setSplitPieces] = useState<SplitGridPiece[]>([]);
@@ -251,17 +288,17 @@ export function AiGridPrintGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const promptBase = customPrompt ?? (language === "zh" ? GRID_PROMPT_ZH : GRID_PROMPT_EN);
+  const promptBase = customPrompt ?? buildGridPrompt(gridSize, language);
   const backgroundPrompt = BACKGROUND_COLOR_OPTIONS.find((option) => option.id === selectedBackgroundColor);
   const finalPrompt = [
     promptBase.trim(),
-    backgroundPrompt ? (language === "zh" ? backgroundPrompt.promptZh : backgroundPrompt.promptEn) : "",
+    backgroundPrompt ? buildBackgroundPrompt(backgroundPrompt, totalCells, language) : "",
   ]
     .filter(Boolean)
     .join(" ");
   const cropTargetItem = items.find((item) => item.id === cropTargetId) ?? null;
   const running = status === "compositing" || status === "uploading" || status === "generating" || status === "splitting";
-  const canRun = items.length === 4 && providers.length > 0 && Boolean(finalPrompt.trim()) && !running;
+  const canRun = items.length === totalCells && providers.length > 0 && Boolean(finalPrompt.trim()) && !running;
   const panelClass = `rounded-[20px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/70"}`;
   const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
   const statusLabel =
@@ -327,7 +364,7 @@ export function AiGridPrintGenerator() {
   function resetGeneratedState() {
     if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
     setGridPreviewUrl(null);
-    setGridSize(null);
+    setGridDimensions(null);
     setUploadUrl(null);
     setGeneratedUrl(null);
     setSplitPieces([]);
@@ -341,13 +378,13 @@ export function AiGridPrintGenerator() {
     if (imageFiles.length === 0) return;
     resetGeneratedState();
 
-    const remainingSlots = Math.max(0, 4 - items.length);
+    const remainingSlots = Math.max(0, totalCells - items.length);
     if (imageFiles.length > remainingSlots) {
-      setMessage(t("四宫格一次只处理 4 张图片，超出的图片未加入。", "A 2x2 grid handles 4 images at a time. Extra images were not added."));
+      setMessage(t(`${gridNameZh}一次只处理 ${totalCells} 张图片，超出的图片未加入。`, `A ${gridLabel} grid handles ${totalCells} images at a time. Extra images were not added.`));
     }
 
     setItems((current) => {
-      const slots = Math.max(0, 4 - current.length);
+      const slots = Math.max(0, totalCells - current.length);
       const nextFiles = imageFiles.slice(0, slots).map((file) => ({
         file,
         id: createItemId(),
@@ -416,9 +453,9 @@ export function AiGridPrintGenerator() {
   async function splitGeneratedResult(resultUrl: string, signal?: AbortSignal) {
     const response = await fetch("/api/ai/split-grid", {
       body: JSON.stringify({
-        columns: 2,
+        columns: gridSize,
         image_url: resultUrl,
-        rows: 2,
+        rows: gridSize,
         save_to_assets: true,
         source_names: sourceNames,
       }),
@@ -429,7 +466,7 @@ export function AiGridPrintGenerator() {
     const data = await readJsonResponse<SplitGridResult>(response);
 
     if (!response.ok || !data.pieces?.length) {
-      throw new Error(data.error || t("拆分四宫格结果失败", "Failed to split grid result"));
+      throw new Error(data.error || t(`拆分${gridNameZh}结果失败`, `Failed to split ${gridLabel} result`));
     }
 
     setSplitPieces(data.pieces);
@@ -448,10 +485,10 @@ export function AiGridPrintGenerator() {
 
     try {
       setStatus("compositing");
-      const grid = await buildGridImage(items, autoCrop);
+      const grid = await buildGridImage(items, autoCrop, gridSize);
       if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
       setGridPreviewUrl(URL.createObjectURL(grid.file));
-      setGridSize({ height: grid.height, width: grid.width });
+      setGridDimensions({ height: grid.height, width: grid.width });
 
       setStatus("uploading");
       const imageUrl = await uploadSourceImage(grid.file, controller.signal);
@@ -481,14 +518,14 @@ export function AiGridPrintGenerator() {
       setStatus("splitting");
       await splitGeneratedResult(data.result_url, controller.signal);
       setStatus("completed");
-      setMessage(t("四宫格已生成并拆分为 4 张图片，结果已保存到素材库。", "The grid was generated and split into 4 images. Results were saved to Assets."));
+      setMessage(t(`${gridNameZh}已生成并拆分为 ${totalCells} 张图片，结果已保存到素材库。`, `The ${gridLabel} grid was generated and split into ${totalCells} images. Results were saved to Assets.`));
     } catch (runError) {
       if (controller.signal.aborted) {
         setStatus("cancelled");
-        setMessage(t("四宫格任务已取消。", "Grid task cancelled."));
+        setMessage(t(`${gridNameZh}任务已取消。`, `${gridLabel} task cancelled.`));
       } else {
         setStatus("failed");
-        setError(runError instanceof Error ? runError.message : t("四宫格任务失败", "Grid task failed"));
+        setError(runError instanceof Error ? runError.message : t(`${gridNameZh}任务失败`, `${gridLabel} task failed`));
       }
     } finally {
       if (abortControllerRef.current === controller) {
@@ -534,7 +571,7 @@ export function AiGridPrintGenerator() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `ai-grid-split-${new Date().toISOString().slice(0, 10)}.zip`;
+      link.download = `ai-${gridLabel}-grid-split-${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -549,15 +586,15 @@ export function AiGridPrintGenerator() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${isDark ? "text-cyan-300" : "text-cyan-700"}`}>
-            {t("拼图剪图板块", "Grid Crop Board")}
+            {t(`${gridLabel} 拼图剪图板块`, `${gridLabel} Grid Crop Board`)}
           </p>
           <h2 className={`mt-2 text-xl font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
-            {t("四图拼成 2x2，一次 AI 提取四张印花", "Combine 4 images into a 2x2 grid and extract four prints in one AI run")}
+            {t(`${totalCells} 张图拼成 ${gridLabel}，一次 AI 提取 ${totalCells} 张印花`, `Combine ${totalCells} images into a ${gridLabel} grid and extract ${totalCells} prints in one AI run`)}
           </h2>
           <p className={`mt-2 max-w-4xl text-sm leading-6 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
             {t(
-              "上传 4 张衣服图后，系统会先按中心印花区域自动裁剪，不降低原始像素，再拼成 2x2 参考图发给 AI。AI 成品图会自动按四宫格拆成 4 张并保存到素材库。",
-              "Upload 4 garment images. The system auto-crops the central print area without downscaling source pixels, builds a 2x2 reference grid, sends it to AI, then splits the generated result into 4 saved assets.",
+              `上传 ${totalCells} 张衣服图后，系统会先按中心印花区域自动裁剪，不降低原始像素，再拼成 ${gridLabel} 参考图发给 AI。AI 成品图会自动按${gridNameZh}拆成 ${totalCells} 张并保存到素材库。`,
+              `Upload ${totalCells} garment images. The system auto-crops the central print area without downscaling source pixels, builds a ${gridLabel} reference grid, sends it to AI, then splits the generated result into ${totalCells} saved assets.`,
             )}
           </p>
         </div>
@@ -607,7 +644,7 @@ export function AiGridPrintGenerator() {
 
           <div>
             <label className={`mb-1.5 block text-sm font-medium ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-              {t("上传 4 张原图", "Upload 4 source images")}
+              {t(`上传 ${totalCells} 张原图`, `Upload ${totalCells} source images`)}
             </label>
             <div
               onClick={() => inputRef.current?.click()}
@@ -638,16 +675,16 @@ export function AiGridPrintGenerator() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
               </svg>
               <p className={`mt-2 text-sm font-medium ${isDark ? "text-slate-300" : "text-slate-600"}`}>
-                {t("拖拽 4 张图片到此处，或点击选择", "Drag 4 images here, or click to choose")}
+                {t(`拖拽 ${totalCells} 张图片到此处，或点击选择`, `Drag ${totalCells} images here, or click to choose`)}
               </p>
               <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
-                {t(`已选择 ${items.length} / 4 张`, `${items.length} / 4 selected`)}
+                {t(`已选择 ${items.length} / ${totalCells} 张`, `${items.length} / ${totalCells} selected`)}
               </p>
             </div>
           </div>
 
           {items.length > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className={gridSize === 3 ? "grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3" : "grid grid-cols-2 gap-3"}>
               {items.map((item, index) => (
                 <article key={item.id} className={`rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/20" : "border-black/[0.05] bg-white/80"}`}>
                   <div className="flex items-start gap-3">
@@ -686,7 +723,7 @@ export function AiGridPrintGenerator() {
 
           <div>
             <label className={`mb-1.5 block text-sm font-medium ${isDark ? "text-slate-300" : "text-slate-700"}`}>
-              {t("四宫格提示词", "2x2 grid prompt")}
+              {t(`${gridNameZh}提示词`, `${gridLabel} grid prompt`)}
             </label>
             <textarea
               value={promptBase}
@@ -775,14 +812,14 @@ export function AiGridPrintGenerator() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>{t("拼图预览", "Grid Preview")}</h3>
               <span className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
-                {gridSize ? `${gridSize.width} x ${gridSize.height}` : t("未生成", "Not built")}
+                {gridDimensions ? `${gridDimensions.width} x ${gridDimensions.height}` : t("未生成", "Not built")}
               </span>
             </div>
             <div className={`flex min-h-[320px] items-center justify-center rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/30" : "border-black/[0.05] bg-slate-50"}`}>
               {gridPreviewUrl ? (
-                <img src={gridPreviewUrl} alt="2x2 grid preview" className="max-h-[360px] rounded-xl object-contain shadow-lg" />
+                <img src={gridPreviewUrl} alt={`${gridLabel} grid preview`} className="max-h-[360px] rounded-xl object-contain shadow-lg" />
               ) : (
-                <p className="text-sm text-slate-500">{t("点击“拼图并生成”后会先看到 2x2 参考图。", "Click Build Grid and Generate to preview the 2x2 reference image first.")}</p>
+                <p className="text-sm text-slate-500">{t(`点击“拼图并生成”后会先看到 ${gridLabel} 参考图。`, `Click Build Grid and Generate to preview the ${gridLabel} reference image first.`)}</p>
               )}
             </div>
             {uploadUrl ? (
@@ -794,7 +831,7 @@ export function AiGridPrintGenerator() {
 
           <div className={`rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-slate-950/20" : "border-black/[0.05] bg-white/80"}`}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>{t("AI 成品和四宫格拆分", "AI Result and Split Pieces")}</h3>
+              <h3 className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>{t(`AI 成品和${gridNameZh}拆分`, `AI Result and ${gridLabel} Split Pieces`)}</h3>
               <div className="flex flex-wrap gap-2">
                 {generatedUrl && splitPieces.length === 0 ? (
                   <button
@@ -802,7 +839,7 @@ export function AiGridPrintGenerator() {
                     onClick={() => void splitGeneratedResult(generatedUrl)}
                     className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDark ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-700"}`}
                   >
-                    {t("拆分成 4 张", "Split into 4")}
+                    {t(`拆分成 ${totalCells} 张`, `Split into ${totalCells}`)}
                   </button>
                 ) : null}
                 {splitPieces.length > 0 ? (
@@ -835,12 +872,12 @@ export function AiGridPrintGenerator() {
               ) : generatedUrl ? (
                 <img src={generatedUrl} alt="AI generated grid" className="max-h-[360px] rounded-xl object-contain shadow-lg" />
               ) : (
-                <p className="text-sm text-slate-500">{t("AI 成品图会显示在这里，并自动拆成 4 张。", "The AI result appears here and will be split into 4 pieces automatically.")}</p>
+                <p className="text-sm text-slate-500">{t(`AI 成品图会显示在这里，并自动拆成 ${totalCells} 张。`, `The AI result appears here and will be split into ${totalCells} pieces automatically.`)}</p>
               )}
             </div>
 
             {splitPieces.length > 0 ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className={gridSize === 3 ? "mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3" : "mt-4 grid gap-3 sm:grid-cols-2"}>
                 {splitPieces.map((piece) => (
                   <article key={piece.index} className={`rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-white/[0.025]" : "border-black/[0.05] bg-white/80"}`}>
                     <div
