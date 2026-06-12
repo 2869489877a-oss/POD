@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { navItems, navGroups } from "@/lib/navigation";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { useAuth } from "@/lib/auth/context";
+import { BrandLogo } from "@/components/brand-logo";
 
 type SidebarProvider = {
   id: string;
@@ -61,17 +62,11 @@ export function Sidebar() {
     >
       {/* Brand */}
       <div className={`flex h-14 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-md"
-          style={{ background: colors.primary }}
-        >
-          <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-          </svg>
-        </div>
+        <BrandLogo size={28} />
         <div className="min-w-0">
           <h1 className={`truncate text-[13px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
-            {t("POD 批处理", "POD Batch")}
+            <span className="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
+            {t(" 批处理", " Batch")}
           </h1>
           <p className={`text-[10px] leading-tight ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Internal</p>
         </div>

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 
 import { AuthModal } from "@/components/landing/auth-modal";
+import { BrandLogo } from "@/components/brand-logo";
 
 /* ------------------------------------------------------------------ */
 /* Animated counter                                                    */
@@ -143,11 +144,9 @@ export function LandingPage() {
       <header className="fixed inset-x-0 top-0 z-40 border-b border-white/[0.06] bg-[#0a0a0a]/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 font-mono text-[13px] font-bold text-white">
-              P
-            </div>
+            <BrandLogo size={28} withWordmark wordmarkClassName="text-[15px]" />
             <span className="text-sm font-semibold tracking-tight text-white">
-              POD 图像处理中心
+              图像处理中心
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -370,11 +369,12 @@ export function LandingPage() {
           {/* Top row: brand + security badges */}
           <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 font-mono text-[13px] font-bold text-white">
-                P
-              </div>
+              <BrandLogo size={32} />
               <div>
-                <p className="text-[13px] font-semibold text-zinc-200">POD 图像处理中心</p>
+                <p className="text-[13px] font-semibold text-zinc-200">
+                  <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
+                  {" 图像处理中心"}
+                </p>
                 <p className="font-mono text-[11px] text-zinc-600">POD Image Processing Center</p>
               </div>
             </div>

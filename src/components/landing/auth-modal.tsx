@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { BrandLogo } from "@/components/brand-logo";
 
 type AuthMode = "login" | "register";
 
@@ -215,8 +216,11 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
         <div className="relative px-9 pb-9 pt-10">
           {/* Brand */}
           <div className="flex flex-col items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-b from-blue-500 to-blue-700 shadow-lg shadow-blue-900/50">
-              <span className="font-mono text-lg font-bold text-white">P</span>
+            <div className="flex flex-col items-center gap-2">
+              <BrandLogo size={50} />
+              <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-emerald-400 bg-clip-text text-sm font-bold tracking-[0.25em] text-transparent">
+                POD
+              </span>
             </div>
             <div className="text-center">
               <h2 className="text-[19px] font-semibold tracking-tight text-white">
