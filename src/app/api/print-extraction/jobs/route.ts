@@ -6,6 +6,7 @@ import { extractPrintFromImage } from "@/lib/image-ai/print-extraction";
 import type { PrintExtractionMode, ProcessingBBox } from "@/lib/image-ai/types";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { logUsage } from "@/lib/auth/usage";
 
 export const runtime = "nodejs";
 
@@ -379,6 +380,11 @@ export async function POST(request: Request) {
 
     const success = results.filter((result) => result.status === "completed").length;
     const failed = results.length - success;
+
+    if (success > 0) {
+      await logUsage("print_extract", success, { mode });
+      await logUsage("api_call", 1, { endpoint: "print-extraction/jobs" });
+    }
 
     return NextResponse.json({
       failed,
