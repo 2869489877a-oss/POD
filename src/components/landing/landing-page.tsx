@@ -142,7 +142,7 @@ export function LandingPage() {
     <div className="min-h-screen bg-[#0a0a0a] text-zinc-100">
       {/* ============ Nav ============ */}
       <header className="fixed inset-x-0 top-0 z-40 border-b border-white/[0.06] bg-[#0a0a0a]/80 backdrop-blur-md">
-        <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
+        <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-6 lg:px-10 2xl:max-w-[1600px]">
           <div className="flex items-center gap-2.5">
             <BrandLogo size={28} withWordmark wordmarkClassName="text-[15px]" />
             <span className="text-sm font-semibold tracking-tight text-white">
@@ -193,7 +193,7 @@ export function LandingPage() {
           className="pointer-events-none absolute right-[10%] top-[40%] h-44 w-44 rounded-full bg-cyan-500/10 blur-[80px] landing-float-delay"
         />
 
-        <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pb-24 pt-24 text-center sm:pt-32">
+        <div className="relative mx-auto flex min-h-[calc(100svh-3.5rem)] w-full max-w-7xl flex-col items-center justify-center px-6 py-16 text-center 2xl:max-w-[1600px]">
           <div className="landing-fade-up inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] px-3.5 py-1.5">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -202,7 +202,7 @@ export function LandingPage() {
             <span className="text-xs font-medium text-zinc-300">全流程自动化 · 内部生产系统</span>
           </div>
 
-          <h1 className="landing-fade-up-1 mt-7 max-w-3xl text-balance text-4xl font-semibold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="landing-fade-up-1 mt-7 max-w-4xl text-balance text-4xl font-semibold leading-[1.15] tracking-tight text-white sm:text-5xl lg:text-6xl 2xl:text-7xl">
             让每一张商品图
             <br />
             <span className="bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
@@ -210,7 +210,7 @@ export function LandingPage() {
             </span>
           </h1>
 
-          <p className="landing-fade-up-2 mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-zinc-400">
+          <p className="landing-fade-up-2 mt-6 max-w-xl text-pretty text-[15px] leading-relaxed text-zinc-400 2xl:max-w-2xl 2xl:text-base">
             从素材采集、智能抠图、印花提取，到侵权检测、批量套图与一键导出——
             一个平台覆盖 POD 商品图的完整生产管线。
           </p>
@@ -242,7 +242,7 @@ export function LandingPage() {
           </div>
 
           {/* Stats strip */}
-          <div className="landing-fade-up-3 mt-20 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-4">
+          <div className="landing-fade-up-3 mt-14 grid w-full max-w-3xl grid-cols-2 gap-px overflow-hidden rounded-[10px] border border-white/[0.08] bg-white/[0.08] sm:grid-cols-4 2xl:max-w-4xl">
             {[
               { label: "处理能力 / 日", value: 10000, suffix: "+" },
               { label: "商品模板", value: 120, suffix: "+" },
@@ -261,7 +261,7 @@ export function LandingPage() {
       </section>
 
       {/* ============ Capabilities ============ */}
-      <section className="relative mx-auto max-w-6xl px-6 py-24">
+      <section className="relative mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20 2xl:max-w-[1600px]">
         <Reveal>
           <div className="flex flex-col items-center text-center">
             <span className="font-mono text-xs uppercase tracking-[0.2em] text-blue-400">
@@ -276,7 +276,7 @@ export function LandingPage() {
           </div>
         </Reveal>
 
-        <div className="mt-14 grid gap-5 sm:grid-cols-2">
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 2xl:grid-cols-4">
           {capabilities.map((cap, i) => (
             <Reveal key={cap.title} delay={i * 100}>
               <div className="group overflow-hidden rounded-[10px] border border-white/[0.08] bg-[#0f0f10] transition-colors duration-200 hover:border-white/[0.16]">
@@ -302,7 +302,7 @@ export function LandingPage() {
 
       {/* ============ Pipeline ============ */}
       <section className="border-t border-white/[0.06] bg-[#0d0d0e]">
-        <div className="mx-auto max-w-6xl px-6 py-24">
+        <div className="mx-auto w-full max-w-7xl px-6 py-16 lg:px-10 lg:py-20 2xl:max-w-[1600px]">
           <Reveal>
             <div className="flex flex-col items-center text-center">
               <span className="font-mono text-xs uppercase tracking-[0.2em] text-blue-400">
@@ -314,7 +314,7 @@ export function LandingPage() {
             </div>
           </Reveal>
 
-          <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {pipeline.map((p, i) => (
               <Reveal key={p.step} delay={i * 80}>
                 <div className="relative flex h-full flex-col gap-3 rounded-[10px] border border-white/[0.08] bg-[#0f0f10] p-5">
@@ -346,7 +346,7 @@ export function LandingPage() {
           aria-hidden="true"
           className="pointer-events-none absolute left-1/2 top-1/2 h-72 w-[36rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600/10 blur-[110px]"
         />
-        <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 py-28 text-center">
+        <div className="relative mx-auto flex w-full max-w-7xl flex-col items-center px-6 py-20 text-center 2xl:max-w-[1600px]">
           <Reveal>
             <h2 className="text-balance text-2xl font-semibold tracking-tight text-white sm:text-3xl">
               准备好开始了吗？
@@ -365,7 +365,7 @@ export function LandingPage() {
 
       {/* ============ Footer ============ */}
       <footer className="border-t border-white/[0.06] bg-[#0d0d0e]">
-        <div className="mx-auto max-w-6xl px-6 py-10">
+        <div className="mx-auto w-full max-w-7xl px-6 py-10 lg:px-10 2xl:max-w-[1600px]">
           {/* Top row: brand + security badges */}
           <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div className="flex items-center gap-2.5">
