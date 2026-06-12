@@ -372,6 +372,52 @@ a {
   background: rgba(52, 211, 153, 0.14) !important;
 }
 
+/* ============ Landing page animations ============ */
+@keyframes landing-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-24px) translateX(12px);
+  }
+}
+
+.landing-fade-up {
+  animation: landing-fade-up 0.7s ease-out both;
+}
+
+.landing-fade-up-1 {
+  animation: landing-fade-up 0.7s ease-out 0.12s both;
+}
+
+.landing-fade-up-2 {
+  animation: landing-fade-up 0.7s ease-out 0.24s both;
+}
+
+.landing-fade-up-3 {
+  animation: landing-fade-up 0.7s ease-out 0.36s both;
+}
+
+.landing-float {
+  animation: landing-float 9s ease-in-out infinite;
+}
+
+.landing-float-delay {
+  animation: landing-float 11s ease-in-out 2s infinite;
+}
+
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
   html {

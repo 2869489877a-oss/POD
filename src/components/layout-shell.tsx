@@ -1,11 +1,24 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+
 import { Sidebar } from "@/components/sidebar";
 import { useSettings } from "@/lib/settings/context";
 
+/** Routes rendered full-bleed without the console sidebar */
+const BARE_ROUTES = ["/", "/auth"];
+
 export function LayoutShell({ children }: { children: ReactNode }) {
   const { isDark } = useSettings();
+  const pathname = usePathname();
+
+  const isBare =
+    pathname === "/" || BARE_ROUTES.some((r) => r !== "/" && pathname.startsWith(r));
+
+  if (isBare) {
+    return <>{children}</>;
+  }
 
   return (
     <div

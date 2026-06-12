@@ -1,10 +1,11 @@
-import { fetchDashboardStats } from "@/lib/actions/dashboard";
-import { HomeHub } from "@/components/home-hub";
+import { Suspense } from "react";
 
-export const dynamic = "force-dynamic";
+import { LandingPage } from "@/components/landing/landing-page";
 
-export default async function Home() {
-  const stats = await fetchDashboardStats();
-
-  return <HomeHub stats={stats} />;
+export default function Home() {
+  return (
+    <Suspense>
+      <LandingPage />
+    </Suspense>
+  );
 }

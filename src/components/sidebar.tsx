@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 
 import { navItems, navGroups } from "@/lib/navigation";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { useAuth } from "@/lib/auth/context";
 
 type SidebarProvider = {
   id: string;
@@ -18,6 +19,7 @@ type SidebarProvider = {
 export function Sidebar() {
   const pathname = usePathname();
   const { accent, isDark, t } = useSettings();
+  const { profile, isAdmin, signOut } = useAuth();
   const colors = ACCENT_COLORS[accent];
   const [providers, setProviders] = useState<SidebarProvider[]>([]);
 
@@ -79,11 +81,11 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 py-3">
         {/* Home link */}
         <Link
-          href="/"
-          aria-current={pathname === "/" ? "page" : undefined}
+          href="/console"
+          aria-current={pathname === "/console" ? "page" : undefined}
           className={[
             "group mb-3 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150",
-            pathname === "/"
+            pathname === "/console"
               ? isDark
                 ? "bg-white/[0.08] font-medium text-white"
                 : "bg-black/[0.06] font-medium text-zinc-900"
@@ -94,7 +96,7 @@ export function Sidebar() {
         >
           <svg
             className="h-4 w-4 shrink-0"
-            style={{ color: pathname === "/" ? colors.primary : undefined }}
+            style={{ color: pathname === "/console" ? colors.primary : undefined }}
             fill="none"
             viewBox="0 0 24 24"
             strokeWidth={1.5}
@@ -112,7 +114,8 @@ export function Sidebar() {
         {navGroups.map((group) => {
           const groupItems = group.hrefs
             .map((href) => navItems.find((item) => item.href === href))
-            .filter((item): item is (typeof navItems)[number] => Boolean(item));
+            .filter((item): item is (typeof navItems)[number] => Boolean(item))
+            .filter((item) => !item.adminOnly || isAdmin);
 
           if (groupItems.length === 0) return null;
 
@@ -177,21 +180,64 @@ export function Sidebar() {
             {t("系统运行中", "All systems normal")}
           </p>
         </div>
-        <div className="mt-2">
-          <p className={`text-[10px] uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
-            {t("默认模型", "Default Model")}
-          </p>
-          <p
-            className={`mt-0.5 truncate font-mono text-[11px] ${
-              currentProvider
-                ? isDark ? "text-zinc-300" : "text-zinc-700"
-                : isDark ? "text-zinc-600" : "text-zinc-400"
-            }`}
-            title={currentProvider ? `${currentProvider.display_name} / ${currentProvider.model_id}` : undefined}
-          >
-            {currentProvider ? currentProvider.model_id : t("暂无启用模型", "No active model")}
-          </p>
-        </div>
+        {isAdmin ? (
+          <div className="mt-2">
+            <p className={`text-[10px] uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+              {t("默认模型", "Default Model")}
+            </p>
+            <p
+              className={`mt-0.5 truncate font-mono text-[11px] ${
+                currentProvider
+                  ? isDark ? "text-zinc-300" : "text-zinc-700"
+                  : isDark ? "text-zinc-600" : "text-zinc-400"
+              }`}
+              title={currentProvider ? `${currentProvider.display_name} / ${currentProvider.model_id}` : undefined}
+            >
+              {currentProvider ? currentProvider.model_id : t("暂无启用模型", "No active model")}
+            </p>
+          </div>
+        ) : null}
+
+        {/* Current user */}
+        {profile ? (
+          <div className={`mt-3 flex items-center justify-between gap-2 border-t pt-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                style={{ background: colors.primary }}
+              >
+                {(profile.display_name || profile.email).slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className={`truncate text-[12px] font-medium ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                  {profile.display_name || profile.email}
+                </p>
+                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                  {profile.role === "admin" ? t("管理员", "Admin") : t("员工", "Employee")}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              title={t("退出登录", "Sign out")}
+              className={`shrink-0 rounded-md p-1.5 transition-colors ${
+                isDark
+                  ? "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                  : "text-zinc-400 hover:bg-black/[0.04] hover:text-zinc-700"
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
+                />
+              </svg>
+              <span className="sr-only">{t("退出登录", "Sign out")}</span>
+            </button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );

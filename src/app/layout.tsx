@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 
 import { ToastProvider } from "@/components/toast";
 import { SettingsProvider } from "@/lib/settings/context";
+import { AuthProvider } from "@/lib/auth/context";
 import { LayoutShell } from "@/components/layout-shell";
 
 import "./globals.css";
@@ -24,11 +25,13 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="zh-CN" className={inter.variable} suppressHydrationWarning>
       <body className="antialiased">
         <SettingsProvider>
-          <ToastProvider>
-            <LayoutShell>
-              {children}
-            </LayoutShell>
-          </ToastProvider>
+          <AuthProvider>
+            <ToastProvider>
+              <LayoutShell>
+                {children}
+              </LayoutShell>
+            </ToastProvider>
+          </AuthProvider>
         </SettingsProvider>
       </body>
     </html>
