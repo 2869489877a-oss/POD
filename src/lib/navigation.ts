@@ -7,6 +7,33 @@ export type NavItem = {
   icon: string;
 };
 
+export type NavGroup = {
+  labelZh: string;
+  labelEn: string;
+  hrefs: string[];
+};
+
+/** Sidebar grouping: maps section labels to nav item hrefs */
+export const navGroups: NavGroup[] = [
+  { labelZh: "总览", labelEn: "Overview", hrefs: ["/dashboard"] },
+  {
+    labelZh: "素材管理",
+    labelEn: "Asset Management",
+    hrefs: ["/assets", "/upload", "/image-collector", "/infringement-check"],
+  },
+  {
+    labelZh: "图片处理",
+    labelEn: "Image Processing",
+    hrefs: ["/image-jobs", "/print-extraction", "/cutout", "/ai-image"],
+  },
+  {
+    labelZh: "商品输出",
+    labelEn: "Product Output",
+    hrefs: ["/mockup-templates", "/mockup-jobs", "/products", "/exports"],
+  },
+  { labelZh: "系统", labelEn: "System", hrefs: ["/settings"] },
+];
+
 export const navItems: NavItem[] = [
   { titleZh: "仪表盘", titleEn: "Dashboard", href: "/dashboard", descZh: "查看批处理流程概览", descEn: "Batch processing overview", icon: "M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" },
   { titleZh: "素材库", titleEn: "Assets", href: "/assets", descZh: "管理已上传素材", descEn: "Manage uploaded assets", icon: "m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" },
