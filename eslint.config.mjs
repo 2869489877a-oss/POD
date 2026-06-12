@@ -13,6 +13,7 @@ const eslintConfig = [
       "venv/**",
       ".venv/**",
       ".u2net/**",
+      "browser-extensions/**",
       "node_modules/**",
     ],
   },

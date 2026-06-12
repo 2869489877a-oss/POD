@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "POD Image Collector",
+  "description": "采集 Temu、SHEIN、Pinterest 商品图片，并下载到本地文件夹。",
+  "version": "0.5.30",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "POD 图片采集"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "alarms", "downloads", "scripting", "storage", "tabs"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "popup.css", "popup.js"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

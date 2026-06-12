@@ -125,7 +125,6 @@ const sourceOptions: Array<{ zh: string; en: string; value: AssetSourceFilter }>
   { zh: "透明印花图", en: "Transparent Prints", value: "print_transparent" },
   { zh: "胚衣底图", en: "Blank Garments", value: "garment_base" },
   { zh: "AI 生成", en: "AI Generated", value: "ai" },
-  { zh: "历史网页采集", en: "Legacy Web Collect", value: "link" },
   { zh: "其他", en: "Other", value: "other" },
 ];
 
@@ -147,7 +146,7 @@ const copyrightLabels: Record<CopyrightStatus, { zh: string; en: string }> = {
 const sourceLabels: Record<string, { zh: string; en: string }> = {
   ai: { zh: "AI 生成", en: "AI Generated" },
   garment_base: { zh: "胚衣底图", en: "Blank Garment" },
-  link: { zh: "网页采集", en: "Web Collect" },
+  link: { zh: "外部导入", en: "External Import" },
   other: { zh: "其他", en: "Other" },
   print_transparent: { zh: "透明印花图", en: "Transparent Print" },
   upload: { zh: "原图", en: "Original" },
