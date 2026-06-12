@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+
 import type { DashboardStats } from "@/lib/actions/dashboard";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 
@@ -53,6 +55,42 @@ export function DashboardOverview({ stats }: Props) {
 
   return (
     <>
+      {/* Hero banner */}
+      <section
+        className={`relative overflow-hidden rounded-[10px] border ${
+          isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-zinc-950"
+        }`}
+      >
+        <Image
+          src="/images/hero-tech.png"
+          alt=""
+          fill
+          priority
+          sizes="(max-width: 1024px) 100vw, 1200px"
+          className="object-cover object-right opacity-70"
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/85 to-transparent" />
+        <div className="relative flex flex-col gap-3 px-6 py-8 sm:px-8 sm:py-10 lg:max-w-[60%]">
+          <div className="flex items-center gap-2">
+            <span
+              className="rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-zinc-300"
+            >
+              {t("内部系统", "Internal")}
+            </span>
+            <span className="font-mono text-[11px] text-zinc-500">POD PIPELINE</span>
+          </div>
+          <h2 className="text-balance text-xl font-semibold leading-tight tracking-tight text-white sm:text-2xl">
+            {t("POD 商品图批量处理中心", "POD Product Image Batch Center")}
+          </h2>
+          <p className="max-w-md text-pretty text-[13px] leading-relaxed text-zinc-400">
+            {t(
+              "从素材上传到批量处理、套图生成与导出，全流程自动化的商品图生产管线。",
+              "An automated pipeline from asset upload to batch processing, mockup generation, and export.",
+            )}
+          </p>
+        </div>
+      </section>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card, index) => (
           <div
@@ -106,7 +144,22 @@ export function DashboardOverview({ stats }: Props) {
           </div>
         </section>
 
-        <section className={`p-6 ${cardClass}`}>
+        <section className={`relative overflow-hidden p-6 ${cardClass}`}>
+          <Image
+            src="/images/workflow-tech.png"
+            alt=""
+            fill
+            sizes="(max-width: 1024px) 100vw, 480px"
+            className="object-cover opacity-30"
+          />
+          <div
+            className={`absolute inset-0 ${
+              isDark
+                ? "bg-gradient-to-t from-[#0f0f10] via-[#0f0f10]/80 to-[#0f0f10]/40"
+                : "bg-gradient-to-t from-white via-white/85 to-white/60"
+            }`}
+          />
+          <div className="relative">
           <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
             {t("系统说明", "System Notes")}
           </h3>
@@ -119,6 +172,7 @@ export function DashboardOverview({ stats }: Props) {
             <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
               {t("数据每次进入页面时自动刷新", "Stats refresh on every page load")}
             </p>
+          </div>
           </div>
         </section>
       </div>

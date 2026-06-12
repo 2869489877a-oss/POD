@@ -645,7 +645,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">{t("批量改尺寸进度", "Batch Resize Progress")}</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("���量改尺寸进度", "Batch Resize Progress")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
                 {resizeMessage ?? t("等待任务结果", "Waiting for job result")}
               </p>
@@ -710,9 +710,16 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       ) : null}
 
       {!isLoading && !error && assets.length === 0 ? (
-        <div className="rounded-md border border-dashed border-zinc-300 bg-white p-8">
-          <p className="text-sm font-medium text-zinc-950">{t("暂无素材", "No assets")}</p>
-          <p className="mt-2 text-sm text-zinc-600">{t("请先在上传页面添加图片，或调整筛选条件。", "Upload images first, or adjust filters.")}</p>
+        <div className="flex flex-col items-center rounded-md border border-dashed border-zinc-300 bg-white px-8 py-12 text-center">
+          <img
+            src="/images/empty-assets.png"
+            alt=""
+            className="h-36 w-36 rounded-lg object-cover opacity-90"
+          />
+          <p className="mt-5 text-sm font-medium text-zinc-950">{t("暂无素材", "No assets")}</p>
+          <p className="mt-1.5 max-w-xs text-pretty text-sm text-zinc-600">
+            {t("请先在上传页面添加图片，或调整筛选条件。", "Upload images first, or adjust filters.")}
+          </p>
         </div>
       ) : null}
 
