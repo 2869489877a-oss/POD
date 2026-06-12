@@ -16,6 +16,9 @@ const CONTENT_TYPES: Record<string, "image/jpeg" | "image/png" | "image/webp"> =
   webp: "image/webp",
 };
 
+const UPLOAD_ASSET_SOURCES = ["upload_original", "print_transparent", "garment_base"] as const;
+type UploadAssetSource = (typeof UPLOAD_ASSET_SOURCES)[number];
+
 type UploadResult = {
   asset_id?: string;
   error?: string;
@@ -24,6 +27,7 @@ type UploadResult = {
   format?: string;
   height?: number;
   original_url?: string;
+  source?: UploadAssetSource;
   success: boolean;
   width?: number;
 };
@@ -41,10 +45,29 @@ function sanitizeFilename(filename: string) {
   return normalized.replace(/[^a-zA-Z0-9._-]/g, "-") || "image";
 }
 
-async function uploadImage(file: File): Promise<UploadResult> {
+function parseAssetSource(value: FormDataEntryValue | null): UploadAssetSource {
+  if (typeof value === "string" && UPLOAD_ASSET_SOURCES.includes(value as UploadAssetSource)) {
+    return value as UploadAssetSource;
+  }
+
+  return "upload_original";
+}
+
+function getCategoryWriteFields(source: UploadAssetSource, originalUrl: string) {
+  if (source === "print_transparent") {
+    return {
+      print_extract_url: originalUrl,
+      preferred_design_url: originalUrl,
+    };
+  }
+
+  return {};
+}
+
+async function uploadImage(file: File, assetSource: UploadAssetSource): Promise<UploadResult> {
   try {
     if (file.size > MAX_FILE_SIZE) {
-      throw new Error(`文件大小超过限制（最大 20MB）`);
+      throw new Error("文件大小超过限制（最大 20MB）");
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -82,13 +105,14 @@ async function uploadImage(file: File): Promise<UploadResult> {
     const { data: asset, error: insertError } = await supabase
       .from("assets")
       .insert({
+        ...getCategoryWriteFields(assetSource, originalUrl),
         copyright_status: "unknown",
         file_size: file.size,
         filename: file.name,
         format: metadata.format,
         height: metadata.height,
         original_url: originalUrl,
-        source: "upload",
+        source: assetSource,
         status: "uploaded",
         width: metadata.width,
       })
@@ -107,6 +131,7 @@ async function uploadImage(file: File): Promise<UploadResult> {
       format: metadata.format,
       height: metadata.height,
       original_url: originalUrl,
+      source: assetSource,
       success: true,
       width: metadata.width,
     };
@@ -115,6 +140,7 @@ async function uploadImage(file: File): Promise<UploadResult> {
       error: getErrorMessage(error),
       file_size: file.size,
       filename: file.name,
+      source: assetSource,
       success: false,
     };
   }
@@ -132,6 +158,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const assetSource = parseAssetSource(formData.get("asset_source"));
   const files = formData.getAll("files").filter((value): value is File => value instanceof File);
 
   if (files.length === 0) {
@@ -141,7 +168,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const results = await Promise.all(files.map((file) => uploadImage(file)));
+  const results = await Promise.all(files.map((file) => uploadImage(file, assetSource)));
   const hasSuccess = results.some((result) => result.success);
 
   return NextResponse.json(

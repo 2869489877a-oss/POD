@@ -26,6 +26,7 @@ const assetColumns = [
 export async function fetchAssetsAction(
   status: string,
   copyrightStatus: string,
+  source: string = "all",
   page: number = 1,
 ): Promise<{ assets: unknown[]; error: string | null; total: number }> {
   try {
@@ -41,6 +42,12 @@ export async function fetchAssetsAction(
     }
     if (copyrightStatus !== "all") {
       query = query.eq("copyright_status", copyrightStatus);
+    }
+    if (source !== "all") {
+      query =
+        source === "local_original"
+          ? query.in("source", ["upload", "upload_original"])
+          : query.eq("source", source);
     }
 
     const { data, error, count } = await query;

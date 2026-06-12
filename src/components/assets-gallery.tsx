@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useMemo, useState } from "react";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
@@ -12,9 +14,18 @@ import {
 
 type AssetStatus = "uploaded" | "processing" | "processed" | "failed";
 type CopyrightStatus = "unknown" | "owned" | "commercial_ok" | "risky" | "forbidden";
+type AssetSourceFilter =
+  | "all"
+  | "local_original"
+  | "print_transparent"
+  | "garment_base"
+  | "ai"
+  | "link"
+  | "other";
 
 export type Asset = {
   copyright_status: CopyrightStatus;
+  cutout_url: string | null;
   created_at: string;
   file_size: number;
   filename: string;
@@ -22,6 +33,8 @@ export type Asset = {
   height: number;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
   source: string;
   status: AssetStatus;
@@ -106,6 +119,16 @@ const copyrightOptions: Array<{ zh: string; en: string; value: "all" | Copyright
   { zh: "禁用", en: "Forbidden", value: "forbidden" },
 ];
 
+const sourceOptions: Array<{ zh: string; en: string; value: AssetSourceFilter }> = [
+  { zh: "全部分类", en: "All Categories", value: "all" },
+  { zh: "原图", en: "Originals", value: "local_original" },
+  { zh: "透明印花图", en: "Transparent Prints", value: "print_transparent" },
+  { zh: "胚衣底图", en: "Blank Garments", value: "garment_base" },
+  { zh: "AI 生成", en: "AI Generated", value: "ai" },
+  { zh: "历史网页采集", en: "Legacy Web Collect", value: "link" },
+  { zh: "其他", en: "Other", value: "other" },
+];
+
 const statusLabels: Record<AssetStatus, { zh: string; en: string }> = {
   failed: { zh: "失败", en: "Failed" },
   processed: { zh: "已处理", en: "Processed" },
@@ -119,6 +142,26 @@ const copyrightLabels: Record<CopyrightStatus, { zh: string; en: string }> = {
   owned: { zh: "自有", en: "Owned" },
   risky: { zh: "有风险", en: "Risky" },
   unknown: { zh: "未知", en: "Unknown" },
+};
+
+const sourceLabels: Record<string, { zh: string; en: string }> = {
+  ai: { zh: "AI 生成", en: "AI Generated" },
+  garment_base: { zh: "胚衣底图", en: "Blank Garment" },
+  link: { zh: "网页采集", en: "Web Collect" },
+  other: { zh: "其他", en: "Other" },
+  print_transparent: { zh: "透明印花图", en: "Transparent Print" },
+  upload: { zh: "原图", en: "Original" },
+  upload_original: { zh: "原图", en: "Original" },
+};
+
+const sourceStyles: Record<string, string> = {
+  ai: "bg-violet-50 text-violet-700",
+  garment_base: "bg-amber-50 text-amber-700",
+  link: "bg-slate-100 text-slate-700",
+  other: "bg-zinc-100 text-zinc-700",
+  print_transparent: "bg-emerald-50 text-emerald-700",
+  upload: "bg-sky-50 text-sky-700",
+  upload_original: "bg-sky-50 text-sky-700",
 };
 
 const statusStyles: Record<AssetStatus, string> = {
@@ -160,6 +203,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [status, setStatus] = useState<"all" | AssetStatus>("all");
   const [copyrightStatus, setCopyrightStatus] = useState<"all" | CopyrightStatus>("all");
+  const [assetSource, setAssetSource] = useState<AssetSourceFilter>("all");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [page, setPage] = useState(1);
@@ -195,13 +239,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   async function fetchAssets(
     nextStatus: "all" | AssetStatus = status,
     nextCopyrightStatus: "all" | CopyrightStatus = copyrightStatus,
+    nextSource: AssetSourceFilter = assetSource,
     nextPage: number = page,
   ) {
     setIsLoading(true);
     setError(null);
 
     try {
-      const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus, nextPage);
+      const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus, nextSource, nextPage);
 
       if (data.error) {
         throw new Error(data.error);
@@ -226,13 +271,19 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   function handleStatusChange(nextStatus: "all" | AssetStatus) {
     setStatus(nextStatus);
     setPage(1);
-    void fetchAssets(nextStatus, copyrightStatus, 1);
+    void fetchAssets(nextStatus, copyrightStatus, assetSource, 1);
   }
 
   function handleCopyrightStatusChange(nextCopyrightStatus: "all" | CopyrightStatus) {
     setCopyrightStatus(nextCopyrightStatus);
     setPage(1);
-    void fetchAssets(status, nextCopyrightStatus, 1);
+    void fetchAssets(status, nextCopyrightStatus, assetSource, 1);
+  }
+
+  function handleAssetSourceChange(nextSource: AssetSourceFilter) {
+    setAssetSource(nextSource);
+    setPage(1);
+    void fetchAssets(status, copyrightStatus, nextSource, 1);
   }
 
   function toggleAsset(assetId: string) {
@@ -328,7 +379,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         setSelectedAssetId(null);
       }
 
-      await fetchAssets(status, copyrightStatus);
+      await fetchAssets(status, copyrightStatus, assetSource);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("删除素材失败", "Failed to delete assets"));
     } finally {
@@ -340,8 +391,22 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     setSelectedAssetId(assetId);
   }
 
+  function getAssetPreviewUrl(asset: Asset) {
+    return (
+      asset.preferred_design_url ??
+      asset.print_extract_url ??
+      asset.cutout_url ??
+      asset.processed_url ??
+      asset.original_url
+    );
+  }
+
   function getAssetDownloadUrl(asset: Asset) {
-    return asset.processed_url ?? asset.original_url;
+    return getAssetPreviewUrl(asset);
+  }
+
+  function getAssetSourceLabel(asset: Asset) {
+    return sourceLabels[asset.source] ?? { zh: asset.source || "未分类", en: asset.source || "Uncategorized" };
   }
 
   async function downloadAsset(asset: Asset) {
@@ -443,7 +508,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       setResizeJob(processData.job);
       setResizeMessage(t("批量改尺寸任务处理完成", "Batch resize job complete"));
-      await fetchAssets(status, copyrightStatus);
+      await fetchAssets(status, copyrightStatus, assetSource);
     } catch (requestError) {
       setResizeError(requestError instanceof Error ? requestError.message : t("任务处理失败", "Job processing failed"));
       setResizeMessage(null);
@@ -459,7 +524,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   return (
     <div className="space-y-6">
       <section className="rounded-md border border-zinc-200 bg-white p-5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto_auto]">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto_auto]">
           <div>
             <label htmlFor="asset-status" className="block text-sm font-medium text-zinc-950">
               {t("状态", "Status")}
@@ -498,6 +563,24 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </select>
           </div>
 
+          <div>
+            <label htmlFor="asset-source" className="block text-sm font-medium text-zinc-950">
+              {t("素材分类", "Asset Category")}
+            </label>
+            <select
+              id="asset-source"
+              value={assetSource}
+              onChange={(event) => handleAssetSourceChange(event.target.value as AssetSourceFilter)}
+              className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              {sourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {t(option.zh, option.en)}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <button
             type="button"
             onClick={toggleAllVisible}
@@ -511,7 +594,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
           <button
             type="button"
-            onClick={() => void fetchAssets(status, copyrightStatus)}
+            onClick={() => void fetchAssets(status, copyrightStatus, assetSource)}
             disabled={isLoading}
             className="self-end rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
@@ -638,7 +721,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {assets.map((asset) => {
             const isSelected = selectedIds.has(asset.id);
-            const previewUrl = asset.processed_url ?? asset.original_url;
+            const previewUrl = getAssetPreviewUrl(asset);
+            const sourceLabel = getAssetSourceLabel(asset);
 
             return (
               <article
@@ -652,10 +736,16 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <button
                     type="button"
                     onClick={() => openAssetDetail(asset.id)}
-                    className="h-full w-full bg-cover bg-center"
-                    style={{ backgroundImage: `url("${previewUrl}")` }}
+                    className="h-full w-full"
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
-                  />
+                  >
+                    <img
+                      src={previewUrl}
+                      alt={asset.filename}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </button>
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
                     <input
                       type="checkbox"
@@ -672,6 +762,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     ].join(" ")}
                   >
                     {t(statusLabels[asset.status].zh, statusLabels[asset.status].en)}
+                  </span>
+                  <span
+                    className={[
+                      "absolute bottom-3 left-3 rounded-md px-2.5 py-1 text-xs font-medium shadow-sm",
+                      sourceStyles[asset.source] ?? "bg-zinc-100 text-zinc-700",
+                    ].join(" ")}
+                  >
+                    {t(sourceLabel.zh, sourceLabel.en)}
                   </span>
                 </div>
 
@@ -740,7 +838,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         unitEn="assets"
         onChange={(p) => {
           setPage(p);
-          void fetchAssets(status, copyrightStatus, p);
+          void fetchAssets(status, copyrightStatus, assetSource, p);
         }}
       />
 
@@ -839,6 +937,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 <p className="mt-1 text-sm text-zinc-500">{selectedAsset.filename}</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
+                <a
+                  href={getAssetPreviewUrl(selectedAsset)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                >
+                  {t("打开大图", "Open Image")}
+                </a>
                 <button
                   type="button"
                   onClick={() => void downloadAsset(selectedAsset)}
@@ -857,12 +963,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </div>
 
             <div className="grid gap-6 p-6 lg:grid-cols-[1.4fr_0.8fr]">
-              <div
-                className="min-h-[360px] rounded-md bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                style={{ backgroundImage: `url("${getAssetDownloadUrl(selectedAsset)}")` }}
-                role="img"
-                aria-label={selectedAsset.filename}
-              />
+              <div className="flex min-h-[360px] items-center justify-center rounded-md bg-zinc-100 p-4">
+                <img
+                  src={getAssetPreviewUrl(selectedAsset)}
+                  alt={selectedAsset.filename}
+                  className="max-h-[70vh] w-full object-contain"
+                />
+              </div>
 
               <dl className="space-y-4 text-sm">
                 <div>
@@ -906,6 +1013,12 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   </dd>
                 </div>
                 <div>
+                  <dt className="text-zinc-500">{t("素材分类", "Asset Category")}</dt>
+                  <dd className="mt-1 font-medium text-zinc-950">
+                    {t(getAssetSourceLabel(selectedAsset).zh, getAssetSourceLabel(selectedAsset).en)}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-zinc-500">{t("创建时间", "Created At")}</dt>
                   <dd className="mt-1 font-medium text-zinc-950">
                     {formatDate(selectedAsset.created_at, language === "zh" ? "zh-CN" : "en-US")}
@@ -924,6 +1037,51 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     </a>
                   </dd>
                 </div>
+                {selectedAsset.preferred_design_url ? (
+                  <div>
+                    <dt className="text-zinc-500">{t("优先设计图地址", "Preferred Design URL")}</dt>
+                    <dd className="mt-1">
+                      <a
+                        href={selectedAsset.preferred_design_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        {selectedAsset.preferred_design_url}
+                      </a>
+                    </dd>
+                  </div>
+                ) : null}
+                {selectedAsset.print_extract_url ? (
+                  <div>
+                    <dt className="text-zinc-500">{t("透明印花图地址", "Print Extract URL")}</dt>
+                    <dd className="mt-1">
+                      <a
+                        href={selectedAsset.print_extract_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        {selectedAsset.print_extract_url}
+                      </a>
+                    </dd>
+                  </div>
+                ) : null}
+                {selectedAsset.cutout_url ? (
+                  <div>
+                    <dt className="text-zinc-500">{t("抠图地址", "Cutout URL")}</dt>
+                    <dd className="mt-1">
+                      <a
+                        href={selectedAsset.cutout_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                      >
+                        {selectedAsset.cutout_url}
+                      </a>
+                    </dd>
+                  </div>
+                ) : null}
                 {selectedAsset.processed_url ? (
                   <div>
                     <dt className="text-zinc-500">{t("处理后地址", "Processed URL")}</dt>

@@ -6,8 +6,8 @@ export default function UploadPage() {
     <PageShell
       titleZh="上传图片"
       titleEn="Upload Images"
-      descriptionZh="上传本地图片或从网页采集商品图。"
-      descriptionEn="Upload local images or collect product images from web pages."
+      descriptionZh="按素材用途上传本地图片，并自动打分类标记，方便素材库筛选。"
+      descriptionEn="Upload local images by asset purpose. Each upload is tagged for easier asset filtering."
     >
       <UploadTabs />
     </PageShell>
