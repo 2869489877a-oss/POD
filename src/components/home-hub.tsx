@@ -144,7 +144,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
   ];
 
   return (
-    <div className="animate-fade-in flex flex-col gap-10">
+    <div className="animate-fade-in flex flex-col gap-8">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950">
         <Image
@@ -156,12 +156,12 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
           className="object-cover object-right opacity-60"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/90 to-[#0a0a0a]/30" />
-        <div className="relative flex flex-col items-start gap-5 px-6 py-12 sm:px-10 sm:py-16 lg:max-w-[55%]">
+        <div className="relative flex flex-col items-start gap-4 px-6 py-8 sm:px-9 sm:py-10 lg:max-w-[60%]">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 text-[11px] font-medium tracking-wide text-zinc-300">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             {t("全流程批量处理管线", "End-to-end batch pipeline")}
           </span>
-          <h1 className="text-3xl font-semibold leading-[1.2] tracking-tight text-white sm:text-4xl">
+          <h1 className="text-2xl font-semibold leading-[1.2] tracking-tight text-white sm:text-3xl">
             {t("让每一张商品图", "Automate every product image,")}
             <br />
             {t("自动完成生产", "end to end")}

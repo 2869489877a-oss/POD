@@ -13,7 +13,7 @@ export default async function AccountManagementPage() {
     redirect("/?auth=login");
   }
   if (profile.role !== "admin" || profile.status !== "active") {
-    redirect("/console");
+    redirect("/dashboard");
   }
 
   const members = await listMembers();

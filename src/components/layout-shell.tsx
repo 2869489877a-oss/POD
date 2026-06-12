@@ -30,7 +30,9 @@ export function LayoutShell({ children }: { children: ReactNode }) {
     >
       <Sidebar />
       <main className="pod-content min-w-0 flex-1">
-        <div className="mx-auto max-w-[1400px] px-6 py-8 md:px-10">{children}</div>
+        <div className="mx-auto w-full max-w-screen-2xl px-4 py-6 sm:px-6 md:px-8 lg:py-8 2xl:max-w-[1700px]">
+          {children}
+        </div>
       </main>
     </div>
   );
