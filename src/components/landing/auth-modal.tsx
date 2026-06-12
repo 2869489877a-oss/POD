@@ -114,7 +114,7 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
 
         setStatus({ state: "success", title: "登录成功", message: "正在进入工作控制台…" });
         redirectTimer.current = setTimeout(() => {
-          window.location.assign("/console");
+          window.location.assign("/dashboard");
         }, 1100);
       } else {
         const { error: signUpError } = await supabase.auth.signUp({

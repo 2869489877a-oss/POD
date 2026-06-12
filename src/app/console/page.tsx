@@ -1,10 +1,5 @@
-import { fetchDashboardStats } from "@/lib/actions/dashboard";
-import { HomeHub } from "@/components/home-hub";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function ConsolePage() {
-  const stats = await fetchDashboardStats();
-
-  return <HomeHub stats={stats} />;
+export default function ConsolePage() {
+  redirect("/dashboard");
 }
