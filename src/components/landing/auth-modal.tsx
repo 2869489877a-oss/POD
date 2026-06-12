@@ -332,7 +332,16 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
           {/* Divider */}
           <div className="mt-6 flex items-center gap-3">
             <div className="h-px flex-1 bg-white/[0.06]" />
-            <span className="text-[11px] text-zinc-600">内部系统 · 仅限团队成员</span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-amber-500/80">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                />
+              </svg>
+              内部使用 · 杜绝外传
+            </span>
             <div className="h-px flex-1 bg-white/[0.06]" />
           </div>
 
@@ -353,6 +362,11 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
               {mode === "login" ? "立即注册" : "去登录"}
             </button>
           </div>
+
+          {/* Copyright attribution */}
+          <p className="mt-5 text-center font-mono text-[10px] text-zinc-700">
+            {"© 2026 POD Internal Systems. All Rights Reserved."}
+          </p>
         </div>
       </div>
     </div>

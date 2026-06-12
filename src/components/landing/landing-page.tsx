@@ -365,10 +365,71 @@ export function LandingPage() {
       </section>
 
       {/* ============ Footer ============ */}
-      <footer className="border-t border-white/[0.06]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-          <span className="text-xs text-zinc-600">POD 商品图批量处理系统 · 内部使用</span>
-          <span className="font-mono text-xs text-zinc-700">v2.0</span>
+      <footer className="border-t border-white/[0.06] bg-[#0d0d0e]">
+        <div className="mx-auto max-w-6xl px-6 py-10">
+          {/* Top row: brand + security badges */}
+          <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-600 font-mono text-[13px] font-bold text-white">
+                P
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-zinc-200">POD 图像处理中心</p>
+                <p className="font-mono text-[11px] text-zinc-600">POD Image Processing Center</p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/[0.08] px-3 py-1 text-[11px] font-medium text-amber-400">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                  />
+                </svg>
+                内部使用 · 杜绝外传
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.08] px-3 py-1 text-[11px] font-medium text-emerald-400">
+                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+                  />
+                </svg>
+                数据加密存储
+              </span>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="my-6 h-px bg-white/[0.06]" />
+
+          {/* Bottom row: copyright attribution */}
+          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-1">
+              <p className="font-mono text-[11px] text-zinc-600">
+                {"© 2026 POD Internal Systems. All Rights Reserved."}
+              </p>
+              <p className="text-[11px] leading-relaxed text-zinc-700">
+                本系统为公司内部生产工具，所有素材、数据及账号信息均属公司资产，严禁截图、外发或向第三方泄露。
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3 font-mono text-[11px] text-zinc-700">
+              <span>{"BUILD 2026.06"}</span>
+              <span className="text-zinc-800">|</span>
+              <span>v2.0</span>
+              <span className="text-zinc-800">|</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                </span>
+                运行正常
+              </span>
+            </div>
+          </div>
         </div>
       </footer>
 
