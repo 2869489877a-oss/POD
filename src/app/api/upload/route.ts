@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { logUsage } from "@/lib/auth/usage";
 
 export const runtime = "nodejs";
 
@@ -170,6 +171,11 @@ export async function POST(request: Request) {
 
   const results = await Promise.all(files.map((file) => uploadImage(file, assetSource)));
   const hasSuccess = results.some((result) => result.success);
+
+  const successCount = results.filter((result) => result.success).length;
+  if (successCount > 0) {
+    await logUsage("upload", successCount, { asset_source: assetSource });
+  }
 
   return NextResponse.json(
     {

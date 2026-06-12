@@ -1,5 +1,11 @@
-import { redirect } from "next/navigation";
+import { Suspense } from "react";
+
+import { LandingPage } from "@/components/landing/landing-page";
 
 export default function Home() {
-  redirect("/dashboard");
+  return (
+    <Suspense>
+      <LandingPage />
+    </Suspense>
+  );
 }

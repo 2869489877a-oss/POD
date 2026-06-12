@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { navItems } from "@/lib/navigation";
+import { navItems, navGroups } from "@/lib/navigation";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { useAuth } from "@/lib/auth/context";
+import { BrandLogo } from "@/components/brand-logo";
 
 type SidebarProvider = {
   id: string;
@@ -18,6 +20,7 @@ type SidebarProvider = {
 export function Sidebar() {
   const pathname = usePathname();
   const { accent, isDark, t } = useSettings();
+  const { profile, isAdmin, signOut } = useAuth();
   const colors = ACCENT_COLORS[accent];
   const [providers, setProviders] = useState<SidebarProvider[]>([]);
 
@@ -50,140 +53,186 @@ export function Sidebar() {
 
   return (
     <aside
-      className={
+      className={[
+        "sticky top-0 flex h-screen w-[240px] shrink-0 flex-col",
         isDark
-          ? "sticky top-3 flex h-[calc(100vh-1.5rem)] w-[270px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] shadow-[0_28px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl"
-          : "sticky top-3 flex h-[calc(100vh-1.5rem)] w-[270px] shrink-0 flex-col overflow-hidden rounded-[24px] border border-black/[0.06] bg-white/80 shadow-[0_28px_80px_rgba(0,0,0,0.06)] backdrop-blur-2xl"
-      }
+          ? "border-r border-white/[0.08] bg-[#0a0a0a]"
+          : "border-r border-black/[0.08] bg-[#fafafa]",
+      ].join(" ")}
     >
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-32"
-        style={{
-          background: isDark
-            ? `linear-gradient(180deg, ${colors.glow.replace("0.4", "0.1")}, transparent)`
-            : `linear-gradient(180deg, ${colors.glow.replace("0.4", "0.06")}, transparent)`,
-        }}
-      />
-
-      <div className={`relative z-10 px-5 py-5 ${isDark ? "border-b border-white/[0.06]" : "border-b border-black/[0.04]"}`}>
-        <div className="flex items-center gap-3">
-          <div
-            className="animate-breathe flex h-11 w-11 items-center justify-center rounded-[14px] shadow-lg"
-            style={{ background: `linear-gradient(135deg, ${colors.primary}, ${colors.primary}dd)` }}
-          >
-            <svg className="h-5.5 w-5.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-            </svg>
-          </div>
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color: colors.primary }}>
-              Internal
-            </p>
-            <h1 className={`text-base font-bold ${isDark ? "text-white" : "text-slate-900"}`}>
-              {t("POD 批处理", "POD Batch")}
-            </h1>
-          </div>
+      {/* Brand */}
+      <div className={`flex h-14 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+        <BrandLogo size={28} />
+        <div className="min-w-0">
+          <h1 className={`truncate text-[13px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
+            <span className="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
+            {t(" 批处理", " Batch")}
+          </h1>
+          <p className={`text-[10px] leading-tight ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Internal</p>
         </div>
       </div>
 
-      <nav className="relative z-10 flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-2 py-3">
+        {/* Home link */}
+        <Link
+          href="/console"
+          aria-current={pathname === "/console" ? "page" : undefined}
+          className={[
+            "group mb-3 flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150",
+            pathname === "/console"
+              ? isDark
+                ? "bg-white/[0.08] font-medium text-white"
+                : "bg-black/[0.06] font-medium text-zinc-900"
+              : isDark
+                ? "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
+                : "text-zinc-500 hover:bg-black/[0.04] hover:text-zinc-900",
+          ].join(" ")}
+        >
+          <svg
+            className="h-4 w-4 shrink-0"
+            style={{ color: pathname === "/console" ? colors.primary : undefined }}
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth={1.5}
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75"
+            />
+          </svg>
+          <span className="truncate">{t("工作台首页", "Home")}</span>
+        </Link>
+
+        {navGroups.map((group) => {
+          const groupItems = group.hrefs
+            .map((href) => navItems.find((item) => item.href === href))
+            .filter((item): item is (typeof navItems)[number] => Boolean(item))
+            .filter((item) => !item.adminOnly || isAdmin);
+
+          if (groupItems.length === 0) return null;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={isActive ? "page" : undefined}
-              className={[
-                "group relative flex h-10 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition-all duration-200",
-                isActive
-                  ? isDark
-                    ? "text-white"
-                    : "text-slate-900"
-                  : isDark
-                    ? "text-slate-200 hover:bg-white/[0.06] hover:text-white"
-                    : "text-slate-500 hover:bg-black/[0.03] hover:text-slate-900",
-              ].join(" ")}
-              style={
-                isActive
-                  ? {
-                      background: isDark ? `${colors.primary}1f` : `${colors.primary}14`,
-                      boxShadow: `inset 0 0 0 1px ${colors.primary}3a`,
-                    }
-                  : undefined
-              }
-            >
-              {isActive && (
-                <div
-                  className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full"
-                  style={{
-                    background: colors.primary,
-                    boxShadow: `0 0 12px ${colors.glow}`,
-                  }}
-                />
-              )}
-
-              <svg
-                className="h-[18px] w-[18px] shrink-0 transition-colors duration-200"
-                style={{ color: isActive ? colors.primary : undefined }}
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={1.5}
-                stroke="currentColor"
+            <div key={group.labelZh} className="mb-3">
+              <p
+                className={`px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] ${
+                  isDark ? "text-zinc-600" : "text-zinc-400"
+                }`}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
-              </svg>
-              <span>{t(item.titleZh, item.titleEn)}</span>
+                {t(group.labelZh, group.labelEn)}
+              </p>
+              <ul className="flex flex-col gap-px">
+                {groupItems.map((item) => {
+                  const isActive = pathname === item.href;
 
-              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-                <div
-                  className="animate-shimmer absolute inset-0"
-                  style={{
-                    background: isDark
-                      ? "linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent)"
-                      : "linear-gradient(90deg, transparent, rgba(0,0,0,0.02), transparent)",
-                  }}
-                />
-              </div>
-            </Link>
+                  return (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        aria-current={isActive ? "page" : undefined}
+                        className={[
+                          "group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150",
+                          isActive
+                            ? isDark
+                              ? "bg-white/[0.08] font-medium text-white"
+                              : "bg-black/[0.06] font-medium text-zinc-900"
+                            : isDark
+                              ? "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
+                              : "text-zinc-500 hover:bg-black/[0.04] hover:text-zinc-900",
+                        ].join(" ")}
+                      >
+                        <svg
+                          className="h-4 w-4 shrink-0 transition-colors duration-150"
+                          style={{ color: isActive ? colors.primary : undefined }}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth={1.5}
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
+                        </svg>
+                        <span className="truncate">{t(item.titleZh, item.titleEn)}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           );
         })}
       </nav>
 
-      <div className={`relative z-10 mx-3 mb-3 rounded-xl p-3.5 ${isDark ? "border border-white/[0.06] bg-white/[0.03]" : "border border-black/[0.04] bg-black/[0.02]"}`}>
-        <div className="space-y-3">
-          <div className="flex items-center gap-2.5">
-            <div className="relative">
-              <div className="h-2 w-2 rounded-full" style={{ background: colors.primary }} />
-              <div className="animate-pulse-glow absolute inset-0 rounded-full" style={{ background: colors.primary, filter: "blur(3px)" }} />
-            </div>
-            <div>
-              <p className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-slate-400"}`}>
-                {t("系统状态", "System Status")}
-              </p>
-              <p className={`text-xs font-semibold ${isDark ? "text-white" : "text-slate-700"}`}>
-                {t("系统运行中", "Running")}
-              </p>
-            </div>
-          </div>
-          <div className={`rounded-lg border px-3 py-2 ${isDark ? "border-white/[0.06] bg-black/10" : "border-black/[0.04] bg-white/55"}`}>
-            <p className={`text-[10px] font-medium ${isDark ? "text-slate-300" : "text-slate-400"}`}>
-              {t("当前默认模型", "Current Default Model")}
+      {/* Status footer */}
+      <div className={`border-t px-4 py-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-1.5 w-1.5">
+            <span className="animate-pulse-glow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          </span>
+          <p className={`text-[11px] font-medium ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+            {t("系统运行中", "All systems normal")}
+          </p>
+        </div>
+        {isAdmin ? (
+          <div className="mt-2">
+            <p className={`text-[10px] uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+              {t("默认模型", "Default Model")}
             </p>
             <p
-              className={`mt-0.5 truncate text-xs font-bold ${currentProvider ? (isDark ? "text-white" : "text-slate-900") : (isDark ? "text-slate-500" : "text-slate-400")}`}
+              className={`mt-0.5 truncate font-mono text-[11px] ${
+                currentProvider
+                  ? isDark ? "text-zinc-300" : "text-zinc-700"
+                  : isDark ? "text-zinc-600" : "text-zinc-400"
+              }`}
               title={currentProvider ? `${currentProvider.display_name} / ${currentProvider.model_id}` : undefined}
             >
-              {currentProvider?.display_name ?? t("暂无启用模型", "No active model")}
+              {currentProvider ? currentProvider.model_id : t("暂无启用模型", "No active model")}
             </p>
-            {currentProvider && (
-              <p className={`mt-0.5 truncate text-[10px] ${isDark ? "text-slate-300" : "text-slate-400"}`} title={currentProvider.model_id}>
-                {currentProvider.model_id}
-              </p>
-            )}
           </div>
-        </div>
+        ) : null}
+
+        {/* Current user */}
+        {profile ? (
+          <div className={`mt-3 flex items-center justify-between gap-2 border-t pt-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <div
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white"
+                style={{ background: colors.primary }}
+              >
+                {(profile.display_name || profile.email).slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className={`truncate text-[12px] font-medium ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                  {profile.display_name || profile.email}
+                </p>
+                <p className={`text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                  {profile.role === "admin" ? t("管理员", "Admin") : t("员工", "Employee")}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              title={t("退出登录", "Sign out")}
+              className={`shrink-0 rounded-md p-1.5 transition-colors ${
+                isDark
+                  ? "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
+                  : "text-zinc-400 hover:bg-black/[0.04] hover:text-zinc-700"
+              }`}
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9"
+                />
+              </svg>
+              <span className="sr-only">{t("退出登录", "Sign out")}</span>
+            </button>
+          </div>
+        ) : null}
       </div>
     </aside>
   );
