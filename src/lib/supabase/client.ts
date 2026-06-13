@@ -1,6 +1,8 @@
 "use client";
 
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
+
+let browserClient: ReturnType<typeof createBrowserClient> | null = null;
 
 // The public project URL is not a secret. Hard-code it so a mis-typed env var
 // can never point the app at the wrong project.
@@ -20,5 +22,9 @@ export function createSupabaseBrowserClient() {
     throw new Error("Missing NEXT_PUBLIC_POD_SUPABASE_ANON_KEY");
   }
 
-  return createClient(url, key);
+  if (!browserClient) {
+    browserClient = createBrowserClient(url, key);
+  }
+
+  return browserClient;
 }

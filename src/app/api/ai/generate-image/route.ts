@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback, resolveProvider } from "@/lib/ai-image/router";
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
+import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -73,6 +74,14 @@ export async function POST(request: Request) {
   const productDraftId = typeof body.product_draft_id === "string" && body.product_draft_id.trim().length > 0
     ? body.product_draft_id.trim()
     : null;
+
+  const quotaCheck = await checkDailyImageQuota(1);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json(
+      { error: quotaCheck.reason ?? "今日生图配额已用完", quota: quotaCheck.quota, used: quotaCheck.used },
+      { status: 429 },
+    );
+  }
 
   const supabase = createSupabaseServiceRoleClient();
 
@@ -221,6 +230,9 @@ export async function POST(request: Request) {
         status: "completed",
       })
       .eq("id", jobId);
+
+    await logUsage("ai_generate", 1, { job_id: jobId, model: finalProvider.modelId });
+    await logUsage("api_call", 1, { endpoint: "ai/generate-image" });
 
     return NextResponse.json({
       job_id: jobId,

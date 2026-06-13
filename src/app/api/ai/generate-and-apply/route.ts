@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -35,6 +36,14 @@ function parsePosition(value: unknown): Position | null {
 }
 
 export async function POST(request: Request) {
+  const quotaCheck = await checkDailyImageQuota(1);
+  if (!quotaCheck.allowed) {
+    return NextResponse.json(
+      { error: quotaCheck.reason ?? "今日生图配额已用完" },
+      { status: 429 },
+    );
+  }
+
   let body: GenerateAndApplyRequest;
 
   try {
@@ -159,6 +168,9 @@ export async function POST(request: Request) {
         throw new Error(`套用印花记录写入失败: ${derivativeError.message}`);
       }
     }
+
+    await logUsage("ai_generate", 1, { endpoint: "ai/generate-and-apply", model: resolved.modelId });
+    await logUsage("api_call", 1, { endpoint: "ai/generate-and-apply" });
 
     return NextResponse.json({
       pattern_url: patternUrl,

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
 
-import { useSettings } from "@/lib/settings/context";
+import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 
 export type UploadAssetSource = "upload_original" | "print_transparent" | "garment_base";
 
@@ -64,7 +64,8 @@ export function UploadForm({
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const { isDark, t } = useSettings();
+  const { isDark, t, accent } = useSettings();
+  const colors = ACCENT_COLORS[accent] ?? ACCENT_COLORS.cyan;
   const sourceLabel = sourceLabels[assetSource];
 
   const unsupportedFiles = useMemo(
@@ -129,26 +130,30 @@ export function UploadForm({
       <form
         onSubmit={handleSubmit}
         className={[
-          "overflow-hidden rounded-2xl border shadow-sm",
-          isDark
-            ? "border-white/10 bg-white/[0.04] shadow-black/20"
-            : "border-slate-200 bg-white shadow-slate-200/70",
+          "overflow-hidden rounded-[10px] border",
+          isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-white",
         ].join(" ")}
       >
         <div
           className={[
             "flex flex-wrap items-start justify-between gap-4 border-b px-6 py-5",
-            isDark ? "border-white/10 bg-white/[0.03]" : "border-slate-200 bg-slate-50/80",
+            isDark ? "border-white/[0.08]" : "border-black/[0.08]",
           ].join(" ")}
         >
           <div>
-            <span className="inline-flex rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-black text-emerald-600">
+            <span
+              className={[
+                "inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-medium",
+                isDark ? "border-white/[0.12] bg-white/[0.04]" : "border-black/[0.12] bg-black/[0.03]",
+              ].join(" ")}
+              style={{ color: colors.primary }}
+            >
               {t(sourceLabel.zh, sourceLabel.en)}
             </span>
-            <h2 className={["mt-3 text-xl font-black", isDark ? "text-white" : "text-slate-950"].join(" ")}>
+            <h2 className={["mt-3 text-lg font-semibold tracking-tight", isDark ? "text-white" : "text-zinc-900"].join(" ")}>
               {t(titleZh ?? "本地上传", titleEn ?? "Local Upload")}
             </h2>
-            <p className={["mt-1 text-sm leading-6", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>
+            <p className={["mt-1 text-[13px] leading-relaxed", isDark ? "text-zinc-500" : "text-zinc-500"].join(" ")}>
               {t(
                 descriptionZh ?? "上传后会自动写入素材库，并带上当前入口的分类标签。",
                 descriptionEn ?? "Uploaded files are saved to the asset library with the selected category tag.",
@@ -158,10 +163,10 @@ export function UploadForm({
           <Link
             href="/assets"
             className={[
-              "rounded-xl border px-4 py-2 text-sm font-bold transition",
+              "rounded-md border px-3.5 py-1.5 text-[13px] font-medium transition-colors duration-150",
               isDark
-                ? "border-white/10 bg-white/[0.04] text-slate-200 hover:border-emerald-400/40 hover:bg-emerald-400/10"
-                : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300 hover:bg-emerald-50",
+                ? "border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]"
+                : "border-black/[0.12] bg-white text-zinc-700 hover:border-black/[0.24] hover:bg-black/[0.03]",
             ].join(" ")}
           >
             {t("查看素材库", "View Assets")}
@@ -171,13 +176,18 @@ export function UploadForm({
         <div className="p-6">
           <div
             className={[
-              "relative rounded-2xl border-2 border-dashed p-10 text-center transition-colors",
+              "relative rounded-[10px] border border-dashed p-10 text-center transition-colors duration-150",
               isDragging
-                ? "border-emerald-400 bg-emerald-500/10"
+                ? ""
                 : isDark
-                  ? "border-slate-600/70 bg-slate-950/20 hover:border-emerald-400/50"
-                  : "border-slate-300 bg-slate-50/60 hover:border-emerald-300",
+                  ? "border-white/[0.16] bg-white/[0.02] hover:border-white/[0.28]"
+                  : "border-black/[0.16] bg-black/[0.02] hover:border-black/[0.28]",
             ].join(" ")}
+            style={
+              isDragging
+                ? { borderColor: colors.primary, backgroundColor: `${colors.primary}14` }
+                : undefined
+            }
             onDragOver={(event) => {
               event.preventDefault();
               setIsDragging(true);
@@ -197,7 +207,7 @@ export function UploadForm({
             <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
             </svg>
-            <p className={["mt-4 text-base font-black", isDark ? "text-slate-100" : "text-slate-800"].join(" ")}>
+            <p className={["mt-4 text-sm font-medium", isDark ? "text-zinc-200" : "text-zinc-800"].join(" ")}>
               {isDragging ? t("松开鼠标上传文件", "Release to upload files") : t("拖拽图片到此处，或点击选择", "Drag images here, or click to choose")}
             </p>
             <p className={["mt-2 text-sm", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>
@@ -214,15 +224,15 @@ export function UploadForm({
           </div>
 
           {files.length > 0 ? (
-            <div className={["mt-5 rounded-xl border p-4", isDark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-slate-50"].join(" ")}>
+            <div className={["mt-5 rounded-[10px] border p-4", isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.08] bg-black/[0.02]"].join(" ")}>
               <div className="flex items-center justify-between gap-3">
-                <p className={["text-sm font-bold", isDark ? "text-slate-100" : "text-slate-950"].join(" ")}>
+                <p className={["text-[13px] font-medium", isDark ? "text-zinc-200" : "text-zinc-900"].join(" ")}>
                   {t(`已选择 ${files.length} 张图片`, `${files.length} image${files.length === 1 ? "" : "s"} selected`)}
                 </p>
                 <button
                   type="button"
                   onClick={clearSelection}
-                  className={["text-sm font-bold", isDark ? "text-slate-300 hover:text-white" : "text-slate-600 hover:text-slate-950"].join(" ")}
+                  className={["text-[13px] font-medium", isDark ? "text-zinc-400 hover:text-white" : "text-zinc-500 hover:text-zinc-900"].join(" ")}
                 >
                   {t("清空", "Clear")}
                 </button>
@@ -257,7 +267,8 @@ export function UploadForm({
             <button
               type="submit"
               disabled={isUploading || files.length === 0}
-              className="rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 px-5 py-3 text-sm font-black text-white shadow-lg shadow-emerald-500/20 transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none"
+              className="rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              style={{ backgroundColor: colors.primary }}
             >
               {isUploading ? t("上传中...", "Uploading...") : t("开始上传", "Start Upload")}
             </button>
@@ -269,40 +280,40 @@ export function UploadForm({
       </form>
 
       {results.length > 0 ? (
-        <section className={["overflow-hidden rounded-2xl border", isDark ? "border-white/10 bg-white/[0.04]" : "border-slate-200 bg-white"].join(" ")}>
-          <div className={["border-b px-6 py-4", isDark ? "border-white/10" : "border-slate-200"].join(" ")}>
-            <h3 className={["text-base font-black", isDark ? "text-white" : "text-slate-950"].join(" ")}>
+        <section className={["overflow-hidden rounded-[10px] border", isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-white"].join(" ")}>
+          <div className={["border-b px-6 py-4", isDark ? "border-white/[0.08]" : "border-black/[0.08]"].join(" ")}>
+            <h3 className={["text-sm font-semibold", isDark ? "text-white" : "text-zinc-900"].join(" ")}>
               {t("上传结果", "Upload Results")}
             </h3>
-            <p className={["mt-1 text-sm", isDark ? "text-slate-400" : "text-slate-500"].join(" ")}>
+            <p className={["mt-1 text-[13px]", isDark ? "text-zinc-500" : "text-zinc-500"].join(" ")}>
               {t(`成功 ${successCount} 张，失败 ${results.length - successCount} 张`, `${successCount} succeeded, ${results.length - successCount} failed`)}
             </p>
           </div>
-          <div className={["divide-y", isDark ? "divide-white/10" : "divide-slate-200"].join(" ")}>
+          <div className={["divide-y", isDark ? "divide-white/[0.08]" : "divide-black/[0.08]"].join(" ")}>
             {results.map((result) => (
               <div
                 key={`${result.filename}-${result.asset_id ?? result.error}`}
                 className="grid gap-3 px-6 py-4 md:grid-cols-[1fr_120px_160px]"
               >
                 <div className="min-w-0">
-                  <p className={["truncate text-sm font-bold", isDark ? "text-slate-100" : "text-slate-950"].join(" ")}>
+                  <p className={["truncate text-[13px] font-medium", isDark ? "text-zinc-200" : "text-zinc-900"].join(" ")}>
                     {result.filename}
                   </p>
                   {result.success && result.width && result.height ? (
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 font-mono text-xs text-zinc-500">
                       {result.width} x {result.height} / {result.format} / {formatFileSize(result.file_size)}
                     </p>
                   ) : (
-                    <p className="mt-1 text-xs text-red-600">{result.error}</p>
+                    <p className="mt-1 text-xs text-red-500">{result.error}</p>
                   )}
                 </div>
                 <div>
                   <span
                     className={[
-                      "inline-flex rounded-full px-3 py-1 text-xs font-black",
+                      "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium",
                       result.success
-                        ? "bg-emerald-500/10 text-emerald-600"
-                        : "bg-red-500/10 text-red-600",
+                        ? "bg-emerald-500/10 text-emerald-500"
+                        : "bg-red-500/10 text-red-500",
                     ].join(" ")}
                   >
                     {result.success ? t("上传成功", "Uploaded") : t("上传失败", "Failed")}
@@ -313,12 +324,13 @@ export function UploadForm({
                     href={result.original_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-sm font-bold text-emerald-600 hover:text-emerald-500"
+                    className="text-[13px] font-medium transition-opacity hover:opacity-80"
+                    style={{ color: colors.primary }}
                   >
                     {t("查看原图", "View Original")}
                   </a>
                 ) : (
-                  <span className="text-sm text-slate-400">{t("无文件地址", "No file URL")}</span>
+                  <span className="text-[13px] text-zinc-500">{t("无文件地址", "No file URL")}</span>
                 )}
               </div>
             ))}
