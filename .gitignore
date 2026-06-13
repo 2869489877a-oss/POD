@@ -22,6 +22,8 @@ __pycache__/
 # local test artifacts
 test_*.png
 pod-codespaces-submit.zip
+.pod-migration/
+pod-migration-export/
 
 # misc
 .DS_Store
