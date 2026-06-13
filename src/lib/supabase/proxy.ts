@@ -12,12 +12,24 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
 }
 
+// The public project URL is not a secret. Hard-code it so a mis-typed env var
+// can never point the app at the wrong project.
+const POD_SUPABASE_URL = "https://qqmftpunsuogmqgonpko.supabase.co";
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
+  const envUrl =
+    process.env.NEXT_PUBLIC_POD_SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseUrl = envUrl?.startsWith("https://") ? envUrl : POD_SUPABASE_URL;
+  const supabaseAnonKey =
+    process.env.NEXT_PUBLIC_POD_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {

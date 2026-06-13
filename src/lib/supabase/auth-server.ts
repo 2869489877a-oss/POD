@@ -7,12 +7,21 @@ import { cookies } from "next/headers";
  * Cookie-based Supabase client for Server Components / Route Handlers.
  * Respects RLS with the signed-in user's session.
  */
-export async function createSupabaseAuthServerClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// The public project URL is not a secret. Hard-code it so a mis-typed env var
+// can never point the app at the wrong project.
+const POD_SUPABASE_URL = "https://qqmftpunsuogmqgonpko.supabase.co";
 
-  if (!url || !key) {
-    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
+export async function createSupabaseAuthServerClient() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_POD_SUPABASE_URL ??
+    process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = envUrl?.startsWith("https://") ? envUrl : POD_SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_POD_SUPABASE_ANON_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!key) {
+    throw new Error("Missing NEXT_PUBLIC_POD_SUPABASE_ANON_KEY");
   }
 
   const cookieStore = await cookies();
