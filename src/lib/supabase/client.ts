@@ -2,20 +2,22 @@
 
 import { createClient } from "@supabase/supabase-js";
 
+// The public project URL is not a secret. Hard-code it so a mis-typed env var
+// can never point the app at the wrong project.
+const POD_SUPABASE_URL = "https://qqmftpunsuogmqgonpko.supabase.co";
+
 export function createSupabaseBrowserClient() {
-  // Prefer the manually-managed POD_* vars (data project) and fall back to the
-  // v0-managed vars only if the POD_* ones are not set.
-  const url =
+  // Only accept an env value that looks like a real https URL.
+  const envUrl =
     process.env.NEXT_PUBLIC_POD_SUPABASE_URL ??
     process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const url = envUrl?.startsWith("https://") ? envUrl : POD_SUPABASE_URL;
   const key =
     process.env.NEXT_PUBLIC_POD_SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!url || !key) {
-    throw new Error(
-      "Missing NEXT_PUBLIC_POD_SUPABASE_URL or NEXT_PUBLIC_POD_SUPABASE_ANON_KEY",
-    );
+  if (!key) {
+    throw new Error("Missing NEXT_PUBLIC_POD_SUPABASE_ANON_KEY");
   }
 
   return createClient(url, key);
