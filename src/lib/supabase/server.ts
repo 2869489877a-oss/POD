@@ -21,6 +21,7 @@ export function createSupabaseServiceRoleClient() {
   );
   const key =
     process.env.POD_SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.service_role ??
     process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!key) {
