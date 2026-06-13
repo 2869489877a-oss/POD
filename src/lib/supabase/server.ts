@@ -20,6 +20,7 @@ export function createSupabaseServiceRoleClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL,
   );
   const key =
+    process.env.POD_SECRET_KEY ??
     process.env.POD_SUPABASE_SERVICE_ROLE_KEY ??
     process.env.service_role ??
     process.env.SUPABASE_SERVICE_ROLE_KEY;
