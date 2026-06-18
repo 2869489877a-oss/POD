@@ -36,6 +36,7 @@ type ReferenceRow = {
 };
 
 type CreateReferenceRequest = {
+  action?: unknown;
   category?: unknown;
   description?: unknown;
   image_url?: unknown;
@@ -82,6 +83,8 @@ const referenceColumns = [
 ].join(",");
 
 const builtInSampleLimit = 120;
+const builtInSeedNotePrefix = "auto:built-in:";
+const seedInsertChunkSize = 50;
 
 function stringValue(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -104,6 +107,16 @@ function parseTerms(value: unknown) {
   }
 
   return [];
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 function isMissingTableError(error: { code?: string; message?: string }) {
@@ -210,6 +223,102 @@ function titleFromUrl(url: string) {
   }
 }
 
+function builtInSeedNote(item: InfringementReferenceItem) {
+  const marker = `${builtInSeedNotePrefix}${item.id}`;
+  return item.notes ? `${marker}\n${item.notes}` : marker;
+}
+
+function extractBuiltInSeedId(notes: string | null | undefined) {
+  if (!notes?.startsWith(builtInSeedNotePrefix)) return null;
+  return notes.split(/\r?\n/, 1)[0]?.slice(builtInSeedNotePrefix.length) || null;
+}
+
+async function fetchSeededBuiltInIds(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
+  const ids = new Set<string>();
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("infringement_reference_items")
+      .select("notes")
+      .like("notes", `${builtInSeedNotePrefix}%`)
+      .range(from, from + 999);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of (data ?? []) as Array<{ notes: string | null }>) {
+      const id = extractBuiltInSeedId(row.notes);
+      if (id) ids.add(id);
+    }
+
+    if ((data ?? []).length < 1000) break;
+  }
+
+  return ids;
+}
+
+function toBuiltInSeedRow(item: InfringementReferenceItem) {
+  const terms = item.terms.length > 0 ? item.terms : [item.title];
+
+  return {
+    category: item.category,
+    description: item.description,
+    image_hash: item.imageHash,
+    image_url: item.imageUrl,
+    is_active: true,
+    library_type: item.libraryType,
+    notes: builtInSeedNote(item),
+    risk_level: item.riskLevel,
+    severity: item.severity,
+    source_label: item.sourceLabel ?? "内置高风险库",
+    source_url: item.sourceUrl,
+    terms,
+    title: item.title,
+  };
+}
+
+async function handleSeedBuiltInReferences() {
+  const supabase = createSupabaseServiceRoleClient();
+
+  try {
+    const seededIds = await fetchSeededBuiltInIds(supabase);
+    const rows = builtInHighRiskReferenceItems
+      .filter((item) => !seededIds.has(item.id))
+      .map(toBuiltInSeedRow);
+    let added = 0;
+
+    for (const chunk of chunkArray(rows, seedInsertChunkSize)) {
+      const { error } = await supabase.from("infringement_reference_items").insert(chunk);
+
+      if (error) {
+        if (isMissingTableError(error)) {
+          return NextResponse.json(
+            { error: "参考库表还没有创建，请先执行最新 Supabase migration。", ok: false },
+            { status: 500 },
+          );
+        }
+
+        throw new Error(error.message);
+      }
+
+      added += chunk.length;
+    }
+
+    return NextResponse.json({
+      added,
+      ok: true,
+      skipped: builtInHighRiskReferenceItems.length - rows.length,
+      total: builtInHighRiskReferenceItems.length,
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "导入内置参考库失败", ok: false },
+      { status: 500 },
+    );
+  }
+}
+
 // 批量导入图片 URL:逐张算感知 hash 入库(整图指纹比对)。客户端分批调用、单次最多 50。
 async function handleBulkReferenceUrls(body: CreateReferenceRequest): Promise<NextResponse> {
   const libraryType = (stringValue(body.library_type) as InfringementReferenceLibraryType) || "high_risk";
@@ -308,6 +417,10 @@ export async function POST(request: Request) {
     body = await request.json() as CreateReferenceRequest;
   } catch {
     return NextResponse.json({ error: "无法读取参考库参数" }, { status: 400 });
+  }
+
+  if (stringValue(body.action) === "seed_built_in") {
+    return handleSeedBuiltInReferences();
   }
 
   // 批量模式:传了 image_urls 数组就逐张入库

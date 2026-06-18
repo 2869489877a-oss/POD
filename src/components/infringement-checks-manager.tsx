@@ -81,6 +81,14 @@ type CreateReferenceResponse = {
   item?: ReferenceLibraryItemRow;
 };
 
+type SeedBuiltInResponse = {
+  added?: number;
+  error?: string;
+  ok?: boolean;
+  skipped?: number;
+  total?: number;
+};
+
 type InfringementChecksManagerProps = {
   initialError?: string | null;
   initialItems: InfringementListItem[];
@@ -280,6 +288,8 @@ export function InfringementChecksManager({
   const [bulkUrls, setBulkUrls] = useState("");
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [bulkImportMessage, setBulkImportMessage] = useState<string | null>(null);
+  const [isSeedingBuiltIn, setIsSeedingBuiltIn] = useState(false);
+  const [seedBuiltInMessage, setSeedBuiltInMessage] = useState<string | null>(null);
 
   const visibleItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -666,6 +676,42 @@ export function InfringementChecksManager({
     }
   }
 
+  async function seedBuiltInReferenceLibrary() {
+    setIsSeedingBuiltIn(true);
+    setReferenceLibraryError(null);
+    setSeedBuiltInMessage(t("正在导入内置高风险库...", "Importing built-in high-risk library..."));
+
+    try {
+      const response = await fetch("/api/infringement-reference-library", {
+        body: JSON.stringify({ action: "seed_built_in" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = (await response.json()) as SeedBuiltInResponse;
+
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error ?? t("导入内置参考库失败", "Failed to import built-in reference library"));
+      }
+
+      setSeedBuiltInMessage(
+        t(
+          `内置库导入完成:新增 ${data.added ?? 0}、已存在 ${data.skipped ?? 0}、总计 ${data.total ?? 0}`,
+          `Built-in library imported: ${data.added ?? 0} added, ${data.skipped ?? 0} already existed, ${data.total ?? 0} total`,
+        ),
+      );
+      await loadReferenceLibrary();
+    } catch (requestError) {
+      setSeedBuiltInMessage(null);
+      setReferenceLibraryError(
+        requestError instanceof Error
+          ? requestError.message
+          : t("导入内置参考库失败", "Failed to import built-in reference library"),
+      );
+    } finally {
+      setIsSeedingBuiltIn(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <section className="grid gap-4 md:grid-cols-5">
@@ -944,13 +990,23 @@ export function InfringementChecksManager({
               )}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadReferenceLibrary()}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
-          >
-            {t("刷新参考库", "Refresh Library")}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void seedBuiltInReferenceLibrary()}
+              disabled={isSeedingBuiltIn}
+              className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            >
+              {isSeedingBuiltIn ? t("导入中...", "Importing...") : t("一键导入内置库", "Import Built-in Library")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadReferenceLibrary()}
+              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+            >
+              {t("刷新参考库", "Refresh Library")}
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-4">
@@ -994,6 +1050,12 @@ export function InfringementChecksManager({
         {referenceLibraryError ? (
           <div className="mt-4 whitespace-pre-line rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {referenceLibraryError}
+          </div>
+        ) : null}
+
+        {seedBuiltInMessage ? (
+          <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+            {seedBuiltInMessage}
           </div>
         ) : null}
 
