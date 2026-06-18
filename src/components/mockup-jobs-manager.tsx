@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 
 import { createMockupJob } from "@/lib/actions/mockup-jobs";
 import { Pagination } from "@/components/pagination";
@@ -284,10 +285,17 @@ export function MockupJobsManager({
                   <button
                     type="button"
                     onClick={() => toggleAsset(asset.id)}
-                    className="block aspect-square w-full bg-zinc-100 bg-cover bg-center"
-                    style={{ backgroundImage: `url("${previewUrl}")` }}
+                    className="relative block aspect-square w-full overflow-hidden bg-zinc-100"
                     aria-label={t(`选择 ${asset.filename}`, `Select ${asset.filename}`)}
-                  />
+                  >
+                    <Image
+                      src={previewUrl}
+                      alt={asset.filename}
+                      fill
+                      sizes="(min-width: 1280px) 20vw, (min-width: 640px) 33vw, 50vw"
+                      className="object-cover"
+                    />
+                  </button>
                   <div className="space-y-2 p-3">
                     <label className="flex items-center gap-2 text-sm font-medium text-zinc-900">
                       <input
@@ -404,10 +412,15 @@ export function MockupJobsManager({
                           rel="noreferrer"
                           className="block overflow-hidden rounded-md border border-zinc-200 bg-white"
                         >
-                          <span
-                            className="block aspect-square bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                            style={{ backgroundImage: `url("${url}")` }}
-                          />
+                          <span className="relative block aspect-square overflow-hidden bg-zinc-100">
+                            <Image
+                              src={url}
+                              alt={t(`商品图 ${index + 1}`, `Product Image ${index + 1}`)}
+                              fill
+                              sizes="(min-width: 1280px) 20vw, 50vw"
+                              className="object-contain"
+                            />
+                          </span>
                           <span className="block border-t border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-800">
                             {t(`商品图 ${index + 1}`, `Product Image ${index + 1}`)}
                           </span>

@@ -63,6 +63,7 @@ export function UploadForm({
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
+  const [doneCount, setDoneCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const { isDark, t, accent } = useSettings();
   const colors = ACCENT_COLORS[accent] ?? ACCENT_COLORS.cyan;
@@ -95,25 +96,48 @@ export function UploadForm({
     setIsUploading(true);
     setMessage(null);
     setResults([]);
+    setDoneCount(0);
 
-    const formData = new FormData();
-    formData.append("asset_source", assetSource);
-    files.forEach((file) => formData.append("files", file));
+    // 限制并发、逐张上传:避免一次性把几十张全压给服务器导致卡死/超时,同时能显示进度。
+    const CONCURRENCY = 3;
+    const queue = [...files];
+    const collected: UploadResult[] = [];
+
+    async function uploadWorker() {
+      for (;;) {
+        const file = queue.shift();
+        if (!file) return;
+
+        try {
+          const formData = new FormData();
+          formData.append("asset_source", assetSource);
+          formData.append("files", file);
+          const response = await fetch("/api/upload", { body: formData, method: "POST" });
+          const data = (await response.json()) as UploadResponse;
+          collected.push(
+            data.results?.[0] ?? {
+              error: data.error ?? t("上传失败", "Upload failed"),
+              file_size: file.size,
+              filename: file.name,
+              success: false,
+            },
+          );
+        } catch (error) {
+          collected.push({
+            error: error instanceof Error ? error.message : t("上传失败", "Upload failed"),
+            file_size: file.size,
+            filename: file.name,
+            success: false,
+          });
+        } finally {
+          setDoneCount((count) => count + 1);
+          setResults([...collected]);
+        }
+      }
+    }
 
     try {
-      const response = await fetch("/api/upload", {
-        body: formData,
-        method: "POST",
-      });
-      const data = (await response.json()) as UploadResponse;
-
-      setResults(data.results ?? []);
-
-      if (!response.ok && data.error) {
-        setMessage(data.error);
-      }
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("上传失败", "Upload failed"));
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, files.length) }, () => uploadWorker()));
     } finally {
       setIsUploading(false);
     }
@@ -260,6 +284,21 @@ export function UploadForm({
           {message ? (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {message}
+            </div>
+          ) : null}
+
+          {isUploading && files.length > 0 ? (
+            <div className="mt-4">
+              <div className={["flex items-center justify-between text-[13px]", isDark ? "text-zinc-300" : "text-zinc-600"].join(" ")}>
+                <span>{t(`上传中 ${doneCount}/${files.length}`, `Uploading ${doneCount}/${files.length}`)}</span>
+                <span>{Math.round((doneCount / files.length) * 100)}%</span>
+              </div>
+              <div className={["mt-2 h-2 w-full overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-black/[0.08]"].join(" ")}>
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{ width: `${(doneCount / files.length) * 100}%`, backgroundColor: colors.primary }}
+                />
+              </div>
             </div>
           ) : null}
 

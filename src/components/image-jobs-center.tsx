@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 
 import { fetchImageJobs, fetchImageJobDetail, retryImageJob } from "@/lib/actions/image-jobs";
 import { Pagination } from "@/components/pagination";
@@ -433,10 +434,11 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                     href={item.input_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="block aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-cover bg-center"
-                    style={{ backgroundImage: `url("${item.input_url}")` }}
+                    className="relative block aspect-square overflow-hidden rounded-md border border-zinc-200 bg-zinc-100"
                     aria-label={t("查看原图", "View input image")}
-                  />
+                  >
+                    <Image src={item.input_url} alt={t("原图", "Input")} fill sizes="160px" className="object-cover" />
+                  </a>
                 </div>
                 <div>
                   <p className="mb-2 text-xs font-medium text-zinc-500">{t("处理结果图", "Output")}</p>
@@ -445,10 +447,11 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                       href={item.output_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="block aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-cover bg-center"
-                      style={{ backgroundImage: `url("${item.output_url}")` }}
+                      className="relative block aspect-square overflow-hidden rounded-md border border-zinc-200 bg-zinc-100"
                       aria-label={t("查看处理结果图", "View output image")}
-                    />
+                    >
+                      <Image src={item.output_url} alt={t("处理结果图", "Output")} fill sizes="160px" className="object-cover" />
+                    </a>
                   ) : (
                     <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
                       {t("暂无结果", "No result")}

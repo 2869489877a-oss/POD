@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, type FormEvent, useMemo, useState } from "react";
+import Image from "next/image";
 
 import { deleteTemplateAction, fetchTemplatesAction, saveTemplateAction } from "@/lib/actions/mockup-templates";
 import {
@@ -692,10 +693,15 @@ export function MockupTemplatesManager({
               <div className="grid gap-4 sm:grid-cols-2">
                 {selectedScenes.map((scene) => (
                   <div key={`${scene.name}-${scene.background_url}`} className="rounded-md border border-zinc-200">
-                    <div
-                      className="aspect-square rounded-t-md bg-zinc-100 bg-cover bg-center"
-                      style={{ backgroundImage: `url("${scene.background_url}")` }}
-                    />
+                    <div className="relative aspect-square overflow-hidden rounded-t-md bg-zinc-100">
+                      <Image
+                        src={scene.background_url}
+                        alt={scene.name}
+                        fill
+                        sizes="(min-width: 640px) 50vw, 100vw"
+                        className="object-cover"
+                      />
+                    </div>
                     <div className="space-y-2 p-3 text-sm">
                       <p className="font-semibold text-zinc-950">{scene.name}</p>
                       <p className="text-zinc-500">
@@ -747,9 +753,16 @@ export function MockupTemplatesManager({
                       href={preview.url}
                       target="_blank"
                       rel="noreferrer"
-                      className="block aspect-square rounded-t-md bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                      style={{ backgroundImage: `url("${preview.url}")` }}
-                    />
+                      className="relative block aspect-square overflow-hidden rounded-t-md bg-zinc-100"
+                    >
+                      <Image
+                        src={preview.url}
+                        alt={preview.name}
+                        fill
+                        sizes="(min-width: 640px) 50vw, 100vw"
+                        className="object-contain"
+                      />
+                    </a>
                   ) : (
                     <div className="flex aspect-square items-center justify-center rounded-t-md bg-red-50 p-4 text-center text-sm text-red-700">
                       {preview.error}
