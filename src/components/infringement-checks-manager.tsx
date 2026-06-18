@@ -277,6 +277,9 @@ export function InfringementChecksManager({
   const [newReferenceTerms, setNewReferenceTerms] = useState("");
   const [newReferenceImageUrl, setNewReferenceImageUrl] = useState("");
   const [isReferenceSaving, setIsReferenceSaving] = useState(false);
+  const [bulkUrls, setBulkUrls] = useState("");
+  const [isBulkImporting, setIsBulkImporting] = useState(false);
+  const [bulkImportMessage, setBulkImportMessage] = useState<string | null>(null);
 
   const visibleItems = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
@@ -597,6 +600,69 @@ export function InfringementChecksManager({
       );
     } finally {
       setIsReferenceSaving(false);
+    }
+  }
+
+  async function bulkImportReferenceUrls() {
+    const urls = Array.from(
+      new Set(
+        bulkUrls
+          .split(/\s+/)
+          .map((item) => item.trim())
+          .filter((item) => /^https?:\/\//i.test(item)),
+      ),
+    );
+
+    if (urls.length === 0) {
+      setReferenceLibraryError(t("请粘贴至少一个 http(s) 图片 URL（一行一个）", "Paste at least one http(s) image URL (one per line)"));
+      return;
+    }
+
+    setIsBulkImporting(true);
+    setReferenceLibraryError(null);
+    setBulkImportMessage(t(`正在导入 0/${urls.length}...`, `Importing 0/${urls.length}...`));
+
+    const CHUNK = 10;
+    let added = 0;
+    let skipped = 0;
+    let failed = 0;
+    let done = 0;
+
+    try {
+      for (let index = 0; index < urls.length; index += CHUNK) {
+        const chunk = urls.slice(index, index + CHUNK);
+        const response = await fetch("/api/infringement-reference-library", {
+          body: JSON.stringify({ image_urls: chunk, library_type: newReferenceType }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = (await response.json()) as { added?: number; error?: string; failed?: number; skipped?: number };
+
+        if (!response.ok) {
+          throw new Error(data.error ?? t("批量导入失败", "Bulk import failed"));
+        }
+
+        added += data.added ?? 0;
+        skipped += data.skipped ?? 0;
+        failed += data.failed ?? 0;
+        done += chunk.length;
+        setBulkImportMessage(t(`正在导入 ${done}/${urls.length}...`, `Importing ${done}/${urls.length}...`));
+      }
+
+      setBulkImportMessage(
+        t(
+          `导入完成:新增 ${added}、跳过重复 ${skipped}、失败 ${failed}`,
+          `Done: ${added} added, ${skipped} skipped, ${failed} failed`,
+        ),
+      );
+      setBulkUrls("");
+      await loadReferenceLibrary();
+    } catch (requestError) {
+      setReferenceLibraryError(
+        requestError instanceof Error ? requestError.message : t("批量导入失败", "Bulk import failed"),
+      );
+    } finally {
+      setIsBulkImporting(false);
     }
   }
 
@@ -1055,6 +1121,35 @@ export function InfringementChecksManager({
             >
               {isReferenceSaving ? t("保存中...", "Saving...") : t("保存参考项", "Save Reference")}
             </button>
+
+            <div className="mt-5 border-t border-zinc-200 pt-4">
+              <h4 className="text-sm font-semibold text-zinc-950">{t("批量导入图片 URL", "Bulk Import Image URLs")}</h4>
+              <p className="mt-1 text-xs leading-5 text-zinc-500">
+                {t(
+                  "一行一个图片 URL,逐张算指纹入库(用上面选的库类型)。适合一次缓存一批已知图;只能命中和这些图几乎一样的重复 / 近似上传。",
+                  "One image URL per line. Each is hashed and added (using the library type above). Good for caching a batch of known images; only matches near-identical re-uploads of those images.",
+                )}
+              </p>
+              <textarea
+                value={bulkUrls}
+                onChange={(event) => setBulkUrls(event.target.value)}
+                rows={5}
+                disabled={isBulkImporting}
+                placeholder={"https://...\nhttps://..."}
+                className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+              />
+              <button
+                type="button"
+                onClick={() => void bulkImportReferenceUrls()}
+                disabled={isBulkImporting}
+                className="mt-3 w-full rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+              >
+                {isBulkImporting ? t("导入中...", "Importing...") : t("批量导入 URL", "Bulk Import URLs")}
+              </button>
+              {bulkImportMessage ? (
+                <p className="mt-2 text-xs text-emerald-700">{bulkImportMessage}</p>
+              ) : null}
+            </div>
           </div>
         </div>
 

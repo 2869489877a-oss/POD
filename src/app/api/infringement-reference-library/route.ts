@@ -16,6 +16,7 @@ import type {
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type ReferenceRow = {
   category: string | null;
@@ -38,6 +39,7 @@ type CreateReferenceRequest = {
   category?: unknown;
   description?: unknown;
   image_url?: unknown;
+  image_urls?: unknown;
   library_type?: unknown;
   notes?: unknown;
   risk_level?: unknown;
@@ -198,6 +200,107 @@ export async function GET(request: Request) {
   }
 }
 
+function titleFromUrl(url: string) {
+  try {
+    const path = new URL(url).pathname;
+    const name = decodeURIComponent(path.split("/").filter(Boolean).at(-1) ?? "");
+    return name.slice(0, 80) || "批量导入图片";
+  } catch {
+    return "批量导入图片";
+  }
+}
+
+// 批量导入图片 URL:逐张算感知 hash 入库(整图指纹比对)。客户端分批调用、单次最多 50。
+async function handleBulkReferenceUrls(body: CreateReferenceRequest): Promise<NextResponse> {
+  const libraryType = (stringValue(body.library_type) as InfringementReferenceLibraryType) || "high_risk";
+  if (!validLibraryTypes.has(libraryType)) {
+    return NextResponse.json({ error: "参考库类型无效" }, { status: 400 });
+  }
+
+  const category: InfringementRuleCategory = libraryType === "allowlist" ? "marketplace" : "visual_review";
+  const riskLevel: InfringementRiskLevel = libraryType === "allowlist" ? "unknown" : "high";
+  const severity: InfringementSeverity = libraryType === "allowlist" ? "low" : "high";
+
+  const urls = Array.from(
+    new Set(
+      (body.image_urls as unknown[])
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => /^https?:\/\//i.test(item)),
+    ),
+  ).slice(0, 50);
+
+  if (urls.length === 0) {
+    return NextResponse.json({ error: "没有有效的图片 URL" }, { status: 400 });
+  }
+
+  const supabase = createSupabaseServiceRoleClient();
+  const results: Array<{ error?: string; status: "added" | "skipped" | "failed"; url: string }> = [];
+  const queue = [...urls];
+
+  async function worker() {
+    for (;;) {
+      const url = queue.shift();
+      if (!url) return;
+
+      try {
+        const imageHash = await computeAverageHashFromUrl(url);
+
+        const { data: existing } = await supabase
+          .from("infringement_reference_items")
+          .select("id")
+          .eq("image_hash", imageHash)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          results.push({ status: "skipped", url });
+          continue;
+        }
+
+        const { error } = await supabase.from("infringement_reference_items").insert({
+          category,
+          description: "批量导入的参考图片(整图指纹比对)。",
+          image_hash: imageHash,
+          image_url: url,
+          is_active: true,
+          library_type: libraryType,
+          notes: "auto:bulk-url-import",
+          risk_level: riskLevel,
+          severity,
+          source_label: "批量导入",
+          terms: [],
+          title: titleFromUrl(url),
+        });
+
+        if (error) {
+          results.push({
+            error: isMissingTableError(error) ? "参考库表未创建,请先执行最新 Supabase migration" : error.message,
+            status: "failed",
+            url,
+          });
+        } else {
+          results.push({ status: "added", url });
+        }
+      } catch (requestError) {
+        results.push({
+          error: requestError instanceof Error ? requestError.message : "处理失败",
+          status: "failed",
+          url,
+        });
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(3, urls.length) }, () => worker()));
+
+  return NextResponse.json({
+    added: results.filter((item) => item.status === "added").length,
+    failed: results.filter((item) => item.status === "failed").length,
+    ok: true,
+    results,
+    skipped: results.filter((item) => item.status === "skipped").length,
+  });
+}
+
 export async function POST(request: Request) {
   let body: CreateReferenceRequest;
 
@@ -205,6 +308,11 @@ export async function POST(request: Request) {
     body = await request.json() as CreateReferenceRequest;
   } catch {
     return NextResponse.json({ error: "无法读取参考库参数" }, { status: 400 });
+  }
+
+  // 批量模式:传了 image_urls 数组就逐张入库
+  if (Array.isArray(body.image_urls) && body.image_urls.length > 0) {
+    return handleBulkReferenceUrls(body);
   }
 
   const libraryType = stringValue(body.library_type) as InfringementReferenceLibraryType;
