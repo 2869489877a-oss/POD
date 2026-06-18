@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useMemo, useState } from "react";
+import Image from "next/image";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
 import { Pagination } from "@/components/pagination";
@@ -742,14 +743,15 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <button
                     type="button"
                     onClick={() => openAssetDetail(asset.id)}
-                    className="h-full w-full"
+                    className="relative h-full w-full"
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
                   >
-                    <img
+                    <Image
                       src={previewUrl}
                       alt={asset.filename}
-                      className="h-full w-full object-cover"
-                      loading="lazy"
+                      fill
+                      sizes="(min-width: 1536px) 25vw, (min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+                      className="object-cover"
                     />
                   </button>
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
