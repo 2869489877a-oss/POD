@@ -5,7 +5,7 @@ import type {
   InfringementSeverity,
 } from "@/lib/infringement/types";
 
-export const RULE_ENGINE_VERSION = "2026-06-18-apparel-rule-v4";
+export const RULE_ENGINE_VERSION = "2026-06-18-apparel-rule-v5";
 
 const apparelContexts = [
   "t-shirt",

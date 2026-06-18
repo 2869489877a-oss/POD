@@ -180,8 +180,9 @@ function shouldRequireVisualReview(input: InfringementDetectionInput, matches: I
   if (matches.length > 0) return false;
   if (SAFE_COPYRIGHT_STATUSES.has(input.asset.copyright_status ?? "")) return false;
   if (hasMeaningfulProductText(input.productTexts)) return false;
-  if (hasMeaningfulText(input.ocrText)) return false;
 
+  // OCR can catch slogans, but ordinary image text does not clear visual IP risk.
+  // A design can contain protected characters/logos even when OCR reads harmless words.
   return isLowInformationFilename(input.asset.filename);
 }
 
@@ -252,7 +253,7 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       rule_engine_version: RULE_ENGINE_VERSION,
       rule_term_count: infringementRuleStats.totalTerms,
       visual_review_reason: visualReviewRequired
-        ? "No textual context or OCR/vision signal is available for this image asset."
+        ? "No reliable rights context is available for this image asset. OCR text alone does not clear protected character or logo risk."
         : undefined,
       visual_review_required: visualReviewRequired,
     },
