@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 import { fetchAssetsForProcessing } from "@/lib/actions/common";
 import { Pagination } from "@/components/pagination";
@@ -342,10 +343,15 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                         isSelected ? "border-zinc-950 bg-zinc-50" : "border-zinc-200 hover:bg-zinc-50",
                       ].join(" ")}
                     >
-                      <span
-                        className="block aspect-square rounded-md bg-zinc-100 bg-cover bg-center"
-                        style={{ backgroundImage: `url("${getPreviewUrl(asset)}")` }}
-                      />
+                      <span className="relative block aspect-square overflow-hidden rounded-md bg-zinc-100">
+                        <Image
+                          src={getPreviewUrl(asset)}
+                          alt={asset.filename}
+                          fill
+                          sizes="92px"
+                          className="object-cover"
+                        />
+                      </span>
                       <span className="min-w-0">
                         <span className="flex items-start gap-2">
                           <input

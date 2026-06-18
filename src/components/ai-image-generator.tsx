@@ -2,8 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element -- Dynamic AI previews can use arbitrary asset URLs. */
 
-import { type FormEvent, useEffect, useState } from "react";
+import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
 type ProviderOption = {
   id: string;
@@ -37,6 +38,8 @@ export function AiImageGenerator() {
   const [prompt, setPrompt] = useState("");
   const [sizeIndex, setSizeIndex] = useState(0);
   const [style, setStyle] = useState("");
+  const [referenceFile, setReferenceFile] = useState<File | null>(null);
+  const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>("idle");
   const [failedStage, setFailedStage] = useState<GenerationStage | null>(null);
   const [result, setResult] = useState<GenerateResult | null>(null);
@@ -114,6 +117,26 @@ export function AiImageGenerator() {
     return () => { cancelled = true; };
   }, []);
 
+  function handleReferenceChange(e: ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0] ?? null;
+    if (referencePreview) URL.revokeObjectURL(referencePreview);
+    setReferenceFile(selected);
+    setReferencePreview(selected ? URL.createObjectURL(selected) : null);
+    e.currentTarget.value = "";
+  }
+
+  function clearReference() {
+    if (referencePreview) URL.revokeObjectURL(referencePreview);
+    setReferenceFile(null);
+    setReferencePreview(null);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (referencePreview) URL.revokeObjectURL(referencePreview);
+    };
+  }, [referencePreview]);
+
   async function handleGenerate(e: FormEvent) {
     e.preventDefault();
     if (!prompt.trim()) return;
@@ -124,6 +147,17 @@ export function AiImageGenerator() {
     const size = SIZE_PRESETS[sizeIndex];
     let activeStage: GenerationStage = "submitting";
     try {
+      let referenceUrl: string | undefined;
+      if (referenceFile) {
+        const referenceForm = new FormData();
+        referenceForm.append("files", referenceFile);
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: referenceForm });
+        const uploadData = (await uploadRes.json()) as { results?: UploadApiResult[]; error?: string };
+        referenceUrl = getUploadedImageUrl(uploadData.results?.[0]) ?? undefined;
+        if (!uploadRes.ok || !referenceUrl) {
+          throw new Error(uploadData.results?.[0]?.error || uploadData.error || t("参考图上传失败", "Reference upload failed"));
+        }
+      }
       activeStage = "generating";
       setGenerationStatus("generating");
       const res = await fetch("/api/ai/generate-image", {
@@ -135,6 +169,7 @@ export function AiImageGenerator() {
           height: size.height,
           style: style.trim() || undefined,
           provider_id: selectedProvider || undefined,
+          reference_url: referenceUrl,
           save_to_assets: true,
         }),
       });
@@ -220,6 +255,27 @@ export function AiImageGenerator() {
           <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("提示词 (Prompt)", "Prompt")}</label>
           <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={4} placeholder={t("描述你想生成的图片...", "Describe the image you want to generate...")} className={inputClass} required />
         </div>
+        <div>
+          <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("参考图 (可选)", "Reference Image (optional)")}</label>
+          {referencePreview ? (
+            <div className="flex items-center gap-3">
+              <img src={referencePreview} alt="reference" className="h-16 w-16 rounded-lg border border-slate-200 object-cover" />
+              <button
+                type="button"
+                onClick={clearReference}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${isDark ? "border-white/10 text-slate-300 hover:bg-white/5" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
+              >
+                {t("移除参考图", "Remove")}
+              </button>
+            </div>
+          ) : (
+            <input type="file" accept="image/*" onChange={handleReferenceChange} className={inputClass} />
+          )}
+          <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-400"}`}>
+            {t("上传产品/参考图，让结果更贴近实物（纯文字生成容易跑偏）。", "Upload a product or reference image so results stay closer to the real item.")}
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className={`block text-sm font-medium mb-1.5 ${isDark ? "text-slate-300" : "text-slate-700"}`}>{t("尺寸", "Size")}</label>

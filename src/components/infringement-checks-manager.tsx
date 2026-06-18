@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 import {
   fetchInfringementDashboard,
@@ -1136,11 +1137,12 @@ export function InfringementChecksManager({
             >
               <div className="grid gap-0 md:grid-cols-[220px_1fr]">
                 <div className="relative min-h-[210px] bg-zinc-100">
-                  <div
-                    className="absolute inset-0 bg-contain bg-center bg-no-repeat"
-                    style={{ backgroundImage: `url("${previewUrl}")` }}
-                    role="img"
-                    aria-label={item.asset.filename}
+                  <Image
+                    src={previewUrl}
+                    alt={item.asset.filename}
+                    fill
+                    sizes="220px"
+                    className="object-contain"
                   />
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
                     <input
@@ -1273,12 +1275,15 @@ export function InfringementChecksManager({
 
             <div className="grid gap-6 p-6 lg:grid-cols-[1fr_1fr]">
               <div>
-                <div
-                  className="min-h-[360px] rounded-md bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                  style={{ backgroundImage: `url("${selectedItem.asset.original_url}")` }}
-                  role="img"
-                  aria-label={selectedItem.asset.filename}
-                />
+                <div className="relative min-h-[360px] overflow-hidden rounded-md bg-zinc-100">
+                  <Image
+                    src={selectedItem.asset.original_url}
+                    alt={selectedItem.asset.filename}
+                    fill
+                    sizes="(min-width: 1024px) 480px, 90vw"
+                    className="object-contain"
+                  />
+                </div>
                 <a
                   href={selectedItem.asset.original_url}
                   target="_blank"

@@ -14,14 +14,18 @@ import type {
   InfringementDetectionResult,
   InfringementReferenceItem,
 } from "@/lib/infringement/types";
+import { extractTextFromImageUrl } from "@/lib/infringement/ocr";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 type AssetRow = {
   copyright_status: string;
   filename: string;
   id: string;
+  ocr_checked_at: string | null;
+  ocr_text: string | null;
   original_url: string;
   source: string;
 };
@@ -143,6 +147,87 @@ async function computeAssetHashes(
   return new Map(pairs.filter((item): item is readonly [string, string] => Boolean(item[1])));
 }
 
+async function fetchAssetsWithOcr(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  assetIds: string[],
+): Promise<{ assets: AssetRow[]; ocrColumnsAvailable: boolean }> {
+  const withOcr = await supabase
+    .from("assets")
+    .select("id,filename,original_url,source,copyright_status,ocr_text,ocr_checked_at")
+    .in("id", assetIds);
+
+  if (!withOcr.error) {
+    return { assets: (withOcr.data ?? []) as unknown as AssetRow[], ocrColumnsAvailable: true };
+  }
+
+  const message = (withOcr.error.message || "").toLowerCase();
+  const missingColumn =
+    withOcr.error.code === "42703" ||
+    message.includes("ocr_text") ||
+    message.includes("ocr_checked_at") ||
+    message.includes("schema cache");
+
+  if (!missingColumn) {
+    throw new Error(withOcr.error.message);
+  }
+
+  // OCR columns not migrated yet → run text-only detection without crashing.
+  const base = await supabase
+    .from("assets")
+    .select("id,filename,original_url,source,copyright_status")
+    .in("id", assetIds);
+
+  if (base.error) {
+    throw new Error(base.error.message);
+  }
+
+  const assets = ((base.data ?? []) as unknown as Array<Omit<AssetRow, "ocr_checked_at" | "ocr_text">>).map(
+    (asset) => ({ ...asset, ocr_checked_at: null, ocr_text: null }),
+  );
+
+  return { assets, ocrColumnsAvailable: false };
+}
+
+async function resolveOcrText(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  assets: AssetRow[],
+): Promise<Map<string, string>> {
+  const resolved = new Map<string, string>();
+  const pending: AssetRow[] = [];
+
+  for (const asset of assets) {
+    if (asset.ocr_checked_at) {
+      if (asset.ocr_text) resolved.set(asset.id, asset.ocr_text);
+    } else {
+      pending.push(asset);
+    }
+  }
+
+  const queue = [...pending];
+
+  async function worker() {
+    for (;;) {
+      const asset = queue.shift();
+      if (!asset) return;
+
+      const text = await extractTextFromImageUrl(asset.original_url);
+      if (text === null) continue; // tesseract unavailable / failed → retry on a later run
+
+      if (text) resolved.set(asset.id, text);
+      // Best-effort cache; ignore write errors so detection still completes.
+      await supabase
+        .from("assets")
+        .update({ ocr_checked_at: new Date().toISOString(), ocr_text: text || null })
+        .eq("id", asset.id);
+    }
+  }
+
+  const workerCount = Math.min(2, Math.max(1, queue.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  return resolved;
+}
+
 export async function GET() {
   const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
@@ -171,20 +256,17 @@ export async function POST(request: Request) {
     const assetIds = parseAssetIds(body.asset_ids);
     const supabase = createSupabaseServiceRoleClient();
     const databaseReferenceItems = await fetchReferenceItems(supabase);
-    const { data: assetData, error: assetError } = await supabase
-      .from("assets")
-      .select("id,filename,original_url,source,copyright_status")
-      .in("id", assetIds);
-
-    if (assetError) {
-      throw new Error(assetError.message);
-    }
-
-    const assets = (assetData ?? []) as unknown as AssetRow[];
+    const { assets, ocrColumnsAvailable } = await fetchAssetsWithOcr(supabase, assetIds);
 
     if (assets.length !== assetIds.length) {
       throw new Error("部分素材不存在，请刷新后重试");
     }
+
+    // OCR：读取图片里的文字喂给规则库；结果缓存到素材表，避免重复识别。
+    // 未安装 tesseract 或未跑迁移时自动跳过（回退纯文字检测，不报错）。
+    const ocrTextById = ocrColumnsAvailable
+      ? await resolveOcrText(supabase, assets)
+      : new Map<string, string>();
 
     const { data: productData, error: productError } = await supabase
       .from("product_drafts")
@@ -215,6 +297,7 @@ export async function POST(request: Request) {
           ...asset,
           image_hash: assetHashesById.get(asset.id) ?? null,
         },
+        ocrText: ocrTextById.get(asset.id) ?? null,
         productTexts: (productsByAssetId.get(asset.id) ?? []).map((product) => ({
           bullet_points: arrayOrEmpty(product.bullet_points),
           description: product.description,

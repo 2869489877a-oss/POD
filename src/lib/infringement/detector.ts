@@ -90,6 +90,7 @@ function getFields(input: InfringementDetectionInput) {
     { name: "filename", value: input.asset.filename },
     { name: "original_url", value: input.asset.original_url ?? "" },
     { name: "source", value: input.asset.source ?? "" },
+    { name: "image_text_ocr", value: input.ocrText ?? "" },
   ];
 
   for (const [index, product] of (input.productTexts ?? []).entries()) {
@@ -177,6 +178,7 @@ function shouldRequireVisualReview(input: InfringementDetectionInput, matches: I
   if (matches.length > 0) return false;
   if (SAFE_COPYRIGHT_STATUSES.has(input.asset.copyright_status ?? "")) return false;
   if (hasMeaningfulProductText(input.productTexts)) return false;
+  if (hasMeaningfulText(input.ocrText)) return false;
 
   return isLowInformationFilename(input.asset.filename);
 }
@@ -241,6 +243,7 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       fields_scanned: fields.map((field) => field.name),
       high_risk_reference_count: builtInHighRiskReferenceItems.length,
       high_risk_reference_matches: highRiskReferenceMatches,
+      ocr_chars: input.ocrText?.trim().length ?? 0,
       product_text_count: input.productTexts?.length ?? 0,
       reference_library_count: referenceItems.length,
       rule_count: infringementRuleStats.totalRules,

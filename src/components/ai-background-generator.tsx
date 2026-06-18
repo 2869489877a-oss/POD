@@ -293,7 +293,12 @@ export function AiBackgroundGenerator() {
     e.preventDefault();
     if (!file || !prompt.trim()) return;
     const backgroundPrompt = BACKGROUND_COLOR_OPTIONS.find((option) => option.id === selectedBackgroundColor);
-    const finalPrompt = [prompt.trim(), backgroundPrompt ? (language === "zh" ? backgroundPrompt.promptZh : backgroundPrompt.promptEn) : ""]
+    // "透明" outputs a real alpha cut-out: ask the model for a clean white background (easy to key
+    // out), then have the server remove it — so the print is transparent with no second cutout.
+    const wantsTransparent = selectedBackgroundColor === "transparent";
+    const whiteOption = BACKGROUND_COLOR_OPTIONS.find((option) => option.id === "white");
+    const effectiveBackgroundPrompt = wantsTransparent ? whiteOption : backgroundPrompt;
+    const finalPrompt = [prompt.trim(), effectiveBackgroundPrompt ? (language === "zh" ? effectiveBackgroundPrompt.promptZh : effectiveBackgroundPrompt.promptEn) : ""]
       .filter(Boolean)
       .join(" ");
     setGenerationStatus("uploading");
@@ -323,6 +328,7 @@ export function AiBackgroundGenerator() {
           reference_url: imageUrl,
           provider_id: selectedProvider || undefined,
           save_to_assets: true,
+          transparent_background: wantsTransparent,
         }),
       });
       const data = await res.json();
@@ -519,6 +525,12 @@ export function AiBackgroundGenerator() {
             })}
           </div>
         </div>
+
+        {selectedBackgroundColor === "transparent" ? (
+          <p className={`text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+            {t("选择“透明”会自动去背景输出真·透明 PNG，无需二次抠图。", "Choosing Transparent auto-removes the background and outputs a real transparent PNG — no second cutout needed.")}
+          </p>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
           <button

@@ -105,6 +105,7 @@ export type InfringementDetectionInput = {
     title?: string | null;
   }>;
   referenceItems?: InfringementReferenceItem[];
+  ocrText?: string | null;
 };
 
 export type InfringementDetectionResult = {
@@ -115,6 +116,7 @@ export type InfringementDetectionResult = {
     allowlist_matches?: InfringementReferenceMatch[];
     high_risk_reference_count?: number;
     high_risk_reference_matches?: InfringementReferenceMatch[];
+    ocr_chars?: number;
     product_text_count: number;
     reference_library_count?: number;
     rule_count?: number;
