@@ -23,6 +23,8 @@ const SAFE_COPYRIGHT_STATUSES = new Set(["owned", "commercial_ok"]);
 function normalizeText(value: string) {
   return value
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // \u53bb\u91cd\u97f3\uff1aPok\u00e9mon \u2192 pokemon, Beyonc\u00e9 \u2192 beyonce
     .replace(/[\u2010-\u2015]/g, "-")
     .replace(/[\s_]+/g, " ")
     .trim();
