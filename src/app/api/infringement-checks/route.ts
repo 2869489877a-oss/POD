@@ -83,6 +83,19 @@ const checkColumns = [
   "updated_at",
 ].join(",");
 
+const IN_QUERY_CHUNK_SIZE = 500;
+const INSERT_CHUNK_SIZE = 500;
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
 function parseAssetIds(value: unknown) {
   if (!Array.isArray(value)) {
     throw new Error("请选择至少一张素材");
@@ -94,10 +107,6 @@ function parseAssetIds(value: unknown) {
 
   if (ids.length === 0) {
     throw new Error("请选择至少一张素材");
-  }
-
-  if (ids.length > 100) {
-    throw new Error("单次最多检测 100 张素材");
   }
 
   return ids;
@@ -134,15 +143,24 @@ async function computeAssetHashes(
 ) {
   if (!shouldComputeHashes) return new Map<string, string>();
 
-  const pairs = await Promise.all(
-    assets.map(async (asset) => {
+  const pairs: Array<readonly [string, string | null]> = [];
+  const queue = [...assets];
+
+  async function worker() {
+    for (;;) {
+      const asset = queue.shift();
+      if (!asset) return;
+
       try {
-        return [asset.id, await computeAverageHashFromUrl(asset.original_url)] as const;
+        pairs.push([asset.id, await computeAverageHashFromUrl(asset.original_url)] as const);
       } catch {
-        return [asset.id, null] as const;
+        pairs.push([asset.id, null] as const);
       }
-    }),
-  );
+    }
+  }
+
+  const workerCount = Math.min(5, Math.max(1, queue.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return new Map(pairs.filter((item): item is readonly [string, string] => Boolean(item[1])));
 }
@@ -151,13 +169,30 @@ async function fetchAssetsWithOcr(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
   assetIds: string[],
 ): Promise<{ assets: AssetRow[]; ocrColumnsAvailable: boolean }> {
+  const chunks = chunkArray(assetIds, IN_QUERY_CHUNK_SIZE);
+  const [firstChunk = []] = chunks;
   const withOcr = await supabase
     .from("assets")
     .select("id,filename,original_url,source,copyright_status,ocr_text,ocr_checked_at")
-    .in("id", assetIds);
+    .in("id", firstChunk);
 
   if (!withOcr.error) {
-    return { assets: (withOcr.data ?? []) as unknown as AssetRow[], ocrColumnsAvailable: true };
+    const assets = [...((withOcr.data ?? []) as unknown as AssetRow[])];
+
+    for (const ids of chunks.slice(1)) {
+      const response = await supabase
+        .from("assets")
+        .select("id,filename,original_url,source,copyright_status,ocr_text,ocr_checked_at")
+        .in("id", ids);
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      assets.push(...((response.data ?? []) as unknown as AssetRow[]));
+    }
+
+    return { assets, ocrColumnsAvailable: true };
   }
 
   const message = (withOcr.error.message || "").toLowerCase();
@@ -172,20 +207,93 @@ async function fetchAssetsWithOcr(
   }
 
   // OCR columns not migrated yet → run text-only detection without crashing.
-  const base = await supabase
-    .from("assets")
-    .select("id,filename,original_url,source,copyright_status")
-    .in("id", assetIds);
+  const baseRows: Array<Omit<AssetRow, "ocr_checked_at" | "ocr_text">> = [];
 
-  if (base.error) {
-    throw new Error(base.error.message);
+  for (const ids of chunks) {
+    const base = await supabase
+      .from("assets")
+      .select("id,filename,original_url,source,copyright_status")
+      .in("id", ids);
+
+    if (base.error) {
+      throw new Error(base.error.message);
+    }
+
+    baseRows.push(...((base.data ?? []) as unknown as Array<Omit<AssetRow, "ocr_checked_at" | "ocr_text">>));
   }
 
-  const assets = ((base.data ?? []) as unknown as Array<Omit<AssetRow, "ocr_checked_at" | "ocr_text">>).map(
+  const assets = baseRows.map(
     (asset) => ({ ...asset, ocr_checked_at: null, ocr_text: null }),
   );
 
   return { assets, ocrColumnsAvailable: false };
+}
+
+async function fetchProductTexts(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  assetIds: string[],
+) {
+  const rows: ProductTextRow[] = [];
+
+  for (const ids of chunkArray(assetIds, IN_QUERY_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("product_drafts")
+      .select("asset_id,title,description,tags,bullet_points,sku,product_type")
+      .in("asset_id", ids);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    rows.push(...((data ?? []) as unknown as ProductTextRow[]));
+  }
+
+  return rows;
+}
+
+async function insertInfringementChecks(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  rows: Array<Record<string, unknown>>,
+) {
+  const inserted: InfringementCheckInsertRow[] = [];
+
+  for (const chunk of chunkArray(rows, INSERT_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("infringement_checks")
+      .insert(chunk)
+      .select(checkColumns);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    inserted.push(...((data ?? []) as unknown as InfringementCheckInsertRow[]));
+  }
+
+  return inserted;
+}
+
+async function fetchAllChecks(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+) {
+  const rows: unknown[] = [];
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("infringement_checks")
+      .select(checkColumns)
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    rows.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  return rows;
 }
 
 async function resolveOcrText(
@@ -230,17 +338,16 @@ async function resolveOcrText(
 
 export async function GET() {
   const supabase = createSupabaseServiceRoleClient();
-  const { data, error } = await supabase
-    .from("infringement_checks")
-    .select(checkColumns)
-    .order("created_at", { ascending: false })
-    .limit(200);
 
-  if (error) {
-    return NextResponse.json({ checks: [], error: error.message }, { status: 500 });
+  try {
+    const checks = await fetchAllChecks(supabase);
+    return NextResponse.json({ checks });
+  } catch (error) {
+    return NextResponse.json(
+      { checks: [], error: error instanceof Error ? error.message : "Failed to load infringement checks" },
+      { status: 500 },
+    );
   }
-
-  return NextResponse.json({ checks: data ?? [] });
 }
 
 export async function POST(request: Request) {
@@ -268,17 +375,10 @@ export async function POST(request: Request) {
       ? await resolveOcrText(supabase, assets)
       : new Map<string, string>();
 
-    const { data: productData, error: productError } = await supabase
-      .from("product_drafts")
-      .select("asset_id,title,description,tags,bullet_points,sku,product_type")
-      .in("asset_id", assetIds);
-
-    if (productError) {
-      throw new Error(productError.message);
-    }
+    const productData = await fetchProductTexts(supabase, assetIds);
 
     const productsByAssetId = new Map<string, ProductTextRow[]>();
-    for (const product of (productData ?? []) as unknown as ProductTextRow[]) {
+    for (const product of productData) {
       const current = productsByAssetId.get(product.asset_id) ?? [];
       current.push(product);
       productsByAssetId.set(product.asset_id, current);
@@ -322,16 +422,7 @@ export async function POST(request: Request) {
       };
     });
 
-    const { data: checks, error: insertError } = await supabase
-      .from("infringement_checks")
-      .insert(insertRows)
-      .select(checkColumns);
-
-    if (insertError) {
-      throw new Error(insertError.message);
-    }
-
-    const insertedChecks = (checks ?? []) as unknown as InfringementCheckInsertRow[];
+    const insertedChecks = await insertInfringementChecks(supabase, insertRows);
 
     await Promise.all(
       assets.map((asset) => {

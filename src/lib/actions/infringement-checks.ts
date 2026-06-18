@@ -65,22 +65,61 @@ const checkColumns = [
   "updated_at",
 ].join(",");
 
+async function fetchAllAssets(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
+  const rows: InfringementAssetRow[] = [];
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("assets")
+      .select(assetColumns)
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    rows.push(...((data ?? []) as unknown as InfringementAssetRow[]));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  return rows;
+}
+
+async function fetchAllChecks(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
+  const rows: InfringementCheckRow[] = [];
+
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("infringement_checks")
+      .select(checkColumns)
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    rows.push(...((data ?? []) as unknown as InfringementCheckRow[]));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  return rows;
+}
+
 export async function fetchInfringementDashboard(): Promise<{
   error: string | null;
   items: InfringementListItem[];
 }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
-    const [assetsResponse, checksResponse] = await Promise.all([
-      supabase.from("assets").select(assetColumns).order("created_at", { ascending: false }).limit(200),
-      supabase.from("infringement_checks").select(checkColumns).order("created_at", { ascending: false }).limit(1000),
+    const [assets, checks] = await Promise.all([
+      fetchAllAssets(supabase),
+      fetchAllChecks(supabase),
     ]);
 
-    if (assetsResponse.error) return { error: assetsResponse.error.message, items: [] };
-    if (checksResponse.error) return { error: checksResponse.error.message, items: [] };
-
     const latestCheckByAssetId = new Map<string, InfringementCheckRow>();
-    for (const check of (checksResponse.data ?? []) as unknown as InfringementCheckRow[]) {
+    for (const check of checks) {
       if (!latestCheckByAssetId.has(check.asset_id)) {
         latestCheckByAssetId.set(check.asset_id, check);
       }
@@ -88,7 +127,7 @@ export async function fetchInfringementDashboard(): Promise<{
 
     return {
       error: null,
-      items: ((assetsResponse.data ?? []) as unknown as InfringementAssetRow[]).map((asset) => ({
+      items: assets.map((asset) => ({
         asset,
         latest_check: latestCheckByAssetId.get(asset.id) ?? null,
       })),

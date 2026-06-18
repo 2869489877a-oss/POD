@@ -27,6 +27,12 @@ type UploadResponse = {
   success_count?: number;
 };
 
+type InfringementCheckResponse = {
+  checks?: Array<{ asset_id: string }>;
+  error?: string;
+  message?: string;
+};
+
 type UploadFormProps = {
   assetSource?: UploadAssetSource;
   descriptionEn?: string;
@@ -64,6 +70,9 @@ export function UploadForm({
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<UploadResult[]>([]);
   const [doneCount, setDoneCount] = useState(0);
+  const [isCheckingInfringement, setIsCheckingInfringement] = useState(false);
+  const [infringementMessage, setInfringementMessage] = useState<string | null>(null);
+  const [infringementError, setInfringementError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const { isDark, t, accent } = useSettings();
   const colors = ACCENT_COLORS[accent] ?? ACCENT_COLORS.cyan;
@@ -78,11 +87,24 @@ export function UploadForm({
     [files],
   );
   const successCount = results.filter((result) => result.success).length;
+  const uploadedAssetIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          results
+            .filter((result): result is UploadResult & { asset_id: string } => result.success && Boolean(result.asset_id))
+            .map((result) => result.asset_id),
+        ),
+      ),
+    [results],
+  );
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setFiles(Array.from(event.target.files ?? []));
     setMessage(null);
     setResults([]);
+    setInfringementMessage(null);
+    setInfringementError(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -97,6 +119,8 @@ export function UploadForm({
     setMessage(null);
     setResults([]);
     setDoneCount(0);
+    setInfringementMessage(null);
+    setInfringementError(null);
 
     // 限制并发、逐张上传:避免一次性把几十张全压给服务器导致卡死/超时,同时能显示进度。
     const CONCURRENCY = 3;
@@ -147,6 +171,42 @@ export function UploadForm({
     setFiles([]);
     setMessage(null);
     setResults([]);
+    setInfringementMessage(null);
+    setInfringementError(null);
+  }
+
+  async function runInfringementCheckForUploads() {
+    if (uploadedAssetIds.length === 0) {
+      setInfringementError(t("没有可检测的上传成功图片", "No successfully uploaded images to check"));
+      return;
+    }
+
+    setIsCheckingInfringement(true);
+    setInfringementError(null);
+    setInfringementMessage(t(`正在检测 ${uploadedAssetIds.length} 张图片...`, `Checking ${uploadedAssetIds.length} image(s)...`));
+
+    try {
+      const response = await fetch("/api/infringement-checks", {
+        body: JSON.stringify({ asset_ids: uploadedAssetIds }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const data = (await response.json()) as InfringementCheckResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error ?? t("侵权检测失败", "Infringement check failed"));
+      }
+
+      const checkedCount = data.checks?.length ?? uploadedAssetIds.length;
+      setInfringementMessage(
+        data.message ?? t(`已完成 ${checkedCount} 张图片的侵权检测`, `Checked ${checkedCount} image(s)`),
+      );
+    } catch (error) {
+      setInfringementMessage(null);
+      setInfringementError(error instanceof Error ? error.message : t("侵权检测失败", "Infringement check failed"));
+    } finally {
+      setIsCheckingInfringement(false);
+    }
   }
 
   return (
@@ -225,6 +285,8 @@ export function UploadForm({
                 setFiles(dropped);
                 setResults([]);
                 setMessage(null);
+                setInfringementMessage(null);
+                setInfringementError(null);
               }
             }}
           >
@@ -327,6 +389,42 @@ export function UploadForm({
             <p className={["mt-1 text-[13px]", isDark ? "text-zinc-500" : "text-zinc-500"].join(" ")}>
               {t(`成功 ${successCount} 张，失败 ${results.length - successCount} 张`, `${successCount} succeeded, ${results.length - successCount} failed`)}
             </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void runInfringementCheckForUploads()}
+                disabled={isCheckingInfringement || uploadedAssetIds.length === 0}
+                className={[
+                  "rounded-md px-3.5 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+                ].join(" ")}
+                style={{ backgroundColor: colors.primary }}
+              >
+                {isCheckingInfringement
+                  ? t("检测中...", "Checking...")
+                  : t(`一键侵权检测 ${uploadedAssetIds.length} 张`, `Check ${uploadedAssetIds.length} uploaded`)}
+              </button>
+              <Link
+                href="/infringement-check"
+                className={[
+                  "rounded-md border px-3.5 py-2 text-[13px] font-medium transition-colors duration-150",
+                  isDark
+                    ? "border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]"
+                    : "border-black/[0.12] bg-white text-zinc-700 hover:border-black/[0.24] hover:bg-black/[0.03]",
+                ].join(" ")}
+              >
+                {t("查看检测结果", "View Checks")}
+              </Link>
+            </div>
+            {infringementMessage ? (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-700">
+                {infringementMessage}
+              </div>
+            ) : null}
+            {infringementError ? (
+              <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
+                {infringementError}
+              </div>
+            ) : null}
           </div>
           <div className={["divide-y", isDark ? "divide-white/[0.08]" : "divide-black/[0.08]"].join(" ")}>
             {results.map((result) => (
