@@ -33,6 +33,15 @@ type InfringementCheckResponse = {
   message?: string;
 };
 
+type InfringementCheckProgress = {
+  completed: number;
+  concurrency: number;
+  failed: number;
+  running: number;
+  succeeded: number;
+  total: number;
+};
+
 type UploadFormProps = {
   assetSource?: UploadAssetSource;
   descriptionEn?: string;
@@ -43,6 +52,8 @@ type UploadFormProps = {
 
 const ACCEPTED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ACCEPTED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+const INFRINGEMENT_CHECK_BATCH_SIZE = 10;
+const INFRINGEMENT_CHECK_CONCURRENCY = 2;
 
 const sourceLabels: Record<UploadAssetSource, { zh: string; en: string }> = {
   garment_base: { zh: "胚衣底图", en: "Blank Garment" },
@@ -56,6 +67,30 @@ function formatFileSize(size: number) {
   }
 
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+async function readInfringementCheckResponse(response: Response): Promise<InfringementCheckResponse> {
+  const text = await response.text();
+
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text) as InfringementCheckResponse;
+  } catch {
+    return { error: response.ok ? undefined : text.slice(0, 160) };
+  }
 }
 
 export function UploadForm({
@@ -73,6 +108,7 @@ export function UploadForm({
   const [isCheckingInfringement, setIsCheckingInfringement] = useState(false);
   const [infringementMessage, setInfringementMessage] = useState<string | null>(null);
   const [infringementError, setInfringementError] = useState<string | null>(null);
+  const [infringementProgress, setInfringementProgress] = useState<InfringementCheckProgress | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const { isDark, t, accent } = useSettings();
   const colors = ACCENT_COLORS[accent] ?? ACCENT_COLORS.cyan;
@@ -98,6 +134,9 @@ export function UploadForm({
       ),
     [results],
   );
+  const infringementProgressPercent = infringementProgress?.total
+    ? Math.min(100, Math.round((infringementProgress.completed / infringementProgress.total) * 100))
+    : 0;
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setFiles(Array.from(event.target.files ?? []));
@@ -105,6 +144,7 @@ export function UploadForm({
     setResults([]);
     setInfringementMessage(null);
     setInfringementError(null);
+    setInfringementProgress(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -121,6 +161,7 @@ export function UploadForm({
     setDoneCount(0);
     setInfringementMessage(null);
     setInfringementError(null);
+    setInfringementProgress(null);
 
     // 限制并发、逐张上传:避免一次性把几十张全压给服务器导致卡死/超时,同时能显示进度。
     const CONCURRENCY = 3;
@@ -173,6 +214,7 @@ export function UploadForm({
     setResults([]);
     setInfringementMessage(null);
     setInfringementError(null);
+    setInfringementProgress(null);
   }
 
   async function runInfringementCheckForUploads() {
@@ -183,24 +225,105 @@ export function UploadForm({
 
     setIsCheckingInfringement(true);
     setInfringementError(null);
-    setInfringementMessage(t(`正在检测 ${uploadedAssetIds.length} 张图片...`, `Checking ${uploadedAssetIds.length} image(s)...`));
+    setInfringementMessage(
+      t(
+        `正在检测 ${uploadedAssetIds.length} 张图片，分批并发处理中...`,
+        `Checking ${uploadedAssetIds.length} image(s) in concurrent batches...`,
+      ),
+    );
+
+    const batches = chunkArray(uploadedAssetIds, INFRINGEMENT_CHECK_BATCH_SIZE);
+    const concurrency = Math.min(INFRINGEMENT_CHECK_CONCURRENCY, batches.length);
+    let nextBatchIndex = 0;
+    let succeededCount = 0;
+    let failedCount = 0;
+    let firstError: string | null = null;
+
+    setInfringementProgress({
+      completed: 0,
+      concurrency,
+      failed: 0,
+      running: 0,
+      succeeded: 0,
+      total: uploadedAssetIds.length,
+    });
 
     try {
-      const response = await fetch("/api/infringement-checks", {
-        body: JSON.stringify({ asset_ids: uploadedAssetIds }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
-      });
-      const data = (await response.json()) as InfringementCheckResponse;
+      async function checkWorker() {
+        for (;;) {
+          const batchIndex = nextBatchIndex;
+          nextBatchIndex += 1;
+          const batch = batches[batchIndex];
 
-      if (!response.ok) {
-        throw new Error(data.error ?? t("侵权检测失败", "Infringement check failed"));
+          if (!batch) return;
+
+          setInfringementProgress((progress) =>
+            progress ? { ...progress, running: progress.running + 1 } : progress,
+          );
+
+          try {
+            const response = await fetch("/api/infringement-checks", {
+              body: JSON.stringify({ asset_ids: batch }),
+              headers: { "Content-Type": "application/json" },
+              method: "POST",
+            });
+            const data = await readInfringementCheckResponse(response);
+
+            if (!response.ok) {
+              throw new Error(
+                data.error ??
+                  t(`第 ${batchIndex + 1} 批检测失败`, `Batch ${batchIndex + 1} failed`) +
+                    ` (${response.status})`,
+              );
+            }
+
+            const checkedCount = data.checks?.length ?? batch.length;
+            succeededCount += checkedCount;
+            setInfringementProgress((progress) =>
+              progress
+                ? {
+                    ...progress,
+                    completed: progress.completed + batch.length,
+                    running: Math.max(0, progress.running - 1),
+                    succeeded: progress.succeeded + checkedCount,
+                  }
+                : progress,
+            );
+          } catch (error) {
+            const message = error instanceof Error ? error.message : t("侵权检测失败", "Infringement check failed");
+            firstError ??= message;
+            failedCount += batch.length;
+            setInfringementProgress((progress) =>
+              progress
+                ? {
+                    ...progress,
+                    completed: progress.completed + batch.length,
+                    failed: progress.failed + batch.length,
+                    running: Math.max(0, progress.running - 1),
+                  }
+                : progress,
+            );
+          }
+        }
       }
 
-      const checkedCount = data.checks?.length ?? uploadedAssetIds.length;
-      setInfringementMessage(
-        data.message ?? t(`已完成 ${checkedCount} 张图片的侵权检测`, `Checked ${checkedCount} image(s)`),
-      );
+      await Promise.all(Array.from({ length: concurrency }, () => checkWorker()));
+
+      if (failedCount > 0) {
+        setInfringementMessage(
+          succeededCount > 0
+            ? t(`已完成 ${succeededCount} 张图片的侵权检测`, `Checked ${succeededCount} image(s)`)
+            : null,
+        );
+        setInfringementError(
+          t(
+            `有 ${failedCount} 张图片检测失败。${firstError ?? "请稍后重试"}`,
+            `${failedCount} image(s) failed to check. ${firstError ?? "Please try again later"}`,
+          ),
+        );
+      } else {
+        setInfringementMessage(t(`已完成 ${succeededCount} 张图片的侵权检测`, `Checked ${succeededCount} image(s)`));
+      }
     } catch (error) {
       setInfringementMessage(null);
       setInfringementError(error instanceof Error ? error.message : t("侵权检测失败", "Infringement check failed"));
@@ -287,6 +410,7 @@ export function UploadForm({
                 setMessage(null);
                 setInfringementMessage(null);
                 setInfringementError(null);
+                setInfringementProgress(null);
               }
             }}
           >
@@ -400,7 +524,9 @@ export function UploadForm({
                 style={{ backgroundColor: colors.primary }}
               >
                 {isCheckingInfringement
-                  ? t("检测中...", "Checking...")
+                  ? infringementProgress
+                    ? t(`检测中 ${infringementProgress.completed}/${infringementProgress.total}`, `Checking ${infringementProgress.completed}/${infringementProgress.total}`)
+                    : t("检测中...", "Checking...")
                   : t(`一键侵权检测 ${uploadedAssetIds.length} 张`, `Check ${uploadedAssetIds.length} uploaded`)}
               </button>
               <Link
@@ -415,6 +541,37 @@ export function UploadForm({
                 {t("查看检测结果", "View Checks")}
               </Link>
             </div>
+            {infringementProgress ? (
+              <div className={["mt-4 rounded-md border p-3", isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.08] bg-black/[0.02]"].join(" ")}>
+                <div className={["flex items-center justify-between gap-3 text-[13px]", isDark ? "text-zinc-300" : "text-zinc-600"].join(" ")}>
+                  <span>
+                    {t(
+                      `检测进度 ${infringementProgress.completed}/${infringementProgress.total}`,
+                      `Check progress ${infringementProgress.completed}/${infringementProgress.total}`,
+                    )}
+                  </span>
+                  <span>{infringementProgressPercent}%</span>
+                </div>
+                <div
+                  className={["mt-2 h-2 w-full overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-black/[0.08]"].join(" ")}
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={infringementProgressPercent}
+                >
+                  <div
+                    className="h-full rounded-full transition-all duration-200"
+                    style={{ width: `${infringementProgressPercent}%`, backgroundColor: colors.primary }}
+                  />
+                </div>
+                <div className={["mt-2 grid gap-2 text-xs sm:grid-cols-4", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
+                  <span>{t(`成功 ${infringementProgress.succeeded}`, `Succeeded ${infringementProgress.succeeded}`)}</span>
+                  <span>{t(`失败 ${infringementProgress.failed}`, `Failed ${infringementProgress.failed}`)}</span>
+                  <span>{t(`运行中 ${infringementProgress.running}`, `Running ${infringementProgress.running}`)}</span>
+                  <span>{t(`并发 ${infringementProgress.concurrency}`, `Concurrency ${infringementProgress.concurrency}`)}</span>
+                </div>
+              </div>
+            ) : null}
             {infringementMessage ? (
               <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-700">
                 {infringementMessage}
