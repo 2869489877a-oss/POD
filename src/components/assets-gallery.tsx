@@ -2,8 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { createPortal } from "react-dom";
 import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
@@ -202,6 +203,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
   const [status, setStatus] = useState<"all" | AssetStatus>("all");
   const [copyrightStatus, setCopyrightStatus] = useState<"all" | CopyrightStatus>("all");
   const [assetSource, setAssetSource] = useState<AssetSourceFilter>("all");
@@ -236,6 +238,32 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       ? Math.round((resizeCompletedCount / resizeJob.total_count) * 100)
       : 0;
   const failedResizeItems = resizeJob?.items.filter((item) => item.status === "failed") ?? [];
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAsset) {
+      return;
+    }
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeAssetDetail();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedAsset]);
 
   async function fetchAssets(
     nextStatus: "all" | AssetStatus = status,
@@ -390,6 +418,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
   function openAssetDetail(assetId: string) {
     setSelectedAssetId(assetId);
+  }
+
+  function closeAssetDetail() {
+    setSelectedAssetId(null);
   }
 
   function getAssetPreviewUrl(asset: Asset) {
@@ -930,22 +962,28 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
       ) : null}
 
-      {selectedAsset ? (
+      {selectedAsset && isMounted ? createPortal((
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6"
+          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-zinc-950/60 px-3 py-4 sm:px-6 sm:py-6"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeAssetDetail();
+            }
+          }}
           role="dialog"
           aria-modal="true"
           aria-labelledby="asset-detail-title"
         >
-          <div className="max-h-full w-full max-w-5xl overflow-y-auto rounded-md bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
+          <div className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md bg-white shadow-xl"
+            onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
               <div>
                 <h3 id="asset-detail-title" className="text-base font-semibold text-zinc-950">
                   {t("图片详情", "Image Details")}
                 </h3>
                 <p className="mt-1 text-sm text-zinc-500">{selectedAsset.filename}</p>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
+              <div className="flex shrink-0 flex-wrap justify-end gap-2">
                 <a
                   href={getAssetPreviewUrl(selectedAsset)}
                   target="_blank"
@@ -963,7 +1001,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 </button>
                 <button
                   type="button"
-                  onClick={() => setSelectedAssetId(null)}
+                  onClick={closeAssetDetail}
                   className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                 >
                   {t("关闭", "Close")}
@@ -971,12 +1009,12 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               </div>
             </div>
 
-            <div className="grid gap-6 p-6 lg:grid-cols-[1.4fr_0.8fr]">
-              <div className="flex min-h-[360px] items-center justify-center rounded-md bg-zinc-100 p-4">
+            <div className="grid gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
+              <div className="flex min-h-[220px] items-center justify-center rounded-md bg-zinc-100 p-3 sm:min-h-[360px]">
                 <img
                   src={getAssetPreviewUrl(selectedAsset)}
                   alt={selectedAsset.filename}
-                  className="max-h-[70vh] w-full object-contain"
+                  className="max-h-[58vh] w-full object-contain"
                 />
               </div>
 
@@ -1120,7 +1158,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </div>
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
     </div>
   );
 }

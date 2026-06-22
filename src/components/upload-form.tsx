@@ -163,8 +163,8 @@ export function UploadForm({
     setInfringementError(null);
     setInfringementProgress(null);
 
-    // 限制并发、逐张上传:避免一次性把几十张全压给服务器导致卡死/超时,同时能显示进度。
-    const CONCURRENCY = 3;
+    // Limit concurrent uploads to avoid request and memory spikes on large batches.
+    const CONCURRENCY = 5;
     const queue = [...files];
     const collected: UploadResult[] = [];
 
