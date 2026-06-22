@@ -16,6 +16,7 @@ type SplitGridRequest = {
   rows?: unknown;
   save_to_assets?: unknown;
   source_names?: unknown;
+  split_mode?: unknown;
 };
 
 type SplitPiece = {
@@ -298,6 +299,9 @@ export async function POST(request: Request) {
   const columns = integerValue(body.columns, 2, 1, 4);
   const saveToAssets = body.save_to_assets !== false;
   const sourceNames = parseSourceNames(body.source_names);
+  const requestedSplitMode = stringValue(body.split_mode);
+  const splitMode: "content" | "grid" = requestedSplitMode === "content" ? "content" : "grid";
+  const expectedPieces = rows * columns;
 
   try {
     const sourceBuffer = await readImageBuffer(imageUrl, {
@@ -316,11 +320,14 @@ export async function POST(request: Request) {
       throw new Error("成品图尺寸过小，无法拆分");
     }
 
-    // Prefer cropping to the prints that are actually in the image; only fall back to a
-    // fixed even grid when segmentation can't find distinct regions (e.g. a busy solid sheet).
-    let mode: "content" | "grid" = "content";
-    let rects = await detectPrintRects(sourceBuffer, width, height).catch(() => null);
-    if (!rects || rects.length === 0) {
+    let mode: "content" | "grid" = splitMode;
+    let rects: ExtractRect[] | null = null;
+
+    if (splitMode === "content") {
+      rects = await detectPrintRects(sourceBuffer, width, height).catch(() => null);
+    }
+
+    if (!rects || rects.length !== expectedPieces) {
       mode = "grid";
       rects = evenGridRects(width, height, rows, columns);
     }

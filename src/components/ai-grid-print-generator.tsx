@@ -458,6 +458,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         rows: gridSize,
         save_to_assets: true,
         source_names: sourceNames,
+        split_mode: "grid",
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
@@ -467,6 +468,10 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
 
     if (!response.ok || !data.pieces?.length) {
       throw new Error(data.error || t(`拆分${gridNameZh}结果失败`, `Failed to split ${gridLabel} result`));
+    }
+
+    if (data.pieces.length !== totalCells) {
+      throw new Error(t(`拆分结果数量不对：应为 ${totalCells} 张，实际 ${data.pieces.length} 张`, `Split count mismatch: expected ${totalCells}, got ${data.pieces.length}`));
     }
 
     setSplitPieces(data.pieces);
