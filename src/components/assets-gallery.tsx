@@ -196,6 +196,20 @@ function formatDate(value: string, locale: string) {
   }).format(new Date(value));
 }
 
+function getImageSrc(url: string) {
+  try {
+    const parsed = new URL(url);
+
+    if (parsed.pathname.startsWith("/uploads/assets/")) {
+      return `${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    // Relative URLs can be used by Next Image as-is.
+  }
+
+  return url;
+}
+
 export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {
   const { language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
@@ -747,7 +761,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
                   >
                     <Image
-                      src={previewUrl}
+                      src={getImageSrc(previewUrl)}
                       alt={asset.filename}
                       fill
                       sizes="(min-width: 1536px) 25vw, (min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
