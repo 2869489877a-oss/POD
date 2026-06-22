@@ -111,7 +111,7 @@ function getFields(input: InfringementDetectionInput) {
 
 function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number, visualReviewRequired: boolean) {
   if (visualReviewRequired) {
-    return "该素材缺少可用文字上下文，规则库无法判断图片内部是否包含名人肖像、球队、Logo、队服文字或不雅手势。请人工看图复核后再用于商品、套图或导出。";
+    return "该素材缺少可用文字上下文，规则库暂时无法判断图片内部是否包含名人肖像、球队、Logo、队服文字或不雅手势。本次仅标记为待人工看图复核，不代表已经命中侵权风险。";
   }
 
   if (riskLevel === "critical") {
@@ -189,12 +189,12 @@ function shouldRequireVisualReview(input: InfringementDetectionInput, matches: I
 function createVisualReviewMatch(): InfringementRuleMatch {
   return {
     category: "visual_review",
-    description: "没有 OCR 或视觉识别结果时，纯图片素材不能仅凭文件名自动判定无风险。",
+    description: "没有 OCR、图片哈希或商品上下文命中时，纯图片素材需要人工看图确认，但这不等同于已经命中侵权风险。",
     field: "image_visual_content",
-    label: "需要人工看图复核",
+    label: "待人工视觉复核",
     matched: "missing visual text evidence",
     rule_id: "visual-review-required",
-    severity: "medium",
+    severity: "low",
   };
 }
 
@@ -271,9 +271,10 @@ export function mapDetectionStatusToAssetCopyrightStatus(
   currentCopyrightStatus?: string | null,
 ) {
   if (status === "blocked") return "forbidden";
-  if (status === "risky" || status === "review") return "risky";
+  if (status === "risky") return "risky";
 
-  // 自动规则没有命中时不要直接标记“可商用”，避免把机器检测当作授权证明。
+  // 自动检测的 review 只是“待人工确认”，不要把不确定项直接写成“有风险”。
+  // 自动规则没有命中时也不要直接标记“可商用”，避免把机器检测当作授权证明。
   return currentCopyrightStatus ?? "unknown";
 }
 
