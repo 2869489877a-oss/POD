@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { createPortal } from "react-dom";
 import { getDisplayImageSrc } from "@/lib/local-asset-url";
@@ -219,6 +219,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [isResizeRunning, setIsResizeRunning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+  const preloadedImageUrls = useRef<Set<string>>(new Set());
   const selectedCount = selectedIds.size;
   const totalPages = Math.ceil(total / 24);
 
@@ -254,6 +255,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const detailDangerButtonClass = isDark
     ? "border-red-400/40 text-red-300 hover:bg-red-500/10 disabled:border-white/[0.08] disabled:text-zinc-600"
     : "border-red-300 text-red-700 hover:bg-red-50 disabled:border-zinc-200 disabled:text-zinc-400";
+  const showInitialLoading = isLoading && assets.length === 0;
 
   useEffect(() => {
     setIsMounted(true);
@@ -432,7 +434,19 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     }
   }
 
+  function preloadAssetImage(asset: Asset) {
+    const previewUrl = getDisplayImageSrc(getAssetPreviewUrl(asset));
+    if (preloadedImageUrls.current.has(previewUrl)) return;
+
+    preloadedImageUrls.current.add(previewUrl);
+    const image = new window.Image();
+    image.decoding = "async";
+    image.src = previewUrl;
+  }
+
   function openAssetDetail(assetId: string) {
+    const asset = assets.find((item) => item.id === assetId);
+    if (asset) preloadAssetImage(asset);
     setSelectedAssetId(assetId);
   }
 
@@ -753,9 +767,21 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
       ) : null}
 
-      {isLoading ? (
-        <div className="rounded-md border border-zinc-200 bg-white p-8 text-sm text-zinc-500">
-          {t("正在加载素材...", "Loading assets...")}
+      {showInitialLoading ? (
+        <div className="overflow-hidden rounded-md border border-zinc-200 bg-white p-5 text-sm text-zinc-500">
+          <div className="h-1 overflow-hidden rounded-full bg-zinc-100">
+            <div className="h-full w-1/2 animate-shimmer rounded-full bg-emerald-500/70" />
+          </div>
+          <p className="mt-4">{t("正在加载素材...", "Loading assets...")}</p>
+        </div>
+      ) : null}
+
+      {isLoading && assets.length > 0 ? (
+        <div className="sticky top-2 z-20 overflow-hidden rounded-md border border-zinc-200 bg-white/90 px-4 py-3 text-sm text-zinc-600 shadow-sm backdrop-blur">
+          <div className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-zinc-100">
+            <div className="h-full w-1/3 animate-shimmer rounded-full bg-emerald-500" />
+          </div>
+          {t("正在更新列表...", "Updating list...")}
         </div>
       ) : null}
 
@@ -773,8 +799,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
       ) : null}
 
-      {!isLoading && assets.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+      {assets.length > 0 ? (
+        <div
+          aria-busy={isLoading}
+          className={[
+            "grid gap-4 transition-opacity duration-200 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
+            isLoading ? "pointer-events-none opacity-60" : "opacity-100",
+          ].join(" ")}
+        >
           {assets.map((asset) => {
             const isSelected = selectedIds.has(asset.id);
             const previewUrl = getAssetPreviewUrl(asset);
@@ -784,15 +816,17 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               <article
                 key={asset.id}
                 className={[
-                  "overflow-hidden rounded-md border bg-white transition",
+                  "group overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow,transform] duration-150 ease-out [contain-intrinsic-size:360px] [content-visibility:auto] hover:-translate-y-0.5 hover:shadow-sm",
                   isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
                 ].join(" ")}
               >
-                <div className="relative aspect-[4/3] bg-zinc-100">
+                <div className="relative aspect-[4/3] overflow-hidden bg-zinc-100">
                   <button
                     type="button"
                     onClick={() => openAssetDetail(asset.id)}
-                    className="relative h-full w-full"
+                    onMouseEnter={() => preloadAssetImage(asset)}
+                    onFocus={() => preloadAssetImage(asset)}
+                    className="group relative h-full w-full"
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
                   >
                     <Image
@@ -800,7 +834,9 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       alt={asset.filename}
                       fill
                       sizes="(min-width: 1536px) 25vw, (min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
-                      className="object-cover"
+                      loading="lazy"
+                      quality={70}
+                      className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
                     />
                   </button>
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
@@ -980,7 +1016,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       {selectedAsset && isMounted ? createPortal((
         <div
-          className={["fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6", detailOverlayClass].join(" ")}
+          className={["animate-fade-in fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6", detailOverlayClass].join(" ")}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeAssetDetail();
@@ -990,7 +1026,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           aria-modal="true"
           aria-labelledby="asset-detail-title"
         >
-          <div className={["relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md", detailPanelClass].join(" ")}
+          <div className={["animate-scale-in relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md", detailPanelClass].join(" ")}
             onMouseDown={(event) => event.stopPropagation()}>
             <div className={["flex shrink-0 items-start justify-between gap-4 border-b px-4 py-3 sm:px-6 sm:py-4", detailHeaderClass].join(" ")}>
               <div>
@@ -1028,8 +1064,9 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             <div className="grid gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
               <div className={["flex min-h-[220px] items-center justify-center rounded-md p-3 sm:min-h-[360px]", detailImageFrameClass].join(" ")}>
                 <img
-                  src={getAssetPreviewUrl(selectedAsset)}
+                  src={getDisplayImageSrc(getAssetPreviewUrl(selectedAsset))}
                   alt={selectedAsset.filename}
+                  decoding="async"
                   className="max-h-[58vh] w-full object-contain"
                 />
               </div>
