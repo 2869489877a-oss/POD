@@ -1,21 +1,14 @@
-import { randomUUID } from "crypto";
-
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { logUsage } from "@/lib/auth/usage";
+import { deleteLocalAssetByPublicUrl, saveLocalAsset } from "@/lib/storage/local-assets";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const ASSETS_BUCKET = "assets";
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB per file
-const CONTENT_TYPES: Record<string, "image/jpeg" | "image/png" | "image/webp"> = {
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
 
 const UPLOAD_ASSET_SOURCES = ["upload_original", "print_transparent", "garment_base"] as const;
 type UploadAssetSource = (typeof UPLOAD_ASSET_SOURCES)[number];
@@ -34,16 +27,7 @@ type UploadResult = {
 };
 
 function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "未知错误";
-}
-
-function sanitizeFilename(filename: string) {
-  const normalized = filename.trim().replaceAll("\\", "-").replaceAll("/", "-");
-  return normalized.replace(/[^a-zA-Z0-9._-]/g, "-") || "image";
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 function parseAssetSource(value: FormDataEntryValue | null): UploadAssetSource {
@@ -57,52 +41,39 @@ function parseAssetSource(value: FormDataEntryValue | null): UploadAssetSource {
 function getCategoryWriteFields(source: UploadAssetSource, originalUrl: string) {
   if (source === "print_transparent") {
     return {
-      print_extract_url: originalUrl,
       preferred_design_url: originalUrl,
+      print_extract_url: originalUrl,
     };
   }
 
   return {};
 }
 
-async function uploadImage(file: File, assetSource: UploadAssetSource): Promise<UploadResult> {
+async function uploadImage(file: File, assetSource: UploadAssetSource, request: Request): Promise<UploadResult> {
   try {
     if (file.size > MAX_FILE_SIZE) {
-      throw new Error("文件大小超过限制（最大 20MB）");
+      throw new Error("File size exceeds the 20MB limit.");
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const metadata = await sharp(buffer).metadata();
 
     if (!metadata.width || !metadata.height || !metadata.format) {
-      throw new Error("无法读取图片宽高或格式");
+      throw new Error("Unable to read image dimensions or format.");
     }
 
     if (!ALLOWED_FORMATS.has(metadata.format)) {
-      throw new Error("图片格式不在允许范围内");
+      throw new Error(`Unsupported image format: ${metadata.format}`);
     }
 
-    const contentType = CONTENT_TYPES[metadata.format];
     const supabase = createSupabaseServiceRoleClient();
-    const datePath = new Date().toISOString().slice(0, 10);
-    const storagePath = `${datePath}/${randomUUID()}-${sanitizeFilename(file.name)}`;
+    const savedAsset = await saveLocalAsset({
+      buffer,
+      filename: file.name,
+      request,
+    });
+    const originalUrl = savedAsset.publicUrl;
 
-    const { error: uploadError } = await supabase.storage
-      .from(ASSETS_BUCKET)
-      .upload(storagePath, buffer, {
-        contentType,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      throw new Error(`Storage 上传失败：${uploadError.message}`);
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from(ASSETS_BUCKET)
-      .getPublicUrl(storagePath);
-
-    const originalUrl = publicUrlData.publicUrl;
     const { data: asset, error: insertError } = await supabase
       .from("assets")
       .insert({
@@ -121,8 +92,8 @@ async function uploadImage(file: File, assetSource: UploadAssetSource): Promise<
       .single();
 
     if (insertError) {
-      await supabase.storage.from(ASSETS_BUCKET).remove([storagePath]);
-      throw new Error(`assets 写入失败：${insertError.message}`);
+      await deleteLocalAssetByPublicUrl(originalUrl);
+      throw new Error(`Failed to write asset record: ${insertError.message}`);
     }
 
     return {
@@ -153,36 +124,34 @@ export async function POST(request: Request) {
   try {
     formData = await request.formData();
   } catch {
-    return NextResponse.json(
-      { error: "无法读取上传表单", results: [] },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Unable to read upload form.", results: [] }, { status: 400 });
   }
 
   const assetSource = parseAssetSource(formData.get("asset_source"));
   const files = formData.getAll("files").filter((value): value is File => value instanceof File);
 
   if (files.length === 0) {
-    return NextResponse.json(
-      { error: "请选择至少一张图片", results: [] },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Please select at least one image.", results: [] }, { status: 400 });
   }
 
-  const results = await Promise.all(files.map((file) => uploadImage(file, assetSource)));
-  const hasSuccess = results.some((result) => result.success);
+  const results: UploadResult[] = [];
+
+  for (const file of files) {
+    results.push(await uploadImage(file, assetSource, request));
+  }
 
   const successCount = results.filter((result) => result.success).length;
+
   if (successCount > 0) {
     await logUsage("upload", successCount, { asset_source: assetSource });
   }
 
   return NextResponse.json(
     {
-      results,
-      success_count: results.filter((result) => result.success).length,
       failed_count: results.filter((result) => !result.success).length,
+      results,
+      success_count: successCount,
     },
-    { status: hasSuccess ? 200 : 400 },
+    { status: successCount > 0 ? 200 : 400 },
   );
 }

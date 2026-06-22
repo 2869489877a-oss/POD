@@ -1,14 +1,12 @@
-import { randomUUID } from "crypto";
-
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { assertSafeHttpUrl, safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { deleteLocalAssetByPublicUrl, saveLocalAsset } from "@/lib/storage/local-assets";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const ASSETS_BUCKET = "assets";
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp", "gif"]);
 const FORMAT_MAP: Record<string, string> = { gif: "png" };
 
@@ -31,30 +29,32 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "无法解析请求体" }, { status: 400 });
+    return NextResponse.json({ error: "Unable to parse request body." }, { status: 400 });
   }
 
   const urls = body.urls;
   if (!Array.isArray(urls) || urls.length === 0) {
-    return NextResponse.json({ error: "请提供至少一个图片 URL" }, { status: 400 });
+    return NextResponse.json({ error: "Please provide at least one image URL." }, { status: 400 });
   }
 
   if (urls.length > 100) {
-    return NextResponse.json({ error: "单次最多导入 100 张图片" }, { status: 400 });
+    return NextResponse.json({ error: "A single import supports up to 100 image URLs." }, { status: 400 });
   }
 
-  const results: ImportResult[] = await Promise.all(
-    urls.map((url) => importSingleImage(url)),
-  );
+  const results: ImportResult[] = [];
+
+  for (const url of urls) {
+    results.push(await importSingleImage(url, request));
+  }
 
   return NextResponse.json({
+    failed_count: results.filter((result) => !result.success).length,
     results,
-    success_count: results.filter((r) => r.success).length,
-    failed_count: results.filter((r) => !r.success).length,
+    success_count: results.filter((result) => result.success).length,
   });
 }
 
-async function importSingleImage(sourceUrl: string): Promise<ImportResult> {
+async function importSingleImage(sourceUrl: string, request: Request): Promise<ImportResult> {
   try {
     const safeSourceUrl = assertSafeHttpUrl(sourceUrl);
     const buffer = await safeFetchBuffer(safeSourceUrl, {
@@ -70,75 +70,61 @@ async function importSingleImage(sourceUrl: string): Promise<ImportResult> {
     const metadata = await sharp(buffer).metadata();
 
     if (!metadata.width || !metadata.height || !metadata.format) {
-      throw new Error("无法读取图片元数据");
+      throw new Error("Unable to read image metadata.");
     }
 
     if (!ALLOWED_FORMATS.has(metadata.format)) {
-      throw new Error(`不支持的格式：${metadata.format}`);
+      throw new Error(`Unsupported image format: ${metadata.format}`);
     }
 
     const finalFormat = FORMAT_MAP[metadata.format] || metadata.format;
-    const finalBuffer = metadata.format === "gif"
-      ? await sharp(buffer).png().toBuffer()
-      : buffer;
-
+    const finalBuffer = metadata.format === "gif" ? await sharp(buffer).png().toBuffer() : buffer;
+    const filename = ensureImageExtension(extractFilename(safeSourceUrl), finalFormat);
     const supabase = createSupabaseServiceRoleClient();
-    const datePath = new Date().toISOString().slice(0, 10);
-    const filename = extractFilename(safeSourceUrl);
-    const storagePath = `${datePath}/${randomUUID()}-${filename}`;
-
-    const contentType = `image/${finalFormat}`;
-    const { error: uploadError } = await supabase.storage
-      .from(ASSETS_BUCKET)
-      .upload(storagePath, finalBuffer, { contentType, upsert: false });
-
-    if (uploadError) {
-      throw new Error(`Storage 上传失败：${uploadError.message}`);
-    }
-
-    const { data: publicUrlData } = supabase.storage
-      .from(ASSETS_BUCKET)
-      .getPublicUrl(storagePath);
-
-    const originalUrl = publicUrlData.publicUrl;
+    const savedAsset = await saveLocalAsset({
+      buffer: finalBuffer,
+      filename,
+      request,
+    });
+    const originalUrl = savedAsset.publicUrl;
 
     const { data: asset, error: insertError } = await supabase
       .from("assets")
       .insert({
-        original_url: originalUrl,
-        filename,
-        file_size: finalBuffer.length,
-        width: metadata.width,
-        height: metadata.height,
-        format: finalFormat,
-        status: "uploaded",
-        source: "link",
         copyright_status: "unknown",
+        file_size: finalBuffer.length,
+        filename,
+        format: finalFormat,
+        height: metadata.height,
+        original_url: originalUrl,
+        source: "link",
+        status: "uploaded",
+        width: metadata.width,
       })
       .select("id")
       .single();
 
     if (insertError) {
-      await supabase.storage.from(ASSETS_BUCKET).remove([storagePath]);
-      throw new Error(`数据库写入失败：${insertError.message}`);
+      await deleteLocalAssetByPublicUrl(originalUrl);
+      throw new Error(`Failed to write asset record: ${insertError.message}`);
     }
 
     return {
+      asset_id: asset.id,
+      file_size: finalBuffer.length,
+      filename,
+      format: finalFormat,
+      height: metadata.height,
+      original_url: originalUrl,
       source_url: sourceUrl,
       success: true,
-      asset_id: asset.id,
-      original_url: originalUrl,
-      filename,
       width: metadata.width,
-      height: metadata.height,
-      format: finalFormat,
-      file_size: finalBuffer.length,
     };
   } catch (error) {
     return {
+      error: error instanceof Error ? error.message : "Import failed",
       source_url: sourceUrl,
       success: false,
-      error: error instanceof Error ? error.message : "导入失败",
     };
   }
 }
@@ -151,4 +137,10 @@ function extractFilename(url: string): string {
   } catch {
     return "image";
   }
+}
+
+function ensureImageExtension(filename: string, format: string) {
+  const extension = format === "jpeg" ? ".jpg" : `.${format}`;
+  const basename = filename.replace(/\.[a-zA-Z0-9]{1,8}$/, "");
+  return `${basename}${extension}`;
 }

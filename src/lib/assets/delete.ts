@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { deleteLocalAssetByPublicUrl } from "@/lib/storage/local-assets";
 
 const ASSETS_BUCKET = "assets";
 
@@ -20,10 +21,13 @@ export type AssetUsageSummary = {
 };
 
 type AssetForDelete = {
+  cutout_url: string | null;
   filename: string;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
   processed_url: string | null;
+  print_extract_url: string | null;
 };
 
 type ImageJobItemReference = {
@@ -305,7 +309,7 @@ export async function deleteAssets(assetIds: string[], options: { force?: boolea
 
   const { data, error } = await supabase
     .from("assets")
-    .select("id,filename,original_url,processed_url")
+    .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url")
     .in("id", assetIds);
 
   if (error) {
@@ -340,9 +344,34 @@ export async function deleteAssets(assetIds: string[], options: { force?: boolea
       continue;
     }
 
+    const fileUrls = Array.from(
+      new Set(
+        [
+          asset.original_url,
+          asset.processed_url,
+          asset.print_extract_url,
+          asset.cutout_url,
+          asset.preferred_design_url,
+        ].filter((url): url is string => Boolean(url)),
+      ),
+    );
+
+    const localDeleteResults = await Promise.all(fileUrls.map((url) => deleteLocalAssetByPublicUrl(url)));
+    const localDeleteError = localDeleteResults.find((result) => result.error);
+
+    if (localDeleteError) {
+      results.push({
+        asset_id: asset.id,
+        error: `Local file delete failed: ${localDeleteError.error}`,
+        filename: asset.filename,
+        success: false,
+      });
+      continue;
+    }
+
     const storagePaths = Array.from(
       new Set(
-        [asset.original_url, asset.processed_url]
+        fileUrls
           .map((url) => storagePathFromPublicUrl(url))
           .filter((path): path is string => Boolean(path)),
       ),
