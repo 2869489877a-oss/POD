@@ -1,5 +1,6 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
 import { makeProviderError } from "../errors";
+import { resolveReferenceImageBase64 } from "@/lib/ai-image/reference-image";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type VolcanoImageResponse = {
@@ -72,8 +73,9 @@ export class VolcanoArkProvider implements ImageProvider {
     return /seedream/i.test(modelId);
   }
 
-  private buildRequestBody(config: ProviderConfig, params: ImageGenParams): Record<string, unknown> {
+  private async buildRequestBody(config: ProviderConfig, params: ImageGenParams): Promise<Record<string, unknown>> {
     const isSeedream = this.isSeedreamModel(config.modelId);
+    const referenceImage = params.referenceUrl ? await resolveReferenceImageBase64(params.referenceUrl) : undefined;
     const promptParts = [params.prompt];
     if (params.style) promptParts.push(`Style: ${params.style}`);
     if (isSeedream && params.negativePrompt) promptParts.push(`Avoid: ${params.negativePrompt}`);
@@ -91,16 +93,16 @@ export class VolcanoArkProvider implements ImageProvider {
       body.negative_prompt = params.negativePrompt;
     }
 
-    if (params.referenceUrl) {
-      body.image = params.referenceUrl;
+    if (referenceImage) {
+      body.image = referenceImage;
     }
 
     if (isSeedream) {
       body.output_format = "png";
       body.optimize_prompt_options = { mode: "standard" };
-      body.sequential_image_generation = params.referenceUrl ? "auto" : "disabled";
+      body.sequential_image_generation = referenceImage ? "auto" : "disabled";
 
-      if (params.referenceUrl) {
+      if (referenceImage) {
         body.sequential_image_generation_options = { max_images: 1 };
       }
     }
@@ -114,7 +116,7 @@ export class VolcanoArkProvider implements ImageProvider {
     }
 
     const url = this.resolveEndpoint(config.baseUrl);
-    const body = this.buildRequestBody(config, params);
+    const body = await this.buildRequestBody(config, params);
     return this.doRequest(url, config.apiKey, body);
   }
 

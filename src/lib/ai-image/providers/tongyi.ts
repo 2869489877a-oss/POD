@@ -1,5 +1,6 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
 import { makeProviderError } from "../errors";
+import { resolveReferenceImageDataUrl } from "@/lib/ai-image/reference-image";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type DashScopeMultimodalResponse = {
@@ -24,9 +25,10 @@ export class TongyiProvider implements ImageProvider {
     const url = this.resolveMultimodalGenerationUrl(config.baseUrl);
     const prompt = params.style ? `${params.prompt}\nStyle: ${params.style}` : params.prompt;
     const content: Array<{ image: string } | { text: string }> = [];
+    const referenceImage = params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined;
 
-    if (params.referenceUrl) {
-      content.push({ image: params.referenceUrl });
+    if (referenceImage) {
+      content.push({ image: referenceImage });
     }
     content.push({ text: prompt });
 
@@ -38,7 +40,7 @@ export class TongyiProvider implements ImageProvider {
 
     if (!this.isLegacyQwenImageEdit(config.modelId)) {
       parameters.prompt_extend = true;
-      parameters.size = this.normalizeSize(config.modelId, Boolean(params.referenceUrl), params.width, params.height);
+      parameters.size = this.normalizeSize(config.modelId, Boolean(referenceImage), params.width, params.height);
     }
 
     const response = await fetch(url, {
