@@ -9,6 +9,7 @@ import {
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
 import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 import type { InfringementReferenceLibraryType, InfringementRuleCategory } from "@/lib/infringement/types";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
@@ -1295,7 +1296,7 @@ export function InfringementChecksManager({
               <div className="grid gap-0 md:grid-cols-[220px_1fr]">
                 <div className="relative min-h-[210px] bg-zinc-100">
                   <Image
-                    src={previewUrl}
+                    src={getDisplayImageSrc(previewUrl)}
                     alt={item.asset.filename}
                     fill
                     sizes="220px"
@@ -1434,7 +1435,7 @@ export function InfringementChecksManager({
               <div>
                 <div className="relative min-h-[360px] overflow-hidden rounded-md bg-zinc-100">
                   <Image
-                    src={selectedItem.asset.original_url}
+                    src={getDisplayImageSrc(selectedItem.asset.original_url)}
                     alt={selectedItem.asset.filename}
                     fill
                     sizes="(min-width: 1024px) 480px, 90vw"
