@@ -15,6 +15,15 @@ function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => p !== "/" && pathname.startsWith(p));
 }
 
+function isPublicCollectorUpload(request: NextRequest): boolean {
+  const contentType = request.headers.get("content-type") ?? "";
+  return (
+    request.nextUrl.pathname === "/api/collector-library" &&
+    request.method === "POST" &&
+    contentType.includes("multipart/form-data")
+  );
+}
+
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -56,8 +65,9 @@ export async function updateSession(request: NextRequest) {
 
   const isApi = pathname.startsWith("/api");
   const isPublicApi = PUBLIC_API_PREFIXES.some((p) => pathname.startsWith(p));
+  const isCollectorUpload = isPublicCollectorUpload(request);
 
-  if (!user && !isPublicPath(pathname) && !isPublicApi) {
+  if (!user && !isPublicPath(pathname) && !isPublicApi && !isCollectorUpload) {
     if (isApi) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
