@@ -6,8 +6,9 @@ import sharp from "sharp";
 
 import { assertAssetsPassCopyrightGate } from "@/lib/infringement/guards";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
+import { archiveOldImageJobItems } from "@/lib/maintenance/supabase-archive";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
@@ -66,8 +67,7 @@ function sanitizeFilename(filename: string) {
 }
 
 async function downloadImage(url: string) {
-  return safeFetchBuffer(url, {
-    allowedContentTypes: ["image/"],
+  return readImageBuffer(url, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });
@@ -410,6 +410,7 @@ export async function createAndProcessMockupJob(
     failedCount === 0 ? "completed" : successCount === 0 ? "failed" : "partial_failed";
 
   await updateJobCounts(supabase, jobId, assets.length, successCount, failedCount, status);
+  await archiveOldImageJobItems(supabase);
 
   return {
     failed_count: failedCount,

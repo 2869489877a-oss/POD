@@ -1,14 +1,13 @@
 import sharp from "sharp";
 
 import type { LoadedImagePixels } from "@/lib/image-ai/types";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 export async function downloadImageBuffer(url: string): Promise<Buffer> {
   try {
-    return await safeFetchBuffer(url, {
-      allowedContentTypes: ["image/"],
+    return await readImageBuffer(url, {
       maxBytes: MAX_DOWNLOAD_BYTES,
       timeoutMs: 30_000,
     });

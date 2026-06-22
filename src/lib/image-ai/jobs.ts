@@ -11,6 +11,7 @@ import type {
   PrintExtractionOptions,
   ProcessingBBox,
 } from "@/lib/image-ai/types";
+import { archiveOldImageJobItems } from "@/lib/maintenance/supabase-archive";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
@@ -514,6 +515,7 @@ export async function createAndProcessImageAiJob(
     failedCount === 0 ? "completed" : successCount === 0 ? "failed" : "partial_failed";
 
   await updateJobCounts(supabase, jobId, assets.length, successCount, failedCount, status);
+  await archiveOldImageJobItems(supabase);
 
   return {
     failed_count: failedCount,

@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
@@ -300,8 +300,7 @@ export async function POST(request: Request) {
   const sourceNames = parseSourceNames(body.source_names);
 
   try {
-    const sourceBuffer = await safeFetchBuffer(imageUrl, {
-      allowedContentTypes: ["image/"],
+    const sourceBuffer = await readImageBuffer(imageUrl, {
       maxBytes: 35 * 1024 * 1024,
       timeoutMs: 45_000,
     });

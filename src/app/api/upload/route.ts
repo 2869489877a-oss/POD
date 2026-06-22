@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 
 import { logUsage } from "@/lib/auth/usage";
+import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
 import { deleteLocalAssetByPublicUrl, saveLocalAsset } from "@/lib/storage/local-assets";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
@@ -119,6 +120,7 @@ async function uploadImage(file: File, assetSource: UploadAssetSource, request: 
 }
 
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   let formData: FormData;
 
   try {
@@ -145,6 +147,20 @@ export async function POST(request: Request) {
   if (successCount > 0) {
     await logUsage("upload", successCount, { asset_source: assetSource });
   }
+
+  await logActivity({
+    action: "assets.upload",
+    durationMs: elapsedMs(startedAt),
+    entityType: "assets",
+    metadata: {
+      asset_source: assetSource,
+      failed_count: results.filter((result) => !result.success).length,
+      file_count: files.length,
+      success_count: successCount,
+    },
+    request,
+    status: successCount > 0 ? "success" : "failure",
+  });
 
   return NextResponse.json(
     {

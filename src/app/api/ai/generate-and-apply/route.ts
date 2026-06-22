@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
@@ -70,8 +70,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const garmentBuffer = await safeFetchBuffer(garmentUrl, {
-      allowedContentTypes: ["image/"],
+    const garmentBuffer = await readImageBuffer(garmentUrl, {
       maxBytes: 25 * 1024 * 1024,
       timeoutMs: 30_000,
     });

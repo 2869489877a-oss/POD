@@ -5,6 +5,7 @@ import {
   getAssetUsageSummary,
   parseDeleteAssetIds,
 } from "@/lib/assets/delete";
+import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -94,6 +95,7 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const startedAt = performance.now();
   let body: { asset_ids?: unknown; dry_run?: unknown; force?: unknown };
 
   try {
@@ -141,6 +143,20 @@ export async function DELETE(request: Request) {
 
     const successCount = deleteResult.results.filter((result) => result.success).length;
     const failedCount = deleteResult.results.length - successCount;
+
+    await logActivity({
+      action: "assets.delete",
+      durationMs: elapsedMs(startedAt),
+      entityType: "assets",
+      metadata: {
+        asset_count: assetIds.length,
+        failed_count: failedCount,
+        forced: body.force === true,
+        success_count: successCount,
+      },
+      request,
+      status: successCount > 0 ? "success" : "failure",
+    });
 
     return NextResponse.json(
       {

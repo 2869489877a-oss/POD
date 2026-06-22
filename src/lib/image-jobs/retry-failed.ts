@@ -11,7 +11,7 @@ import {
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
@@ -101,8 +101,7 @@ function getRetryItemIds(value: unknown) {
 }
 
 async function downloadImage(url: string) {
-  return safeFetchBuffer(url, {
-    allowedContentTypes: ["image/"],
+  return readImageBuffer(url, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });

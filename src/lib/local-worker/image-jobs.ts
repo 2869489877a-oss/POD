@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 
 import sharp from "sharp";
+import { archiveOldImageJobItems } from "@/lib/maintenance/supabase-archive";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -492,6 +493,9 @@ export async function completeLocalWorkerItem(
   }
 
   const jobCounts = await updateJobCounts(supabase, item.job_id);
+  if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+    await archiveOldImageJobItems(supabase);
+  }
 
   return {
     derivative_id: (derivativeData as unknown as { id: string }).id,
@@ -535,5 +539,9 @@ export async function failLocalWorkerItem(
 
   await supabase.from("assets").update({ status: "failed" }).eq("id", asset.id);
 
-  return updateJobCounts(supabase, item.job_id);
+  const jobCounts = await updateJobCounts(supabase, item.job_id);
+  if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+    await archiveOldImageJobItems(supabase);
+  }
+  return jobCounts;
 }

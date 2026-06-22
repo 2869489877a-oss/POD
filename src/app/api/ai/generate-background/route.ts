@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
@@ -20,8 +20,7 @@ type GenerateBackgroundRequest = {
 };
 
 async function fetchImageBuffer(url: string): Promise<Buffer> {
-  return safeFetchBuffer(url, {
-    allowedContentTypes: ["image/"],
+  return readImageBuffer(url, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });

@@ -7,13 +7,12 @@ import {
   inferImageExtension,
   sanitizeFileSegment,
 } from "@/lib/exports/files";
-import { safeFetchBinary } from "@/lib/network/safe-fetch";
+import { readImageBinary } from "@/lib/network/image-buffer";
 import { getProductImageUrls } from "@/lib/exports/products";
 import type { ProductDraftView } from "@/lib/products/types";
 
 async function downloadImage(url: string) {
-  const image = await safeFetchBinary(url, {
-    allowedContentTypes: ["image/"],
+  const image = await readImageBinary(url, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });

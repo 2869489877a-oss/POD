@@ -3,13 +3,14 @@ import "server-only";
 import { randomUUID } from "crypto";
 
 import { resizeImageBuffer } from "@/lib/image-processing/resize-image";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import {
   getResizePreset,
   type ResizePreset,
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
+import { archiveOldImageJobItems } from "@/lib/maintenance/supabase-archive";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
@@ -71,8 +72,7 @@ function getPresetKeyFromOptions(options: unknown): ResizePresetKey | null {
 }
 
 async function downloadImage(inputUrl: string) {
-  return safeFetchBuffer(inputUrl, {
-    allowedContentTypes: ["image/"],
+  return readImageBuffer(inputUrl, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });
@@ -292,6 +292,7 @@ export async function processResizeJob(
     failedCount === 0 ? "completed" : successCount === 0 ? "failed" : "partial_failed";
 
   await updateJobCounts(supabase, jobId, items.length, successCount, failedCount, finalStatus);
+  await archiveOldImageJobItems(supabase);
 
   return getResizeJobProgress(supabase, jobId);
 }

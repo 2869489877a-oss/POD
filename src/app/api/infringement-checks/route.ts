@@ -5,6 +5,8 @@ import {
   runInfringementDetection,
 } from "@/lib/infringement/detector";
 import { computeAverageHashFromUrl } from "@/lib/infringement/image-hash";
+import { archiveOldInfringementChecks } from "@/lib/maintenance/supabase-archive";
+import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
 import {
   builtInHighRiskReferenceItems,
   normalizeReferenceRow,
@@ -369,6 +371,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   let body: CreateChecksRequest;
 
   try {
@@ -478,11 +481,34 @@ export async function POST(request: Request) {
       )),
     );
 
+    const archivedChecks = await archiveOldInfringementChecks(supabase, assetIds);
+
+    await logActivity({
+      action: "infringement.batch_check",
+      durationMs: elapsedMs(startedAt),
+      entityType: "infringement_checks",
+      metadata: {
+        archived_checks: archivedChecks.archived,
+        asset_count: assetIds.length,
+        check_count: insertedChecks.length,
+      },
+      request,
+      status: "success",
+    });
+
     return NextResponse.json({
       checks: insertedChecks,
       message: `已完成 ${insertedChecks.length} 张素材的规则检测`,
     });
   } catch (error) {
+    await logActivity({
+      action: "infringement.batch_check",
+      durationMs: elapsedMs(startedAt),
+      message: error instanceof Error ? error.message : "Infringement check failed",
+      request,
+      status: "failure",
+    });
+
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "侵权检测失败", results: [] },
       { status: 500 },

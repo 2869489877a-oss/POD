@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 
 import type { MockupScene } from "@/lib/mockups/scenes";
-import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readImageBuffer } from "@/lib/network/image-buffer";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
@@ -19,8 +19,7 @@ export type MockupPreviewResult = {
 };
 
 async function downloadImage(url: string) {
-  return safeFetchBuffer(url, {
-    allowedContentTypes: ["image/"],
+  return readImageBuffer(url, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });
