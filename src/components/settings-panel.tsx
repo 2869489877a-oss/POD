@@ -91,13 +91,14 @@ export function SettingsPanel() {
             return (
               <button
                 key={color}
+                type="button"
                 onClick={() => setAccent(color)}
-                className={`group relative flex items-center gap-3 rounded-xl border p-3 transition-all duration-200 ${
+                className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border p-3 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
                   isActive
                     ? "border-2"
                     : isDark
-                      ? "border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.03]"
-                      : "border-black/[0.05] hover:border-black/[0.1] hover:bg-black/[0.02]"
+                      ? "border-white/[0.06] hover:border-white/[0.18] hover:bg-white/[0.07]"
+                      : "border-black/[0.05] hover:border-black/[0.16] hover:bg-white"
                 }`}
                 style={{
                   borderColor: isActive ? c.primary : undefined,
@@ -133,13 +134,14 @@ function ModeCard({ active, onClick, isDark, accentColor, glow, children }: {
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`relative rounded-xl border p-4 text-left transition-all duration-200 ${
+      className={`group relative overflow-hidden rounded-xl border p-4 text-left outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
         active
           ? "border-2"
           : isDark
-            ? "border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.03]"
-            : "border-black/[0.05] hover:border-black/[0.1] hover:bg-black/[0.02]"
+            ? "border-white/[0.06] hover:border-white/[0.18] hover:bg-white/[0.07]"
+            : "border-black/[0.05] hover:border-black/[0.16] hover:bg-white"
       }`}
       style={{
         borderColor: active ? accentColor : undefined,

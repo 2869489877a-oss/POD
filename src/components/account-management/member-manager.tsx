@@ -123,9 +123,10 @@ export function MemberManager({
           <button
             type="button"
             onClick={() => setDialog({ kind: "create" })}
-            className="rounded-md px-3.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+            className={primaryButtonClass("px-3.5 py-2 text-[13px] font-semibold")}
             style={{ backgroundColor: colors.primary }}
           >
+            <IconGlyph name="plus" className="h-4 w-4" />
             {t("新增账号", "Add Account")}
           </button>
         </div>
@@ -220,19 +221,22 @@ export function MemberManager({
                       {member.today_api_calls}
                     </td>
                     <td className="px-5 py-3">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
                         <RowButton
                           label={t("用量", "Usage")}
+                          icon="activity"
                           isDark={isDark}
                           onClick={() => setDialog({ kind: "usage", member })}
                         />
                         <RowButton
                           label={t("配额", "Quota")}
+                          icon="gauge"
                           isDark={isDark}
                           onClick={() => setDialog({ kind: "quota", member })}
                         />
                         <RowButton
                           label={t("改密", "Password")}
+                          icon="key"
                           isDark={isDark}
                           onClick={() => setDialog({ kind: "password", member })}
                         />
@@ -240,12 +244,15 @@ export function MemberManager({
                           <>
                             <RowButton
                               label={frozen ? t("解冻", "Unfreeze") : t("冻结", "Freeze")}
+                              icon={frozen ? "unlock" : "lock"}
+                              variant={frozen ? "success" : "warning"}
                               isDark={isDark}
                               disabled={isPending}
                               onClick={() => handleToggleFreeze(member)}
                             />
                             <RowButton
                               label={t("删除", "Delete")}
+                              icon="trash"
                               isDark={isDark}
                               danger
                               onClick={() => setDialog({ kind: "delete", member })}
@@ -326,33 +333,85 @@ export function MemberManager({
 
 /* ---------- small building blocks ---------- */
 
+type ButtonIconName = "activity" | "gauge" | "key" | "lock" | "plus" | "trash" | "unlock" | "x";
+
+const buttonMotionClass =
+  "inline-flex items-center justify-center gap-2 outline-none transition-all duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50";
+
+function primaryButtonClass(extra = "") {
+  return `${buttonMotionClass} rounded-lg text-white shadow-sm hover:shadow-lg ${extra}`;
+}
+
+function secondaryButtonClass(isDark: boolean, extra = "") {
+  return [
+    buttonMotionClass,
+    "rounded-lg border shadow-sm",
+    isDark
+      ? "border-white/[0.1] bg-white/[0.04] text-zinc-200 hover:border-white/[0.2] hover:bg-white/[0.08] hover:text-white"
+      : "border-black/[0.08] bg-white text-zinc-700 hover:border-black/[0.16] hover:bg-zinc-50 hover:text-zinc-950",
+    extra,
+  ].join(" ");
+}
+
+function solidDangerButtonClass(extra = "") {
+  return `${buttonMotionClass} rounded-lg bg-red-600 text-white shadow-sm hover:bg-red-500 hover:shadow-lg ${extra}`;
+}
+
+function IconGlyph({ name, className = "h-3.5 w-3.5" }: { name: ButtonIconName; className?: string }) {
+  const paths: Record<ButtonIconName, React.ReactNode> = {
+    activity: <path strokeLinecap="round" strokeLinejoin="round" d="M3 12h4l2-7 4 14 2-7h6" />,
+    gauge: <path strokeLinecap="round" strokeLinejoin="round" d="M4 14a8 8 0 1 1 16 0M12 14l4-4M8 18h8" />,
+    key: <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a4 4 0 1 0-3.3 6.26L9 16H6v3H3v2h5.4l5.86-5.86A4 4 0 0 0 15 7Z" />,
+    lock: <path strokeLinecap="round" strokeLinejoin="round" d="M7 11V8a5 5 0 0 1 10 0v3M6 11h12v9H6z" />,
+    plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />,
+    trash: <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M9 7V5h6v2M8 10v9m4-9v9m4-9v9M6 7l1 14h10l1-14" />,
+    unlock: <path strokeLinecap="round" strokeLinejoin="round" d="M7 11V8a5 5 0 0 1 9.5-2.2M6 11h12v9H6z" />,
+    x: <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6 6 18" />,
+  };
+
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" aria-hidden="true">
+      {paths[name]}
+    </svg>
+  );
+}
+
 function RowButton({
   label,
   onClick,
   isDark,
   danger,
   disabled,
+  icon,
+  variant = "neutral",
 }: {
   label: string;
   onClick: () => void;
   isDark: boolean;
   danger?: boolean;
   disabled?: boolean;
+  icon?: ButtonIconName;
+  variant?: "neutral" | "success" | "warning";
 }) {
+  const toneClass = danger
+    ? "border-red-400/25 bg-red-500/10 text-red-500 hover:border-red-400/45 hover:bg-red-500/15 hover:text-red-400"
+    : variant === "warning"
+      ? "border-amber-400/25 bg-amber-500/10 text-amber-500 hover:border-amber-400/45 hover:bg-amber-500/15 hover:text-amber-400"
+      : variant === "success"
+        ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-500 hover:border-emerald-400/45 hover:bg-emerald-500/15 hover:text-emerald-400"
+        : isDark
+          ? "border-white/[0.1] bg-white/[0.035] text-zinc-300 hover:border-white/[0.2] hover:bg-white/[0.08] hover:text-white"
+          : "border-black/[0.08] bg-white text-zinc-600 hover:border-black/[0.16] hover:bg-zinc-50 hover:text-zinc-950";
+
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-md px-2 py-1 text-[12px] font-medium transition-colors disabled:opacity-50 ${
-        danger
-          ? "text-red-500 hover:bg-red-500/10"
-          : isDark
-            ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-200"
-            : "text-zinc-500 hover:bg-black/[0.04] hover:text-zinc-800"
-      }`}
+      className={[buttonMotionClass, "h-8 rounded-lg border px-2.5 text-[12px] font-semibold shadow-sm", toneClass].join(" ")}
     >
-      {label}
+      {icon ? <IconGlyph name={icon} /> : null}
+      <span>{label}</span>
     </button>
   );
 }
@@ -388,13 +447,9 @@ function DialogShell({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className={`rounded-md p-1 ${
-              isDark ? "text-zinc-500 hover:bg-white/[0.06]" : "text-zinc-400 hover:bg-black/[0.04]"
-            }`}
+            className={secondaryButtonClass(isDark, "h-8 w-8 p-0")}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
-            </svg>
+            <IconGlyph name="x" className="h-4 w-4" />
           </button>
         </div>
         <div className="mt-4">{children}</div>
@@ -482,7 +537,7 @@ function CreateMemberDialog({
         <button
           type="submit"
           disabled={isPending}
-          className="mt-2 rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={primaryButtonClass("mt-2 px-4 py-2 text-[13px] font-semibold")}
           style={{ backgroundColor: accentColor }}
         >
           {isPending ? t("创建中...", "Creating...") : t("创建账号", "Create Account")}
@@ -539,7 +594,7 @@ function QuotaDialog({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={primaryButtonClass("px-4 py-2 text-[13px] font-semibold")}
           style={{ backgroundColor: accentColor }}
         >
           {isPending ? t("保存中...", "Saving...") : t("保存", "Save")}
@@ -592,7 +647,7 @@ function PasswordDialog({
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={primaryButtonClass("px-4 py-2 text-[13px] font-semibold")}
           style={{ backgroundColor: accentColor }}
         >
           {isPending ? t("重置中...", "Resetting...") : t("重置密码", "Reset Password")}
@@ -642,11 +697,7 @@ function DeleteDialog({
         <button
           type="button"
           onClick={onClose}
-          className={`rounded-md border px-3.5 py-1.5 text-[13px] font-medium ${
-            isDark
-              ? "border-white/[0.12] text-zinc-300 hover:bg-white/[0.06]"
-              : "border-black/[0.12] text-zinc-600 hover:bg-black/[0.03]"
-          }`}
+          className={secondaryButtonClass(isDark, "px-3.5 py-1.5 text-[13px] font-semibold")}
         >
           {t("取消", "Cancel")}
         </button>
@@ -654,7 +705,7 @@ function DeleteDialog({
           type="button"
           onClick={handleDelete}
           disabled={isPending}
-          className="rounded-md bg-red-600 px-3.5 py-1.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className={solidDangerButtonClass("px-3.5 py-1.5 text-[13px] font-semibold")}
         >
           {isPending ? t("删除中...", "Deleting...") : t("确认删除", "Confirm Delete")}
         </button>
