@@ -6,10 +6,9 @@ import { cutoutImage } from "@/lib/image-ai/cutout";
 import type { CutoutMode } from "@/lib/image-ai/types";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -106,27 +105,16 @@ function dateFolder(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function getPublicUrl(supabase: SupabaseServiceClient, path: string): string {
-  return supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path).data.publicUrl;
-}
-
 async function uploadImage(
-  supabase: SupabaseServiceClient,
+  _supabase: SupabaseServiceClient,
   path: string,
   buffer: Buffer,
-  contentType: string,
+  _contentType: string,
 ): Promise<string> {
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, buffer, {
-    cacheControl: "31536000",
-    contentType,
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`Failed to upload generated image: ${error.message}`);
-  }
-
-  return getPublicUrl(supabase, path);
+  return (await saveLocalAssetAtPath({
+    buffer,
+    relativePath: path,
+  })).publicUrl;
 }
 
 async function processAsset(

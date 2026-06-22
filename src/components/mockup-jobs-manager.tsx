@@ -6,6 +6,7 @@ import Image from "next/image";
 import { createMockupJob } from "@/lib/actions/mockup-jobs";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 const ASSETS_PER_PAGE = 12;
 
@@ -289,7 +290,7 @@ export function MockupJobsManager({
                     aria-label={t(`选择 ${asset.filename}`, `Select ${asset.filename}`)}
                   >
                     <Image
-                      src={previewUrl}
+                      src={getDisplayImageSrc(previewUrl)}
                       alt={asset.filename}
                       fill
                       sizes="(min-width: 1280px) 20vw, (min-width: 640px) 33vw, 50vw"
@@ -414,7 +415,7 @@ export function MockupJobsManager({
                         >
                           <span className="relative block aspect-square overflow-hidden bg-zinc-100">
                             <Image
-                              src={url}
+                              src={getDisplayImageSrc(url)}
                               alt={t(`商品图 ${index + 1}`, `Product Image ${index + 1}`)}
                               fill
                               sizes="(min-width: 1280px) 20vw, 50vw"

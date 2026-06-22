@@ -3,10 +3,9 @@ import "server-only";
 import { randomUUID } from "crypto";
 
 import sharp from "sharp";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -115,21 +114,14 @@ function buildOptions(input: CreateLocalWorkerImageJobInput): WorkerJobOptions {
 }
 
 async function uploadFile(
-  supabase: SupabaseServiceClient,
+  _supabase: SupabaseServiceClient,
   path: string,
   file: WorkerFileInput,
 ) {
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, file.buffer, {
-    cacheControl: "31536000",
-    contentType: file.contentType,
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`处理结果上传失败：${error.message}`);
-  }
-
-  return supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path).data.publicUrl;
+  return (await saveLocalAssetAtPath({
+    buffer: file.buffer,
+    relativePath: path,
+  })).publicUrl;
 }
 
 async function ensurePreview(output: WorkerFileInput, preview: WorkerFileInput | null) {

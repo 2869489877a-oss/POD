@@ -4,6 +4,7 @@
 
 import { useMemo, useState } from "react";
 import Image from "next/image";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 import { fetchAssetsAction } from "@/lib/actions/assets";
 import { Pagination } from "@/components/pagination";
@@ -194,20 +195,6 @@ function formatDate(value: string, locale: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function getImageSrc(url: string) {
-  try {
-    const parsed = new URL(url);
-
-    if (parsed.pathname.startsWith("/uploads/assets/")) {
-      return `${parsed.pathname}${parsed.search}`;
-    }
-  } catch {
-    // Relative URLs can be used by Next Image as-is.
-  }
-
-  return url;
 }
 
 export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {
@@ -761,7 +748,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     aria-label={t(`查看 ${asset.filename} 详情`, `View ${asset.filename} details`)}
                   >
                     <Image
-                      src={getImageSrc(previewUrl)}
+                      src={getDisplayImageSrc(previewUrl)}
                       alt={asset.filename}
                       fill
                       sizes="(min-width: 1536px) 25vw, (min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"

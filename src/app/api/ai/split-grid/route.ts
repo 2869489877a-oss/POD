@@ -5,6 +5,7 @@ import sharp from "sharp";
 
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -29,7 +30,6 @@ type SplitPiece = {
 
 type ExtractRect = { height: number; left: number; top: number; width: number };
 
-const ASSETS_BUCKET = "assets";
 // Detection runs on a downscaled copy for speed; results are mapped back to full resolution.
 const DETECT_MAX_DIM = 480;
 const ALPHA_BG_THRESHOLD = 24; // alpha <= this counts as background (transparent sheets)
@@ -248,19 +248,10 @@ async function savePiece(buffer: Buffer, filename: string, width: number, height
   const datePath = new Date().toISOString().slice(0, 10);
   const storagePath = `${datePath}/ai-grid-${randomUUID()}.png`;
 
-  const { error: uploadError } = await supabase.storage
-    .from(ASSETS_BUCKET)
-    .upload(storagePath, buffer, {
-      contentType: "image/png",
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw new Error(`拆分结果上传失败：${uploadError.message}`);
-  }
-
-  const { data: publicUrlData } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(storagePath);
-  const resultUrl = publicUrlData.publicUrl;
+  const resultUrl = (await saveLocalAssetAtPath({
+    buffer,
+    relativePath: storagePath,
+  })).publicUrl;
 
   const { data: asset, error: insertError } = await supabase
     .from("assets")
@@ -279,7 +270,7 @@ async function savePiece(buffer: Buffer, filename: string, width: number, height
     .single();
 
   if (insertError) {
-    await supabase.storage.from(ASSETS_BUCKET).remove([storagePath]);
+    await deleteLocalAssetByPublicUrl(resultUrl);
     throw new Error(`拆分结果写入素材库失败：${insertError.message}`);
   }
 

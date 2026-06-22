@@ -5,6 +5,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback, resolveProvider } from "@/lib/ai-image/router";
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
+import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -153,22 +154,10 @@ export async function POST(request: Request) {
       const datePath = new Date().toISOString().slice(0, 10);
       const storagePath = `${datePath}/ai-${randomUUID()}.${ext}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("assets")
-        .upload(storagePath, outputBuffer, {
-          contentType: outputMimeType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`AI 结果上传失败: ${uploadError.message}`);
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("assets")
-        .getPublicUrl(storagePath);
-
-      resultUrl = publicUrlData.publicUrl;
+      resultUrl = (await saveLocalAssetAtPath({
+        buffer: outputBuffer,
+        relativePath: storagePath,
+      })).publicUrl;
 
       const { data: asset, error: assetInsertError } = await supabase
         .from("assets")
@@ -187,7 +176,7 @@ export async function POST(request: Request) {
         .single();
 
       if (assetInsertError) {
-        await supabase.storage.from("assets").remove([storagePath]);
+        await deleteLocalAssetByPublicUrl(resultUrl);
         throw new Error(`AI 结果写入素材库失败: ${assetInsertError.message}`);
       }
 

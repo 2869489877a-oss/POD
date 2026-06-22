@@ -21,6 +21,7 @@ import {
   safePathSegment,
 } from "@/lib/image-collector/url";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { deleteLocalAssetByPublicUrl } from "@/lib/storage/local-assets";
 import type { ImageCollectionItem, ImageCollectionRun } from "@/types/image-collector";
 
 const MAX_CONCURRENT_DOWNLOADS = 3;
@@ -214,7 +215,7 @@ async function collectSingleImage(
       .single();
 
     if (assetError) {
-      await supabase.storage.from("assets").remove([uploaded.storagePath]);
+      await deleteLocalAssetByPublicUrl(uploaded.publicUrl);
       throw new Error(`assets 写入失败：${assetError.message}`);
     }
 

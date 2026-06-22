@@ -6,6 +6,7 @@ import Image from "next/image";
 import { fetchAssetsForProcessing } from "@/lib/actions/common";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 const ASSETS_PER_PAGE = 10;
 
@@ -345,7 +346,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                     >
                       <span className="relative block aspect-square overflow-hidden rounded-md bg-zinc-100">
                         <Image
-                          src={getPreviewUrl(asset)}
+                          src={getDisplayImageSrc(getPreviewUrl(asset))}
                           alt={asset.filename}
                           fill
                           sizes="92px"

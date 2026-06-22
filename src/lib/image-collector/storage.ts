@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { safePathSegment } from "@/lib/image-collector/url";
 import type { UploadedCollectedImage } from "@/lib/image-collector/types";
-
-const ASSETS_BUCKET = "assets";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 type UploadCollectedImageInput = {
   buffer: Buffer;
@@ -21,30 +19,22 @@ function normalizeRootFolder(value: string) {
 
 export async function uploadCollectedImage({
   buffer,
-  contentType,
   filename,
   rootFolder,
   sourceFolder,
 }: UploadCollectedImageInput): Promise<UploadedCollectedImage> {
-  const supabase = createSupabaseServiceRoleClient();
   const storagePath = [
     normalizeRootFolder(rootFolder),
     safePathSegment(sourceFolder, "source"),
     `${randomUUID()}-${safePathSegment(filename, "image.jpg")}`,
   ].join("/");
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(storagePath, buffer, {
-    contentType,
-    upsert: false,
+  const savedImage = await saveLocalAssetAtPath({
+    buffer,
+    relativePath: storagePath,
   });
 
-  if (error) {
-    throw new Error(`采集图片上传到 Supabase Storage 失败：${error.message}`);
-  }
-
-  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(storagePath);
-
   return {
-    publicUrl: data.publicUrl,
+    publicUrl: savedImage.publicUrl,
     storagePath,
   };
 }

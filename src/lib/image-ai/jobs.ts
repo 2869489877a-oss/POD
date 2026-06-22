@@ -12,8 +12,7 @@ import type {
   ProcessingBBox,
 } from "@/lib/image-ai/types";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -96,22 +95,15 @@ function pickInputUrl(asset: AssetForProcessing) {
 }
 
 async function uploadFile(
-  supabase: SupabaseServiceClient,
+  _supabase: SupabaseServiceClient,
   path: string,
   content: Buffer,
-  contentType: string,
+  _contentType: string,
 ) {
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(path, content, {
-    contentType,
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`处理结果上传失败：${error.message}`);
-  }
-
-  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  return (await saveLocalAssetAtPath({
+    buffer: content,
+    relativePath: path,
+  })).publicUrl;
 }
 
 async function updateJobCounts(

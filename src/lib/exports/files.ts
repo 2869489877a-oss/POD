@@ -2,9 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
-const ASSETS_BUCKET = "assets";
 const SAFE_FILENAME_PATTERN = /^[a-zA-Z0-9._-]+\.(xlsx|zip)$/;
 
 function timestamp() {
@@ -34,23 +33,16 @@ function getExportExtension(filename: string) {
 export async function writePublicExportFile(filename: string, content: Buffer | Uint8Array) {
   assertSafeExportFilename(filename);
 
-  const supabase = createSupabaseServiceRoleClient();
   const datePath = new Date().toISOString().slice(0, 10);
   const extension = getExportExtension(filename);
   const storagePath = `exports/${datePath}/${randomUUID()}.${extension}`;
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(storagePath, content, {
-    contentType: getExportContentType(filename),
-    upsert: false,
+  const savedExport = await saveLocalAssetAtPath({
+    buffer: content,
+    relativePath: storagePath,
   });
 
-  if (error) {
-    throw new Error(`导出文件上传到 Supabase Storage 失败：${error.message}`);
-  }
-
-  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(storagePath);
-
   return {
-    downloadUrl: data.publicUrl,
+    downloadUrl: savedExport.publicUrl,
     storagePath,
   };
 }

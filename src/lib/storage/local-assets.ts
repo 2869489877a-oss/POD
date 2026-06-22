@@ -12,6 +12,12 @@ type SaveLocalAssetInput = {
   request?: Request;
 };
 
+type SaveLocalAssetAtPathInput = {
+  buffer: Buffer | Uint8Array;
+  relativePath: string;
+  request?: Request;
+};
+
 export type SavedLocalAsset = {
   diskPath: string;
   publicUrl: string;
@@ -114,9 +120,11 @@ export function buildLocalAssetPublicUrl(relativePath: string, request?: Request
   return `${getLocalAssetsPublicBaseUrl(request)}/${encodeRelativePath(relativePath)}`;
 }
 
-export async function saveLocalAsset({ buffer, filename, request }: SaveLocalAssetInput): Promise<SavedLocalAsset> {
-  const datePath = new Date().toISOString().slice(0, 10);
-  const relativePath = `${datePath}/${randomUUID()}-${sanitizeFilename(filename)}`;
+export async function saveLocalAssetAtPath({
+  buffer,
+  relativePath,
+  request,
+}: SaveLocalAssetAtPathInput): Promise<SavedLocalAsset> {
   const diskPath = resolveLocalAssetPath(relativePath);
 
   await mkdir(path.dirname(diskPath), { recursive: true });
@@ -127,6 +135,13 @@ export async function saveLocalAsset({ buffer, filename, request }: SaveLocalAss
     publicUrl: buildLocalAssetPublicUrl(relativePath, request),
     relativePath,
   };
+}
+
+export async function saveLocalAsset({ buffer, filename, request }: SaveLocalAssetInput): Promise<SavedLocalAsset> {
+  const datePath = new Date().toISOString().slice(0, 10);
+  const relativePath = `${datePath}/${randomUUID()}-${sanitizeFilename(filename)}`;
+
+  return saveLocalAssetAtPath({ buffer, relativePath, request });
 }
 
 export function localAssetRelativePathFromPublicUrl(publicUrl: string | null) {

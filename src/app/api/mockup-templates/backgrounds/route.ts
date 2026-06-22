@@ -2,11 +2,10 @@ import { randomUUID } from "crypto";
 
 import { NextResponse } from "next/server";
 
-import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 
-const ASSETS_BUCKET = "assets";
 const ALLOWED_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type UploadResult = {
@@ -21,7 +20,7 @@ function getErrorMessage(error: unknown) {
     return error.message;
   }
 
-  return "未知错误";
+  return "Unknown error";
 }
 
 function sanitizeFilename(filename: string) {
@@ -32,33 +31,21 @@ function sanitizeFilename(filename: string) {
 async function uploadBackground(file: File): Promise<UploadResult> {
   try {
     if (!ALLOWED_MIME_TYPES.has(file.type)) {
-      throw new Error("仅支持 jpg、jpeg、png、webp 场景底图");
+      throw new Error("Only jpg, jpeg, png, and webp scene backgrounds are supported.");
     }
 
-    const supabase = createSupabaseServiceRoleClient();
     const buffer = Buffer.from(await file.arrayBuffer());
     const datePath = new Date().toISOString().slice(0, 10);
-    const storagePath = `mockup-backgrounds/${datePath}/${randomUUID()}-${sanitizeFilename(
-      file.name,
-    )}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from(ASSETS_BUCKET)
-      .upload(storagePath, buffer, {
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      throw new Error(`底图上传失败：${uploadError.message}`);
-    }
-
-    const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(storagePath);
+    const storagePath = `mockup-backgrounds/${datePath}/${randomUUID()}-${sanitizeFilename(file.name)}`;
+    const savedBackground = await saveLocalAssetAtPath({
+      buffer,
+      relativePath: storagePath,
+    });
 
     return {
       filename: file.name,
       success: true,
-      url: data.publicUrl,
+      url: savedBackground.publicUrl,
     };
   } catch (error) {
     return {
@@ -76,7 +63,7 @@ export async function POST(request: Request) {
     formData = await request.formData();
   } catch {
     return NextResponse.json(
-      { error: "无法读取上传表单", results: [] },
+      { error: "Unable to read upload form.", results: [] },
       { status: 400 },
     );
   }
@@ -86,7 +73,7 @@ export async function POST(request: Request) {
     .filter((value): value is File => value instanceof File);
 
   if (files.length === 0) {
-    return NextResponse.json({ error: "请选择至少一张底图", results: [] }, { status: 400 });
+    return NextResponse.json({ error: "Please select at least one background image.", results: [] }, { status: 400 });
   }
 
   const results = await Promise.all(files.map((file) => uploadBackground(file)));

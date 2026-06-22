@@ -5,6 +5,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
+import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -135,20 +136,12 @@ export async function POST(request: Request) {
     const patternPath = `derivatives/${datePath}/${id}-ai-pattern.png`;
     const compositePath = `derivatives/${datePath}/${id}-applied.png`;
 
-    const [patternUpload, compositeUpload] = await Promise.all([
-      supabase.storage.from("assets").upload(patternPath, patternBuffer, { contentType: "image/png", upsert: false }),
-      supabase.storage.from("assets").upload(compositePath, composited, { contentType: "image/png", upsert: false }),
+    const [patternSaved, compositeSaved] = await Promise.all([
+      saveLocalAssetAtPath({ buffer: patternBuffer, relativePath: patternPath }),
+      saveLocalAssetAtPath({ buffer: composited, relativePath: compositePath }),
     ]);
-
-    if (patternUpload.error) {
-      throw new Error(`印花图上传失败: ${patternUpload.error.message}`);
-    }
-    if (compositeUpload.error) {
-      throw new Error(`合成图上传失败: ${compositeUpload.error.message}`);
-    }
-
-    const patternUrl = supabase.storage.from("assets").getPublicUrl(patternPath).data.publicUrl;
-    const compositeUrl = supabase.storage.from("assets").getPublicUrl(compositePath).data.publicUrl;
+    const patternUrl = patternSaved.publicUrl;
+    const compositeUrl = compositeSaved.publicUrl;
 
     if (assetId) {
       const { error: derivativeError } = await supabase.from("image_derivatives").insert({
@@ -164,7 +157,7 @@ export async function POST(request: Request) {
       });
 
       if (derivativeError) {
-        await supabase.storage.from("assets").remove([patternPath, compositePath]);
+        await Promise.all([deleteLocalAssetByPublicUrl(patternUrl), deleteLocalAssetByPublicUrl(compositeUrl)]);
         throw new Error(`套用印花记录写入失败: ${derivativeError.message}`);
       }
     }

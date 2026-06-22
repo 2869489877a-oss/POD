@@ -12,6 +12,7 @@ import {
 import { Pagination } from "@/components/pagination";
 import { SceneEditor } from "@/components/scene-editor";
 import { useSettings } from "@/lib/settings/context";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 const TEMPLATES_PER_PAGE = 8;
 
@@ -695,7 +696,7 @@ export function MockupTemplatesManager({
                   <div key={`${scene.name}-${scene.background_url}`} className="rounded-md border border-zinc-200">
                     <div className="relative aspect-square overflow-hidden rounded-t-md bg-zinc-100">
                       <Image
-                        src={scene.background_url}
+                        src={getDisplayImageSrc(scene.background_url)}
                         alt={scene.name}
                         fill
                         sizes="(min-width: 640px) 50vw, 100vw"
@@ -756,7 +757,7 @@ export function MockupTemplatesManager({
                       className="relative block aspect-square overflow-hidden rounded-t-md bg-zinc-100"
                     >
                       <Image
-                        src={preview.url}
+                        src={getDisplayImageSrc(preview.url)}
                         alt={preview.name}
                         fill
                         sizes="(min-width: 640px) 50vw, 100vw"

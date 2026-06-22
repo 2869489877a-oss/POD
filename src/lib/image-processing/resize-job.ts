@@ -4,14 +4,13 @@ import { randomUUID } from "crypto";
 
 import { resizeImageBuffer } from "@/lib/image-processing/resize-image";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import {
   getResizePreset,
   type ResizePreset,
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -242,21 +241,10 @@ export async function processResizeJob(
       const outputBuffer = await resizeImageBuffer(inputBuffer, preset);
       const outputPath = buildOutputPath(jobId, asset, preset);
 
-      const { error: uploadError } = await supabase.storage
-        .from(ASSETS_BUCKET)
-        .upload(outputPath, outputBuffer, {
-          contentType: preset.mimeType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`处理结果上传失败：${uploadError.message}`);
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from(ASSETS_BUCKET)
-        .getPublicUrl(outputPath);
-      const outputUrl = publicUrlData.publicUrl;
+      const outputUrl = (await saveLocalAssetAtPath({
+        buffer: outputBuffer,
+        relativePath: outputPath,
+      })).publicUrl;
 
       const { error: assetUpdateError } = await supabase
         .from("assets")

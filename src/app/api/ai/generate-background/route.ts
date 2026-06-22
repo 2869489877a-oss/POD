@@ -5,6 +5,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
+import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
       });
 
       if (derivativeError) {
-        await supabase.storage.from("assets").remove([bgPath, compositePath]);
+        await Promise.all([deleteLocalAssetByPublicUrl(bgUrl), deleteLocalAssetByPublicUrl(compositeUrl)]);
         throw new Error(`背景衍生记录写入失败: ${derivativeError.message}`);
       }
     }
@@ -131,10 +132,14 @@ export async function POST(request: Request) {
   }
 }
 
-function uploadToStorage(supabase: ReturnType<typeof createSupabaseServiceRoleClient>, path: string, buffer: Buffer, contentType: string) {
-  return supabase.storage.from("assets").upload(path, buffer, { contentType, upsert: false })
-    .then(({ error }) => {
-      if (error) throw new Error(`上传失败: ${error.message}`);
-      return supabase.storage.from("assets").getPublicUrl(path).data.publicUrl;
-    });
+async function uploadToStorage(
+  _supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  path: string,
+  buffer: Buffer,
+  _contentType: string,
+) {
+  return (await saveLocalAssetAtPath({
+    buffer,
+    relativePath: path,
+  })).publicUrl;
 }

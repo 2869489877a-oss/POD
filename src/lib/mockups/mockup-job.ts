@@ -7,9 +7,8 @@ import sharp from "sharp";
 import { assertAssetsPassCopyrightGate } from "@/lib/infringement/guards";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -86,17 +85,10 @@ async function uploadMockupScene(
   const sceneName = sanitizeFilename(scene.name);
   const outputPath = `mockup-outputs/${datePath}/${jobId}/${asset.id}/${randomUUID()}-${filename}-${sceneName}.png`;
 
-  const { error } = await supabase.storage.from(ASSETS_BUCKET).upload(outputPath, outputBuffer, {
-    contentType: "image/png",
-    upsert: false,
-  });
-
-  if (error) {
-    throw new Error(`套图上传失败：${error.message}`);
-  }
-
-  const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(outputPath);
-  return data.publicUrl;
+  return (await saveLocalAssetAtPath({
+    buffer: outputBuffer,
+    relativePath: outputPath,
+  })).publicUrl;
 }
 
 async function renderScene(scene: MockupScene, backgroundBuffer: Buffer, printBuffer: Buffer) {

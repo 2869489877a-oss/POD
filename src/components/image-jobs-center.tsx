@@ -6,6 +6,7 @@ import Image from "next/image";
 import { fetchImageJobs, fetchImageJobDetail, retryImageJob } from "@/lib/actions/image-jobs";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 const JOBS_PER_PAGE = 12;
 const ITEMS_PER_PAGE = 8;
@@ -437,7 +438,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                     className="relative block aspect-square overflow-hidden rounded-md border border-zinc-200 bg-zinc-100"
                     aria-label={t("查看原图", "View input image")}
                   >
-                    <Image src={item.input_url} alt={t("原图", "Input")} fill sizes="160px" className="object-cover" />
+                    <Image src={getDisplayImageSrc(item.input_url)} alt={t("原图", "Input")} fill sizes="160px" className="object-cover" />
                   </a>
                 </div>
                 <div>
@@ -450,7 +451,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                       className="relative block aspect-square overflow-hidden rounded-md border border-zinc-200 bg-zinc-100"
                       aria-label={t("查看处理结果图", "View output image")}
                     >
-                      <Image src={item.output_url} alt={t("处理结果图", "Output")} fill sizes="160px" className="object-cover" />
+                      <Image src={getDisplayImageSrc(item.output_url)} alt={t("处理结果图", "Output")} fill sizes="160px" className="object-cover" />
                     </a>
                   ) : (
                     <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">

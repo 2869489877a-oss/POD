@@ -12,9 +12,8 @@ import {
 } from "@/lib/image-processing/resize-presets";
 import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -233,19 +232,10 @@ async function retryResizeItem(
   const outputBuffer = await resizeImageBuffer(inputBuffer, preset);
   const outputPath = buildResizeOutputPath(jobId, item.id, asset, preset);
 
-  const { error: uploadError } = await supabase.storage
-    .from(ASSETS_BUCKET)
-    .upload(outputPath, outputBuffer, {
-      contentType: preset.mimeType,
-      upsert: false,
-    });
-
-  if (uploadError) {
-    throw new Error(`处理结果上传失败：${uploadError.message}`);
-  }
-
-  const { data: publicUrlData } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(outputPath);
-  const outputUrl = publicUrlData.publicUrl;
+  const outputUrl = (await saveLocalAssetAtPath({
+    buffer: outputBuffer,
+    relativePath: outputPath,
+  })).publicUrl;
   const { error: assetUpdateError } = await supabase
     .from("assets")
     .update({
@@ -307,19 +297,10 @@ async function retryMockupItem(
     const backgroundBuffer = await downloadImage(scene.background_url);
     const outputBuffer = await renderMockupScene(scene, backgroundBuffer, printBuffer);
     const outputPath = buildMockupOutputPath(jobId, item.id, asset, scene);
-    const { error: uploadError } = await supabase.storage
-      .from(ASSETS_BUCKET)
-      .upload(outputPath, outputBuffer, {
-        contentType: "image/png",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      throw new Error(`套图上传失败：${uploadError.message}`);
-    }
-
-    const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(outputPath);
-    outputImages.push(data.publicUrl);
+    outputImages.push((await saveLocalAssetAtPath({
+      buffer: outputBuffer,
+      relativePath: outputPath,
+    })).publicUrl);
   }
 
   const { error: outputError } = await supabase.from("mockup_outputs").insert({

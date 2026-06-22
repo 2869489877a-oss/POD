@@ -6,9 +6,8 @@ import sharp from "sharp";
 
 import type { MockupScene } from "@/lib/mockups/scenes";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-
-const ASSETS_BUCKET = "assets";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
@@ -83,23 +82,15 @@ export async function renderMockupPreviews(
         scene.name,
       )}.png`;
 
-      const { error: uploadError } = await supabase.storage
-        .from(ASSETS_BUCKET)
-        .upload(outputPath, outputBuffer, {
-          contentType: "image/png",
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`预览图上传失败：${uploadError.message}`);
-      }
-
-      const { data } = supabase.storage.from(ASSETS_BUCKET).getPublicUrl(outputPath);
+      const savedPreview = await saveLocalAssetAtPath({
+        buffer: outputBuffer,
+        relativePath: outputPath,
+      });
 
       results.push({
         name: scene.name,
         success: true,
-        url: data.publicUrl,
+        url: savedPreview.publicUrl,
       });
     } catch (error) {
       results.push({

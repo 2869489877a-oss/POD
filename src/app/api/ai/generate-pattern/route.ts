@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback } from "@/lib/ai-image/router";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
+import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -65,13 +66,10 @@ export async function POST(request: Request) {
     const datePath = new Date().toISOString().slice(0, 10);
     const storagePath = `derivatives/${datePath}/${randomUUID()}-ai-pattern.png`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("assets")
-      .upload(storagePath, buffer, { contentType: "image/png", upsert: false });
-
-    if (uploadError) throw new Error(`上传失败: ${uploadError.message}`);
-
-    const patternUrl = supabase.storage.from("assets").getPublicUrl(storagePath).data.publicUrl;
+    const patternUrl = (await saveLocalAssetAtPath({
+      buffer,
+      relativePath: storagePath,
+    })).publicUrl;
 
     const { data: newAsset, error: assetInsertError } = await supabase
       .from("assets")
@@ -90,12 +88,12 @@ export async function POST(request: Request) {
       .single();
 
     if (assetInsertError) {
-      await supabase.storage.from("assets").remove([storagePath]);
+      await deleteLocalAssetByPublicUrl(patternUrl);
       throw new Error(`素材写入失败: ${assetInsertError.message}`);
     }
 
     if (!newAsset?.id) {
-      await supabase.storage.from("assets").remove([storagePath]);
+      await deleteLocalAssetByPublicUrl(patternUrl);
       throw new Error("素材写入失败: 未返回素材 ID");
     }
 
@@ -113,7 +111,7 @@ export async function POST(request: Request) {
       });
 
       if (derivativeError) {
-        await supabase.storage.from("assets").remove([storagePath]);
+        await deleteLocalAssetByPublicUrl(patternUrl);
         await supabase.from("assets").delete().eq("id", newAsset.id);
         throw new Error(`印花衍生记录写入失败: ${derivativeError.message}`);
       }
