@@ -199,7 +199,7 @@ function formatDate(value: string, locale: string) {
 }
 
 export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {
-  const { language, t } = useSettings();
+  const { isDark, language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
@@ -238,6 +238,22 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       ? Math.round((resizeCompletedCount / resizeJob.total_count) * 100)
       : 0;
   const failedResizeItems = resizeJob?.items.filter((item) => item.status === "failed") ?? [];
+  const detailOverlayClass = isDark ? "bg-black/75" : "bg-zinc-950/60";
+  const detailPanelClass = isDark
+    ? "border border-white/[0.08] bg-[#0f0f10] text-zinc-100 shadow-2xl shadow-black/50"
+    : "bg-white text-zinc-950 shadow-xl";
+  const detailHeaderClass = isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white";
+  const detailImageFrameClass = isDark ? "bg-black/40 ring-1 ring-white/[0.08]" : "bg-zinc-100";
+  const detailTitleClass = isDark ? "text-white" : "text-zinc-950";
+  const detailMutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
+  const detailValueClass = isDark ? "text-zinc-100" : "text-zinc-950";
+  const detailButtonClass = isDark
+    ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]"
+    : "border-zinc-300 text-zinc-800 hover:bg-zinc-100";
+  const detailLinkClass = isDark ? "text-cyan-300 hover:text-cyan-200" : "text-emerald-700 hover:text-emerald-800";
+  const detailDangerButtonClass = isDark
+    ? "border-red-400/40 text-red-300 hover:bg-red-500/10 disabled:border-white/[0.08] disabled:text-zinc-600"
+    : "border-red-300 text-red-700 hover:bg-red-50 disabled:border-zinc-200 disabled:text-zinc-400";
 
   useEffect(() => {
     setIsMounted(true);
@@ -964,7 +980,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       {selectedAsset && isMounted ? createPortal((
         <div
-          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-zinc-950/60 px-3 py-4 sm:px-6 sm:py-6"
+          className={["fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6", detailOverlayClass].join(" ")}
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               closeAssetDetail();
@@ -974,21 +990,21 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           aria-modal="true"
           aria-labelledby="asset-detail-title"
         >
-          <div className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md bg-white shadow-xl"
+          <div className={["relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md", detailPanelClass].join(" ")}
             onMouseDown={(event) => event.stopPropagation()}>
-            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-zinc-200 bg-white px-4 py-3 sm:px-6 sm:py-4">
+            <div className={["flex shrink-0 items-start justify-between gap-4 border-b px-4 py-3 sm:px-6 sm:py-4", detailHeaderClass].join(" ")}>
               <div>
-                <h3 id="asset-detail-title" className="text-base font-semibold text-zinc-950">
+                <h3 id="asset-detail-title" className={["text-base font-semibold", detailTitleClass].join(" ")}>
                   {t("图片详情", "Image Details")}
                 </h3>
-                <p className="mt-1 text-sm text-zinc-500">{selectedAsset.filename}</p>
+                <p className={["mt-1 text-sm", detailMutedClass].join(" ")}>{selectedAsset.filename}</p>
               </div>
               <div className="flex shrink-0 flex-wrap justify-end gap-2">
                 <a
                   href={getAssetPreviewUrl(selectedAsset)}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                  className={["rounded-md border px-3 py-2 text-sm font-medium transition", detailButtonClass].join(" ")}
                 >
                   {t("打开大图", "Open Image")}
                 </a>
@@ -1002,7 +1018,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 <button
                   type="button"
                   onClick={closeAssetDetail}
-                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                  className={["rounded-md border px-3 py-2 text-sm font-medium transition", detailButtonClass].join(" ")}
                 >
                   {t("关闭", "Close")}
                 </button>
@@ -1010,7 +1026,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </div>
 
             <div className="grid gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-              <div className="flex min-h-[220px] items-center justify-center rounded-md bg-zinc-100 p-3 sm:min-h-[360px]">
+              <div className={["flex min-h-[220px] items-center justify-center rounded-md p-3 sm:min-h-[360px]", detailImageFrameClass].join(" ")}>
                 <img
                   src={getAssetPreviewUrl(selectedAsset)}
                   alt={selectedAsset.filename}
@@ -1020,65 +1036,65 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
               <dl className="space-y-4 text-sm">
                 <div>
-                  <dt className="text-zinc-500">{t("文件名", "Filename")}</dt>
-                  <dd className="mt-1 break-all font-medium text-zinc-950">
+                  <dt className={detailMutedClass}>{t("文件名", "Filename")}</dt>
+                  <dd className={["mt-1 break-all font-medium", detailValueClass].join(" ")}>
                     {selectedAsset.filename}
                   </dd>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-zinc-500">{t("尺寸", "Dimensions")}</dt>
-                    <dd className="mt-1 font-medium text-zinc-950">
+                    <dt className={detailMutedClass}>{t("尺寸", "Dimensions")}</dt>
+                    <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                       {selectedAsset.width} x {selectedAsset.height}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-zinc-500">{t("格式", "Format")}</dt>
-                    <dd className="mt-1 font-medium text-zinc-950">
+                    <dt className={detailMutedClass}>{t("格式", "Format")}</dt>
+                    <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                       {selectedAsset.format.toUpperCase()}
                     </dd>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <dt className="text-zinc-500">{t("文件大小", "File Size")}</dt>
-                    <dd className="mt-1 font-medium text-zinc-950">
+                    <dt className={detailMutedClass}>{t("文件大小", "File Size")}</dt>
+                    <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                       {formatFileSize(selectedAsset.file_size)}
                     </dd>
                   </div>
                   <div>
-                    <dt className="text-zinc-500">{t("状态", "Status")}</dt>
-                    <dd className="mt-1 font-medium text-zinc-950">
+                    <dt className={detailMutedClass}>{t("状态", "Status")}</dt>
+                    <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                       {t(statusLabels[selectedAsset.status].zh, statusLabels[selectedAsset.status].en)}
                     </dd>
                   </div>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">{t("版权状态", "Copyright Status")}</dt>
-                  <dd className="mt-1 font-medium text-zinc-950">
+                  <dt className={detailMutedClass}>{t("版权状态", "Copyright Status")}</dt>
+                  <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                     {t(copyrightLabels[selectedAsset.copyright_status].zh, copyrightLabels[selectedAsset.copyright_status].en)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">{t("素材分类", "Asset Category")}</dt>
-                  <dd className="mt-1 font-medium text-zinc-950">
+                  <dt className={detailMutedClass}>{t("素材分类", "Asset Category")}</dt>
+                  <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                     {t(getAssetSourceLabel(selectedAsset).zh, getAssetSourceLabel(selectedAsset).en)}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">{t("创建时间", "Created At")}</dt>
-                  <dd className="mt-1 font-medium text-zinc-950">
+                  <dt className={detailMutedClass}>{t("创建时间", "Created At")}</dt>
+                  <dd className={["mt-1 font-medium", detailValueClass].join(" ")}>
                     {formatDate(selectedAsset.created_at, language === "zh" ? "zh-CN" : "en-US")}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-zinc-500">{t("原图地址", "Original URL")}</dt>
+                  <dt className={detailMutedClass}>{t("原图地址", "Original URL")}</dt>
                   <dd className="mt-1">
                     <a
                       href={selectedAsset.original_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                      className={["break-all font-medium", detailLinkClass].join(" ")}
                     >
                       {selectedAsset.original_url}
                     </a>
@@ -1086,13 +1102,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 </div>
                 {selectedAsset.preferred_design_url ? (
                   <div>
-                    <dt className="text-zinc-500">{t("优先设计图地址", "Preferred Design URL")}</dt>
+                    <dt className={detailMutedClass}>{t("优先设计图地址", "Preferred Design URL")}</dt>
                     <dd className="mt-1">
                       <a
                         href={selectedAsset.preferred_design_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                        className={["break-all font-medium", detailLinkClass].join(" ")}
                       >
                         {selectedAsset.preferred_design_url}
                       </a>
@@ -1101,13 +1117,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 ) : null}
                 {selectedAsset.print_extract_url ? (
                   <div>
-                    <dt className="text-zinc-500">{t("透明印花图地址", "Print Extract URL")}</dt>
+                    <dt className={detailMutedClass}>{t("透明印花图地址", "Print Extract URL")}</dt>
                     <dd className="mt-1">
                       <a
                         href={selectedAsset.print_extract_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                        className={["break-all font-medium", detailLinkClass].join(" ")}
                       >
                         {selectedAsset.print_extract_url}
                       </a>
@@ -1116,13 +1132,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 ) : null}
                 {selectedAsset.cutout_url ? (
                   <div>
-                    <dt className="text-zinc-500">{t("抠图地址", "Cutout URL")}</dt>
+                    <dt className={detailMutedClass}>{t("抠图地址", "Cutout URL")}</dt>
                     <dd className="mt-1">
                       <a
                         href={selectedAsset.cutout_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                        className={["break-all font-medium", detailLinkClass].join(" ")}
                       >
                         {selectedAsset.cutout_url}
                       </a>
@@ -1131,13 +1147,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 ) : null}
                 {selectedAsset.processed_url ? (
                   <div>
-                    <dt className="text-zinc-500">{t("处理后地址", "Processed URL")}</dt>
+                    <dt className={detailMutedClass}>{t("处理后地址", "Processed URL")}</dt>
                     <dd className="mt-1">
                       <a
                         href={selectedAsset.processed_url}
                         target="_blank"
                         rel="noreferrer"
-                        className="break-all font-medium text-emerald-700 hover:text-emerald-800"
+                        className={["break-all font-medium", detailLinkClass].join(" ")}
                       >
                         {selectedAsset.processed_url}
                       </a>
@@ -1149,7 +1165,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     type="button"
                     onClick={() => void deleteAssetIds([selectedAsset.id])}
                     disabled={isDeleting || isResizeRunning}
-                    className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+                    className={["rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed", detailDangerButtonClass].join(" ")}
                   >
                     {isDeleting ? t("删除中...", "Deleting...") : t("删除素材", "Delete Asset")}
                   </button>
