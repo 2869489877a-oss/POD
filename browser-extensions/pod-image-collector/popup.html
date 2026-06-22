@@ -32,7 +32,7 @@
             员工姓名
             <input id="ossFolderInput" type="text" autocomplete="off" placeholder="赵凯" />
           </label>
-          <p class="hint">固定路径：oss://wms-europe-file/杨文韬文件/员工姓名/北京时间日期/网站类型</p>
+          <p class="hint">固定路径：/wmsFile/pod-ai-data/collector-library/员工姓名/北京时间日期/网站类型</p>
         </div>
 
         <div id="temuModule" class="siteModule" hidden>
@@ -70,7 +70,7 @@
         <div class="scheduleModule">
           <div>
             <strong>定时采集</strong>
-            <p>按间隔自动打开目标网址，采集指定数量并上传到员工姓名/北京时间日期/网站类型目录。</p>
+            <p>按间隔自动打开目标网址，采集指定数量并传输到服务器采集库。</p>
           </div>
           <div class="row two">
             <label>
@@ -129,7 +129,7 @@
 
       <footer class="footer">
         <button id="downloadButton" class="primaryButton" type="button" disabled>下载选中图片</button>
-        <button id="ossUploadButton" class="primaryButton" type="button" disabled>上传到 OSS</button>
+        <button id="ossUploadButton" class="primaryButton" type="button" disabled>传输到服务器</button>
       </footer>
     </main>
     <script src="popup.js"></script>

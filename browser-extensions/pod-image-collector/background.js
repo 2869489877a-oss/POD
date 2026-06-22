@@ -1,19 +1,11 @@
 /* global chrome */
 
 const ALARM_NAME = "pod-image-collector-schedule";
-const OSS_BASE_PREFIX = "杨文韬文件";
-const DEFAULT_OSS_BUCKET = "wms-europe-file";
-const DEFAULT_OSS_ENDPOINT = "oss-eu-central-1.aliyuncs.com";
+const LEGACY_ROOT_FOLDER_NAME = "杨文韬文件";
+const SERVER_UPLOAD_BASE_URL = "http://8.209.98.115:3000";
+const SERVER_UPLOAD_ENDPOINT = "/api/collector-library";
 const IMAGE_SETTLE_DELAY_MS = 3000;
 const MAX_TARGET = 2000;
-const EMBEDDED_OSS_ACCESS_KEY_ID_CODES = [
-  76, 84, 65, 73, 53, 116, 56, 106, 105, 51, 107, 52, 121, 68, 114, 88, 113, 78, 118, 56, 49, 120, 118,
-  84,
-];
-const EMBEDDED_OSS_ACCESS_KEY_SECRET_CODES = [
-  68, 108, 104, 108, 73, 110, 121, 111, 68, 57, 121, 120, 50, 85, 85, 78, 88, 65, 118, 49, 110, 119,
-  68, 101, 51, 89, 78, 67, 76, 86,
-];
 
 let runningSchedule = false;
 
@@ -138,10 +130,6 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function decodeEmbeddedSecret(codes) {
-  return String.fromCharCode(...codes);
-}
-
 function beijingDateFolderName(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
@@ -172,7 +160,7 @@ function sanitizeOssFolderPath(value, fallback) {
     .split(/[\\/]+/g)
     .map((part) => sanitizePathSegment(part, ""))
     .filter(Boolean)
-    .filter((part) => part !== "." && part !== ".." && part !== OSS_BASE_PREFIX);
+    .filter((part) => part !== "." && part !== ".." && part !== LEGACY_ROOT_FOLDER_NAME);
 
   return parts.length > 0 ? parts.join("/") : fallback;
 }
@@ -220,33 +208,6 @@ async function blobToJpegBlob(blob) {
   });
 }
 
-function encodeOssObjectKey(objectKey) {
-  return objectKey
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-}
-
-function ossObjectUrl(settings, objectKey) {
-  return `https://${settings.bucket}.${settings.endpoint}/${encodeOssObjectKey(objectKey)}`;
-}
-
-async function hmacSha1Base64(secret, value) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { hash: "SHA-1", name: "HMAC" }, false, [
-    "sign",
-  ]);
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
-  const bytes = new Uint8Array(signature);
-  let binary = "";
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
-}
-
 function imageIdentity(url) {
   try {
     const parsed = new URL(url);
@@ -275,28 +236,28 @@ function normalizeSiteType(value) {
   return ["pinterest", "shein", "temu"].includes(value) ? value : "temu";
 }
 
-function ossSettings() {
-  return {
-    accessKeyId: decodeEmbeddedSecret(EMBEDDED_OSS_ACCESS_KEY_ID_CODES),
-    accessKeySecret: decodeEmbeddedSecret(EMBEDDED_OSS_ACCESS_KEY_SECRET_CODES),
-    bucket: DEFAULT_OSS_BUCKET,
-    endpoint: DEFAULT_OSS_ENDPOINT,
-  };
+function serverUploadUrl() {
+  return SERVER_UPLOAD_BASE_URL.replace(/\/+$/, "") + SERVER_UPLOAD_ENDPOINT;
 }
 
-function objectKeyFor(config, imageUrl, index) {
+function serverDateFolderName(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return year + "-" + month + "-" + day;
+}
+
+function collectorFolderName(config) {
   const employee = sanitizeOssFolderPath(config.employeeName, "未分类");
-  const dateFolder = beijingDateFolderName();
-  const siteType = normalizeSiteType(config.siteType);
-  const sequence = String(index + 1).padStart(3, "0");
-  const filename = sanitizePathSegment(jpegFilenameFromUrl(imageUrl), "image.jpg");
-
-  return [OSS_BASE_PREFIX, employee, dateFolder, siteType, `${sequence}-${crypto.randomUUID()}-${filename}`].join("/");
+  return [employee, serverDateFolderName(), normalizeSiteType(config.siteType)].join("/");
 }
 
-// Pinterest 缩略图（236x/474x/736x…）和原图只差 URL 里的尺寸目录段，hash 路径相同。
-// 把尺寸段重写为 originals 即可拿到上传原图；originals 的扩展名可能与缩略图不同，
-// 所以按画质从高到低生成多个候选，逐个探测，谁先返回有效图片就用谁。
 function pinterestUrlCandidates(url) {
   try {
     const parsed = new URL(url);
@@ -307,7 +268,6 @@ function pinterestUrlCandidates(url) {
 
     const segments = parsed.pathname.split("/").filter(Boolean);
 
-    // 形如 /{size}/{a}/{b}/{c}/{hash}.{ext}，至少要有尺寸段 + 文件段。
     if (segments.length < 2) {
       return [url];
     }
@@ -316,24 +276,20 @@ function pinterestUrlCandidates(url) {
     const extMatch = rest.match(/\.(avif|jpe?g|png|webp|gif)$/i);
     const originalExt = (extMatch?.[1] || "jpg").toLowerCase();
     const restNoExt = extMatch ? rest.slice(0, -extMatch[0].length) : rest;
-    const base = `${parsed.protocol}//${parsed.host}`;
+    const base = parsed.protocol + "//" + parsed.host;
     const exts = [originalExt, "jpg", "png", "webp", "jpeg", "gif"].filter(
       (ext, index, all) => all.indexOf(ext) === index,
     );
-
     const candidates = [];
 
-    // 1) 原图目录 originals，多扩展名探测（最高清）。
     for (const ext of exts) {
-      candidates.push(`${base}/originals/${restNoExt}.${ext}`);
+      candidates.push(base + "/originals/" + restNoExt + "." + ext);
     }
 
-    // 2) originals 不存在时，退到最大的固定尺寸。
     for (const size of ["1200x", "736x"]) {
-      candidates.push(`${base}/${size}/${restNoExt}.${originalExt}`);
+      candidates.push(base + "/" + size + "/" + restNoExt + "." + originalExt);
     }
 
-    // 3) 最后兜底用采集到的原始缩略图 URL。
     candidates.push(url);
 
     return candidates.filter((item, index, all) => all.indexOf(item) === index);
@@ -342,8 +298,6 @@ function pinterestUrlCandidates(url) {
   }
 }
 
-// 按画质降序探测候选 URL，返回第一张有效原图。
-// 严格校验：必须是图片、体积达标，排除 404 占位 / 1px 透明图等无效内容。
 async function fetchBestImageBlob(url) {
   const candidates = pinterestUrlCandidates(url);
   let lastError = "";
@@ -356,7 +310,7 @@ async function fetchBestImageBlob(url) {
       });
 
       if (!response.ok) {
-        lastError = `HTTP ${response.status}`;
+        lastError = "HTTP " + response.status;
         continue;
       }
 
@@ -373,36 +327,35 @@ async function fetchBestImageBlob(url) {
     }
   }
 
-  throw new Error(`读取图片失败：${lastError || "无可用画质"}`);
+  throw new Error("读取图片失败：" + (lastError || "无可用画质"));
 }
 
-async function uploadImageToOss(settings, config, imageUrl, index) {
-  const { blob: sourceBlob } = await fetchBestImageBlob(imageUrl);
+async function uploadImageToServer(config, imageUrl, index) {
+  const { blob: sourceBlob, url: resolvedUrl } = await fetchBestImageBlob(imageUrl);
   const blob = await blobToJpegBlob(sourceBlob);
-  const contentType = "image/jpeg";
-  const objectKey = objectKeyFor(config, imageUrl, index);
-  const ossDate = new Date().toUTCString();
-  const canonicalizedHeaders = `x-oss-date:${ossDate}\n`;
-  const canonicalResource = `/${settings.bucket}/${objectKey}`;
-  const stringToSign = ["PUT", "", contentType, ossDate, `${canonicalizedHeaders}${canonicalResource}`].join("\n");
-  const signature = await hmacSha1Base64(settings.accessKeySecret, stringToSign);
-  const uploadUrl = ossObjectUrl(settings, objectKey);
-  const uploadResponse = await fetch(uploadUrl, {
-    body: blob,
-    headers: {
-      Authorization: `OSS ${settings.accessKeyId}:${signature}`,
-      "Content-Type": contentType,
-      "x-oss-date": ossDate,
-    },
-    method: "PUT",
-  });
+  const filename =
+    String(index + 1).padStart(3, "0") + "-" + crypto.randomUUID() + "-" + sanitizePathSegment(jpegFilenameFromUrl(imageUrl), "image.jpg");
+  const formData = new FormData();
+  formData.append("files", blob, filename);
+  formData.append("employee_name", sanitizeOssFolderPath(config.employeeName, "未分类"));
+  formData.append("site_type", normalizeSiteType(config.siteType));
+  formData.append("source_url", resolvedUrl || imageUrl);
+  formData.append("page_url", config.url || "");
+  formData.append("source", "browser_extension_schedule");
 
-  if (!uploadResponse.ok) {
-    const errorText = await uploadResponse.text().catch(() => "");
-    throw new Error(`OSS 上传失败：HTTP ${uploadResponse.status}${errorText ? ` ${errorText.slice(0, 120)}` : ""}`);
+  const uploadResponse = await fetch(serverUploadUrl(), {
+    body: formData,
+    method: "POST",
+  });
+  const data = await uploadResponse.json().catch(() => null);
+
+  if (!uploadResponse.ok || !data || data.success_count === 0) {
+    const failed = data?.results?.find?.((result) => !result.success);
+    const message = failed?.error || data?.error || "服务器传输失败";
+    throw new Error("服务器传输失败：HTTP " + uploadResponse.status + " " + message);
   }
 
-  return { objectKey, url: uploadUrl };
+  return { folder: collectorFolderName(config), url: data.results?.[0]?.public_url || "" };
 }
 
 function collectScheduledImagesInPage(siteType, limit) {
@@ -643,7 +596,6 @@ async function collectImagesFromScheduledTab(tabId, config) {
 }
 
 async function uploadScheduledImages(config, images) {
-  const settings = ossSettings();
   const stored = await storageGet(["podUploadedImageKeys"]);
   const uploadedKeys = new Set(Array.isArray(stored.podUploadedImageKeys) ? stored.podUploadedImageKeys : []);
   let successCount = 0;
@@ -659,7 +611,7 @@ async function uploadScheduledImages(config, images) {
     }
 
     try {
-      await uploadImageToOss(settings, config, images[index].url, index);
+      await uploadImageToServer(config, images[index].url, index);
       uploadedKeys.add(key);
       successCount += 1;
     } catch {

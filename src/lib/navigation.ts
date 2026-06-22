@@ -21,7 +21,7 @@ export const navGroups: NavGroup[] = [
   {
     labelZh: "素材管理",
     labelEn: "Asset Management",
-    hrefs: ["/assets", "/upload", "/image-collector", "/infringement-check"],
+    hrefs: ["/assets", "/collector-library", "/upload", "/image-collector", "/infringement-check"],
   },
   {
     labelZh: "图片处理",
@@ -39,6 +39,7 @@ export const navGroups: NavGroup[] = [
 export const navItems: NavItem[] = [
   { titleZh: "仪表盘", titleEn: "Dashboard", href: "/dashboard", descZh: "查看批处理流程概览", descEn: "Batch processing overview", icon: "M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" },
   { titleZh: "素材库", titleEn: "Assets", href: "/assets", descZh: "管理已上传素材", descEn: "Manage uploaded assets", icon: "m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" },
+  { titleZh: "图片采集库", titleEn: "Collector Library", href: "/collector-library", descZh: "审核插件采集图片，合格后进入素材库", descEn: "Review plugin-collected images before importing them into Assets", icon: "M3.75 6.75A2.25 2.25 0 0 1 6 4.5h12a2.25 2.25 0 0 1 2.25 2.25v10.5A2.25 2.25 0 0 1 18 19.5H6a2.25 2.25 0 0 1-2.25-2.25V6.75Zm2.25.75v9h12v-9H6Zm1.5 7.5 2.625-3a1.5 1.5 0 0 1 2.25 0L15 15l1.125-1.125a1.5 1.5 0 0 1 2.121 0L19.5 15.129V17.25h-15v-1.5L7.5 15Zm6-5.25a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0Z" },
   { titleZh: "上传图片", titleEn: "Upload", href: "/upload", descZh: "上传待处理原图", descEn: "Upload images for processing", icon: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" },
   { titleZh: "图片采集插件说明", titleEn: "Collector Plugin Guide", href: "/image-collector", descZh: "查看浏览器采集插件安装和使用说明", descEn: "Browser image collector plugin setup guide", icon: "M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5c-3.162 0-6.133-.815-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" },
   { titleZh: "图片任务", titleEn: "Image Jobs", href: "/image-jobs", descZh: "批量图片处理任务", descEn: "Batch image processing jobs", icon: "M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0L21.75 16.5 12 21.75 2.25 16.5l4.179-2.25m0 0 5.571 3 5.571-3" },

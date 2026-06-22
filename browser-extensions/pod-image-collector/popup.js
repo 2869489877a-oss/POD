@@ -15,17 +15,9 @@ const SHEIN_CANDIDATES_PER_CARD = 2;
 const SHEIN_OUTPUT_IMAGES_PER_CARD = 1;
 const DOWNLOAD_DELAY_MS = 250;
 const IMAGE_SETTLE_DELAY_MS = 3000;
-const OSS_BASE_PREFIX = "杨文韬文件";
-const DEFAULT_OSS_BUCKET = "wms-europe-file";
-const DEFAULT_OSS_ENDPOINT = "oss-eu-central-1.aliyuncs.com";
-const EMBEDDED_OSS_ACCESS_KEY_ID_CODES = [
-  76, 84, 65, 73, 53, 116, 56, 106, 105, 51, 107, 52, 121, 68, 114, 88, 113, 78, 118, 56, 49, 120, 118,
-  84,
-];
-const EMBEDDED_OSS_ACCESS_KEY_SECRET_CODES = [
-  68, 108, 104, 108, 73, 110, 121, 111, 68, 57, 121, 120, 50, 85, 85, 78, 88, 65, 118, 49, 110, 119,
-  68, 101, 51, 89, 78, 67, 76, 86,
-];
+const LEGACY_ROOT_FOLDER_NAME = "杨文韬文件";
+const SERVER_UPLOAD_BASE_URL = "http://8.209.98.115:3000";
+const SERVER_UPLOAD_ENDPOINT = "/api/collector-library";
 const AUTO_FOLDER_NAMES = new Set(["", "auto", "generic", "pinterest", "shein", "temu"]);
 const OLD_OSS_FOLDER_NAMES = new Set(["generic", "pinterest", "shein", "shein/tops", "temu", "temu/shirts"]);
 const SITE_TYPE_LABELS = {
@@ -86,10 +78,6 @@ function storageSet(values) {
   return new Promise((resolve) => {
     chrome.storage.local.set(values, resolve);
   });
-}
-
-function decodeEmbeddedSecret(codes) {
-  return String.fromCharCode(...codes);
 }
 
 function beijingDateFolderName(date = new Date()) {
@@ -271,7 +259,7 @@ function sanitizeOssFolderPath(value, fallback) {
         .slice(0, 120),
     )
     .filter(Boolean)
-    .filter((part) => part !== "." && part !== ".." && part !== OSS_BASE_PREFIX);
+    .filter((part) => part !== "." && part !== ".." && part !== LEGACY_ROOT_FOLDER_NAME);
 
   return parts.length > 0 ? parts.join("/") : fallback;
 }
@@ -3505,15 +3493,6 @@ async function imageUrlToFile(url, index) {
   });
 }
 
-function readOssSettings() {
-  return {
-    accessKeyId: decodeEmbeddedSecret(EMBEDDED_OSS_ACCESS_KEY_ID_CODES),
-    accessKeySecret: decodeEmbeddedSecret(EMBEDDED_OSS_ACCESS_KEY_SECRET_CODES),
-    bucket: DEFAULT_OSS_BUCKET,
-    endpoint: DEFAULT_OSS_ENDPOINT,
-  };
-}
-
 function siteFolderName() {
   return sanitizeOssFolderPath(state.siteType || folderInput.value || "generic", "generic");
 }
@@ -3524,66 +3503,56 @@ function normalizeEmployeeName(value) {
   return OLD_OSS_FOLDER_NAMES.has(trimmed.toLowerCase()) ? "" : trimmed;
 }
 
-function encodeOssObjectKey(objectKey) {
-  return objectKey
-    .split("/")
-    .map((part) => encodeURIComponent(part))
-    .join("/");
+function serverUploadBaseUrl() {
+  return SERVER_UPLOAD_BASE_URL.replace(/\/+$/, "");
 }
 
-function ossObjectUrl(settings, objectKey) {
-  return `https://${settings.bucket}.${settings.endpoint}/${encodeOssObjectKey(objectKey)}`;
+function serverUploadUrl() {
+  return serverUploadBaseUrl() + SERVER_UPLOAD_ENDPOINT;
 }
 
-function ossObjectKeyFor(file, subfolder, index) {
-  const sequence = String(index + 1).padStart(3, "0");
-  const filename = sanitizePathSegment(file.name || "image.jpg", "image.jpg");
-  return [OSS_BASE_PREFIX, subfolder, `${sequence}-${crypto.randomUUID()}-${filename}`].filter(Boolean).join("/");
+function serverDateFolderName(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return year + "-" + month + "-" + day;
 }
 
-async function hmacSha1Base64(secret, value) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { hash: "SHA-1", name: "HMAC" }, false, [
-    "sign",
-  ]);
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
-  const bytes = new Uint8Array(signature);
-  let binary = "";
-
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-
-  return btoa(binary);
+function collectorFolderName(employeeName, siteType) {
+  return [employeeName, serverDateFolderName(), siteType].filter(Boolean).join("/");
 }
 
-async function uploadFileToOss(settings, file, objectKey) {
-  const contentType = file.type || "application/octet-stream";
-  const ossDate = new Date().toUTCString();
-  const canonicalizedHeaders = `x-oss-date:${ossDate}\n`;
-  const canonicalResource = `/${settings.bucket}/${objectKey}`;
-  const stringToSign = ["PUT", "", contentType, ossDate, `${canonicalizedHeaders}${canonicalResource}`].join("\n");
-  const signature = await hmacSha1Base64(settings.accessKeySecret, stringToSign);
-  const uploadUrl = ossObjectUrl(settings, objectKey);
-  const response = await fetch(uploadUrl, {
-    body: file,
-    headers: {
-      Authorization: `OSS ${settings.accessKeyId}:${signature}`,
-      "Content-Type": contentType,
-      "x-oss-date": ossDate,
-    },
-    method: "PUT",
+async function uploadFileToServer(file, metadata) {
+  const formData = new FormData();
+  formData.append("files", file, file.name || "image.jpg");
+  formData.append("employee_name", metadata.employeeName || "未分类");
+  formData.append("site_type", metadata.siteType || "generic");
+  formData.append("source_url", metadata.sourceUrl || "");
+  formData.append("page_url", metadata.pageUrl || "");
+  formData.append("source", "browser_extension");
+
+  const response = await fetch(serverUploadUrl(), {
+    body: formData,
+    method: "POST",
   });
+  const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => "");
-    throw new Error(`OSS 上传失败：HTTP ${response.status}${errorText ? ` ${errorText.slice(0, 120)}` : ""}`);
+  if (!response.ok || !data || data.success_count === 0) {
+    const failed = data?.results?.find?.((result) => !result.success);
+    const message = failed?.error || data?.error || "服务器传输失败";
+    throw new Error("服务器传输失败：HTTP " + response.status + " " + message);
   }
 
-  return uploadUrl;
+  return data.results?.[0] || null;
 }
 
-async function uploadSelectedImagesToOss() {
+async function uploadSelectedImagesToServer() {
   const selectedImages = state.images.filter((image) => state.selected.has(image.url));
 
   if (selectedImages.length === 0) {
@@ -3595,10 +3564,9 @@ async function uploadSelectedImagesToOss() {
 
   try {
     await saveSettings();
-    const ossSettings = readOssSettings();
-    const userFolder = sanitizeOssFolderPath(normalizeEmployeeName(ossFolderInput.value) || "未分类", "未分类");
-    const dateFolder = beijingDateFolderName();
-    const ossFolder = [userFolder, dateFolder, siteFolderName()].filter(Boolean).join("/");
+    const employeeName = sanitizeOssFolderPath(normalizeEmployeeName(ossFolderInput.value) || "未分类", "未分类");
+    const siteType = siteFolderName();
+    const collectorFolder = collectorFolderName(employeeName, siteType);
     let successCount = 0;
     let failedCount = 0;
 
@@ -3606,25 +3574,29 @@ async function uploadSelectedImagesToOss() {
       const image = selectedImages[index];
 
       try {
-        setStatus(`正在读取图片 ${index + 1}/${selectedImages.length}，准备上传到 ${OSS_BASE_PREFIX}/${ossFolder}...`);
+        setStatus("正在读取图片 " + (index + 1) + "/" + selectedImages.length + "，准备传输到服务器采集库/" + collectorFolder + "...");
         const file = await imageUrlToFile(image.url, index);
-        const objectKey = ossObjectKeyFor(file, ossFolder, index);
-        await uploadFileToOss(ossSettings, file, objectKey);
+        await uploadFileToServer(file, {
+          employeeName,
+          pageUrl: state.pageUrl || "",
+          siteType,
+          sourceUrl: image.url,
+        });
         successCount += 1;
       } catch (error) {
         failedCount += 1;
-        setStatus(error instanceof Error ? error.message : "OSS 上传单张图片失败。", "error");
+        setStatus(error instanceof Error ? error.message : "服务器传输单张图片失败。", "error");
       }
 
       await delay(120);
     }
 
     setStatus(
-      `OSS 上传完成：成功 ${successCount} 张，失败 ${failedCount} 张。保存位置：${OSS_BASE_PREFIX}/${ossFolder}`,
+      "服务器传输完成：成功 " + successCount + " 张，失败 " + failedCount + " 张。保存位置：/wmsFile/pod-ai-data/collector-library/" + collectorFolder,
       failedCount > 0 ? "" : "success",
     );
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "OSS 上传失败。", "error");
+    setStatus(error instanceof Error ? error.message : "服务器传输失败。", "error");
   } finally {
     setBusy(false);
     updateSummary();
@@ -3803,7 +3775,7 @@ downloadButton.addEventListener("click", () => void downloadSelectedImages());
 folderInput.addEventListener("change", () => void saveSettings());
 genericAutoButton.addEventListener("click", () => void autoCollectGeneric());
 ossFolderInput.addEventListener("change", () => void saveSettings());
-ossUploadButton.addEventListener("click", () => void uploadSelectedImagesToOss());
+ossUploadButton.addEventListener("click", () => void uploadSelectedImagesToServer());
 scanButton.addEventListener("click", () => void scanCurrentPage());
 scheduleCountInput.addEventListener("change", () => void saveSettings());
 scheduleIntervalDaysInput.addEventListener("change", () => void saveSettings());
