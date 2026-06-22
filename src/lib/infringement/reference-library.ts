@@ -31,6 +31,20 @@ type ReferenceField = {
   value: string;
 };
 
+type CompiledTermMatcher = {
+  normalizedTerm: string;
+  regex: RegExp | null;
+};
+
+type CompiledReferenceSet = {
+  imageItems: InfringementReferenceItem[];
+  textEntries: Array<{
+    item: InfringementReferenceItem;
+    matcher: CompiledTermMatcher;
+    term: string;
+  }>;
+};
+
 const categoryLimits: Array<{ category: InfringementRuleCategory; limit: number }> = [
   { category: "character", limit: 320 },
   { category: "brand", limit: 280 },
@@ -53,6 +67,9 @@ const validCategories = new Set<InfringementRuleCategory>([
   "sports",
   "visual_review",
 ]);
+
+const termMatcherCache = new Map<string, CompiledTermMatcher>();
+const referenceSetCache = new WeakMap<InfringementReferenceItem[], CompiledReferenceSet>();
 
 const celebrityApparelContexts = [
   "portrait",
@@ -122,16 +139,26 @@ function isAsciiTerm(term: string) {
   return /^[a-z0-9][a-z0-9\s.'+-]*$/i.test(term);
 }
 
-function matchTerm(text: string, term: string) {
+function getTermMatcher(term: string) {
   const normalizedTerm = normalizeText(term);
-  if (!normalizedTerm) return false;
+  if (!normalizedTerm) return null;
 
-  if (!isAsciiTerm(normalizedTerm)) {
-    return text.includes(normalizedTerm);
-  }
+  const cached = termMatcherCache.get(normalizedTerm);
+  if (cached) return cached;
 
-  const pattern = new RegExp(`(^|[^a-z0-9])${escapeRegExp(normalizedTerm)}([^a-z0-9]|$)`, "i");
-  return pattern.test(text);
+  const matcher: CompiledTermMatcher = {
+    normalizedTerm,
+    regex: isAsciiTerm(normalizedTerm)
+      ? new RegExp(`(^|[^a-z0-9])${escapeRegExp(normalizedTerm)}([^a-z0-9]|$)`, "i")
+      : null,
+  };
+
+  termMatcherCache.set(normalizedTerm, matcher);
+  return matcher;
+}
+
+function matchesPreparedTerm(text: string, matcher: CompiledTermMatcher) {
+  return matcher.regex ? matcher.regex.test(text) : text.includes(matcher.normalizedTerm);
 }
 
 function cleanTerms(terms: string[]) {
@@ -314,17 +341,44 @@ export function hammingDistance(hashA: string, hashB: string) {
   return distance;
 }
 
+function getCompiledReferenceSet(items: InfringementReferenceItem[]) {
+  const cached = referenceSetCache.get(items);
+  if (cached) return cached;
+
+  const compiled: CompiledReferenceSet = {
+    imageItems: [],
+    textEntries: [],
+  };
+
+  for (const item of items) {
+    if (item.isActive === false) continue;
+    if (item.imageHash) compiled.imageItems.push(item);
+
+    for (const term of item.terms) {
+      const matcher = getTermMatcher(term);
+      if (!matcher) continue;
+      compiled.textEntries.push({ item, matcher, term: term.trim() });
+    }
+  }
+
+  referenceSetCache.set(items, compiled);
+  return compiled;
+}
+
 export function matchReferenceItems(
   items: InfringementReferenceItem[],
   fields: ReferenceField[],
   assetImageHash?: string | null,
 ): InfringementReferenceMatch[] {
   const matches: InfringementReferenceMatch[] = [];
+  const compiled = getCompiledReferenceSet(items);
+  const normalizedFields = fields
+    .map((field) => ({ name: field.name, value: normalizeText(field.value) }))
+    .filter((field) => field.value.length > 0);
 
-  for (const item of items) {
-    if (item.isActive === false) continue;
-
-    if (assetImageHash && item.imageHash && hammingDistance(assetImageHash, item.imageHash) <= 8) {
+  if (assetImageHash) {
+    for (const item of compiled.imageItems) {
+      if (!item.imageHash || hammingDistance(assetImageHash, item.imageHash) > 8) continue;
       matches.push({
         category: item.category,
         field: "image_hash",
@@ -336,22 +390,21 @@ export function matchReferenceItems(
         title: item.title,
       });
     }
+  }
 
-    for (const field of fields) {
-      const normalized = normalizeText(field.value);
-      for (const term of item.terms) {
-        if (!matchTerm(normalized, term)) continue;
-        matches.push({
-          category: item.category,
-          field: field.name,
-          id: item.id,
-          libraryType: item.libraryType,
-          matched: term,
-          matchType: "text",
-          severity: item.severity,
-          title: item.title,
-        });
-      }
+  for (const field of normalizedFields) {
+    for (const entry of compiled.textEntries) {
+      if (!matchesPreparedTerm(field.value, entry.matcher)) continue;
+      matches.push({
+        category: entry.item.category,
+        field: field.name,
+        id: entry.item.id,
+        libraryType: entry.item.libraryType,
+        matched: entry.term,
+        matchType: "text",
+        severity: entry.item.severity,
+        title: entry.item.title,
+      });
     }
   }
 

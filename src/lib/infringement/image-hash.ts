@@ -3,6 +3,7 @@ import "server-only";
 import sharp from "sharp";
 
 import { safeFetchBinary } from "@/lib/network/safe-fetch";
+import { readLocalAssetByPublicUrl } from "@/lib/storage/local-assets";
 
 export async function computeAverageHash(buffer: Buffer) {
   const pixels = await sharp(buffer)
@@ -27,6 +28,12 @@ export async function computeAverageHash(buffer: Buffer) {
 }
 
 export async function computeAverageHashFromUrl(url: string) {
+  const localBuffer = await readLocalAssetByPublicUrl(url);
+
+  if (localBuffer) {
+    return computeAverageHash(localBuffer);
+  }
+
   const { buffer } = await safeFetchBinary(url, {
     allowedContentTypes: ["image/"],
     maxBytes: 15 * 1024 * 1024,

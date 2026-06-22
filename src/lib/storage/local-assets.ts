@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "crypto";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
 const DEFAULT_PUBLIC_PATH = "/uploads/assets";
@@ -160,6 +160,17 @@ export function localAssetRelativePathFromPublicUrl(publicUrl: string | null) {
     }
 
     return decodeURIComponent(pathname.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+export async function readLocalAssetByPublicUrl(publicUrl: string | null): Promise<Buffer | null> {
+  const relativePath = localAssetRelativePathFromPublicUrl(publicUrl);
+  if (!relativePath) return null;
+
+  try {
+    return await readFile(resolveLocalAssetPath(relativePath));
   } catch {
     return null;
   }

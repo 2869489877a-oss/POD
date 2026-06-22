@@ -7,6 +7,7 @@ import type {
   InfringementDetectionInput,
   InfringementDetectionResult,
   InfringementRiskLevel,
+  InfringementReferenceItem,
   InfringementRule,
   InfringementRuleMatch,
 } from "@/lib/infringement/types";
@@ -19,6 +20,29 @@ const severityScore = {
 } as const;
 
 const SAFE_COPYRIGHT_STATUSES = new Set(["owned", "commercial_ok"]);
+
+let lastDatabaseReferenceItems: InfringementReferenceItem[] | undefined;
+let lastCombinedReferenceItems: InfringementReferenceItem[] = builtInHighRiskReferenceItems;
+
+function getReferenceItems(databaseReferenceItems: InfringementReferenceItem[] | undefined) {
+  if (!databaseReferenceItems?.length) {
+    lastDatabaseReferenceItems = undefined;
+    lastCombinedReferenceItems = builtInHighRiskReferenceItems;
+    return builtInHighRiskReferenceItems;
+  }
+
+  if (lastDatabaseReferenceItems === databaseReferenceItems) {
+    return lastCombinedReferenceItems;
+  }
+
+  lastDatabaseReferenceItems = databaseReferenceItems;
+  lastCombinedReferenceItems = [
+    ...builtInHighRiskReferenceItems,
+    ...databaseReferenceItems,
+  ];
+
+  return lastCombinedReferenceItems;
+}
 
 function normalizeText(value: string) {
   return value
@@ -217,10 +241,7 @@ function createReferenceRuleMatch(
 export function runInfringementDetection(input: InfringementDetectionInput): InfringementDetectionResult {
   const fields = getFields(input);
   const textMatches = infringementRules.flatMap((rule) => findRuleMatches(rule, fields));
-  const referenceItems = [
-    ...builtInHighRiskReferenceItems,
-    ...(input.referenceItems ?? []),
-  ];
+  const referenceItems = getReferenceItems(input.referenceItems);
   const referenceMatches = matchReferenceItems(referenceItems, fields, input.asset.image_hash);
   const highRiskReferenceMatches = referenceMatches.filter((match) => match.libraryType === "high_risk");
   const allowlistMatches = referenceMatches.filter((match) => match.libraryType === "allowlist");

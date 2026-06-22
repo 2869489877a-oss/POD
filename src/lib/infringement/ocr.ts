@@ -8,6 +8,7 @@ import { join } from "node:path";
 import sharp from "sharp";
 
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
+import { readLocalAssetByPublicUrl } from "@/lib/storage/local-assets";
 
 const OCR_LANGS = process.env.OCR_LANGS?.trim() || "eng+chi_sim";
 // PSM 11 = "sparse text": find as much text as possible, good for scattered print artwork.
@@ -26,14 +27,20 @@ const OCR_MAX_DIM = 2000;
  */
 export async function extractTextFromImageUrl(url: string): Promise<string | null> {
   let source: Buffer;
-  try {
-    source = await safeFetchBuffer(url, {
-      allowedContentTypes: ["image/"],
-      maxBytes: 25 * 1024 * 1024,
-      timeoutMs: 30_000,
-    });
-  } catch {
-    return null;
+  const localSource = await readLocalAssetByPublicUrl(url);
+
+  if (localSource) {
+    source = localSource;
+  } else {
+    try {
+      source = await safeFetchBuffer(url, {
+        allowedContentTypes: ["image/"],
+        maxBytes: 25 * 1024 * 1024,
+        timeoutMs: 30_000,
+      });
+    } catch {
+      return null;
+    }
   }
 
   // Normalize to a downscaled grayscale PNG: faster, leaner and easier for OCR.

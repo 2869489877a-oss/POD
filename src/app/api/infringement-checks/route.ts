@@ -85,6 +85,11 @@ const checkColumns = [
 
 const IN_QUERY_CHUNK_SIZE = 500;
 const INSERT_CHUNK_SIZE = 500;
+const REFERENCE_CACHE_TTL_MS = Math.max(0, Number(process.env.INFRINGEMENT_REFERENCE_CACHE_MS ?? 60_000) || 0);
+const OCR_WORKER_COUNT = Math.max(1, Math.min(4, Number(process.env.INFRINGEMENT_OCR_CONCURRENCY ?? 3) || 3));
+const HASH_WORKER_COUNT = Math.max(1, Math.min(8, Number(process.env.INFRINGEMENT_HASH_CONCURRENCY ?? 6) || 6));
+
+let referenceItemsCache: { expiresAt: number; items: InfringementReferenceItem[] } | null = null;
 
 function chunkArray<T>(items: T[], size: number) {
   const chunks: T[][] = [];
@@ -119,6 +124,10 @@ function arrayOrEmpty(value: string[] | null) {
 async function fetchReferenceItems(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
 ): Promise<InfringementReferenceItem[]> {
+  if (REFERENCE_CACHE_TTL_MS > 0 && referenceItemsCache && referenceItemsCache.expiresAt > Date.now()) {
+    return referenceItemsCache.items;
+  }
+
   const { data, error } = await supabase
     .from("infringement_reference_items")
     .select("id,library_type,category,title,terms,image_url,image_hash,risk_level,severity,description,source_label,source_url,notes,is_active")
@@ -134,7 +143,16 @@ async function fetchReferenceItems(
     throw new Error(error.message);
   }
 
-  return ((data ?? []) as unknown as ReferenceRow[]).map(normalizeReferenceRow);
+  const items = ((data ?? []) as unknown as ReferenceRow[]).map(normalizeReferenceRow);
+
+  if (REFERENCE_CACHE_TTL_MS > 0) {
+    referenceItemsCache = {
+      expiresAt: Date.now() + REFERENCE_CACHE_TTL_MS,
+      items,
+    };
+  }
+
+  return items;
 }
 
 async function computeAssetHashes(
@@ -159,7 +177,7 @@ async function computeAssetHashes(
     }
   }
 
-  const workerCount = Math.min(5, Math.max(1, queue.length));
+  const workerCount = Math.min(HASH_WORKER_COUNT, Math.max(1, queue.length));
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return new Map(pairs.filter((item): item is readonly [string, string] => Boolean(item[1])));
@@ -330,7 +348,7 @@ async function resolveOcrText(
     }
   }
 
-  const workerCount = Math.min(2, Math.max(1, queue.length));
+  const workerCount = Math.min(OCR_WORKER_COUNT, Math.max(1, queue.length));
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
   return resolved;
@@ -362,8 +380,11 @@ export async function POST(request: Request) {
   try {
     const assetIds = parseAssetIds(body.asset_ids);
     const supabase = createSupabaseServiceRoleClient();
-    const databaseReferenceItems = await fetchReferenceItems(supabase);
-    const { assets, ocrColumnsAvailable } = await fetchAssetsWithOcr(supabase, assetIds);
+    const [databaseReferenceItems, assetsWithOcr] = await Promise.all([
+      fetchReferenceItems(supabase),
+      fetchAssetsWithOcr(supabase, assetIds),
+    ]);
+    const { assets, ocrColumnsAvailable } = assetsWithOcr;
 
     if (assets.length !== assetIds.length) {
       throw new Error("部分素材不存在，请刷新后重试");
@@ -371,11 +392,14 @@ export async function POST(request: Request) {
 
     // OCR：读取图片里的文字喂给规则库；结果缓存到素材表，避免重复识别。
     // 未安装 tesseract 或未跑迁移时自动跳过（回退纯文字检测，不报错）。
-    const ocrTextById = ocrColumnsAvailable
-      ? await resolveOcrText(supabase, assets)
-      : new Map<string, string>();
-
-    const productData = await fetchProductTexts(supabase, assetIds);
+    const shouldComputeHashes =
+      databaseReferenceItems.some((item) => Boolean(item.imageHash)) ||
+      builtInHighRiskReferenceItems.some((item) => Boolean(item.imageHash));
+    const [ocrTextById, productData, assetHashesById] = await Promise.all([
+      ocrColumnsAvailable ? resolveOcrText(supabase, assets) : Promise.resolve(new Map<string, string>()),
+      fetchProductTexts(supabase, assetIds),
+      computeAssetHashes(assets, shouldComputeHashes),
+    ]);
 
     const productsByAssetId = new Map<string, ProductTextRow[]>();
     for (const product of productData) {
@@ -384,11 +408,6 @@ export async function POST(request: Request) {
       productsByAssetId.set(product.asset_id, current);
     }
 
-    const assetHashesById = await computeAssetHashes(
-      assets,
-      databaseReferenceItems.some((item) => Boolean(item.imageHash)) ||
-        builtInHighRiskReferenceItems.some((item) => Boolean(item.imageHash)),
-    );
     const resultsByAssetId = new Map<string, InfringementDetectionResult>();
 
     const insertRows = assets.map((asset) => {
@@ -424,32 +443,39 @@ export async function POST(request: Request) {
 
     const insertedChecks = await insertInfringementChecks(supabase, insertRows);
 
+    const insertedChecksByAssetId = new Map(insertedChecks.map((check) => [check.asset_id, check]));
+    const assetUpdatesByStatus = new Map<string, string[]>();
+
+    for (const asset of assets) {
+      const check = insertedChecksByAssetId.get(asset.id);
+      if (!check) continue;
+
+      const nextCopyrightStatus = mapDetectionStatusToAssetCopyrightStatus(
+        check.status,
+        asset.copyright_status,
+      );
+      const result = resultsByAssetId.get(asset.id);
+      const resolvedCopyrightStatus = result?.evidence.allowlist_matched
+        ? "commercial_ok"
+        : nextCopyrightStatus;
+
+      if (resolvedCopyrightStatus === asset.copyright_status) continue;
+
+      const ids = assetUpdatesByStatus.get(resolvedCopyrightStatus) ?? [];
+      ids.push(asset.id);
+      assetUpdatesByStatus.set(resolvedCopyrightStatus, ids);
+    }
+
     await Promise.all(
-      assets.map((asset) => {
-        const check = insertedChecks.find((item) => item.asset_id === asset.id);
-        if (!check) return Promise.resolve();
-
-        const nextCopyrightStatus = mapDetectionStatusToAssetCopyrightStatus(
-          check.status,
-          asset.copyright_status,
-        );
-        const result = resultsByAssetId.get(asset.id);
-        const resolvedCopyrightStatus = result?.evidence.allowlist_matched
-          ? "commercial_ok"
-          : nextCopyrightStatus;
-
-        if (resolvedCopyrightStatus === asset.copyright_status) {
-          return Promise.resolve();
-        }
-
-        return supabase
+      Array.from(assetUpdatesByStatus.entries()).map(([copyrightStatus, ids]) => (
+        supabase
           .from("assets")
-          .update({ copyright_status: resolvedCopyrightStatus })
-          .eq("id", asset.id)
+          .update({ copyright_status: copyrightStatus })
+          .in("id", ids)
           .then(({ error }) => {
             if (error) throw new Error(error.message);
-          });
-      }),
+          })
+      )),
     );
 
     return NextResponse.json({
