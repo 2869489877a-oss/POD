@@ -563,13 +563,14 @@ export function AiBackgroundGenerator() {
 
       <div
         className={
-          `relative flex min-h-[500px] items-center justify-center overflow-hidden rounded-[20px] border p-6 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-black/[0.05] bg-slate-50/80"}`
+          `ui-result-stage relative flex min-h-[500px] items-center justify-center overflow-hidden rounded-[20px] border p-6 ${isDark ? "border-white/[0.08] bg-white/[0.02]" : "border-black/[0.05] bg-slate-50/80"}`
         }
+        data-live={generating ? "true" : "false"}
       >
         <div className="pointer-events-none absolute inset-4 rounded-[16px] border border-dashed opacity-40" style={{ borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)" }} />
         {generating ? (
           <div className="relative z-10 text-center">
-            <div className={`mx-auto h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-blue-400" : "border-blue-500"}`} />
+            <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
             <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{statusDescription}</p>
           </div>
         ) : result?.result_url ? (
@@ -590,7 +591,7 @@ export function AiBackgroundGenerator() {
           </div>
         ) : (
           <div className="relative z-10 text-center">
-            <div className={`mx-auto mb-3 h-12 w-12 rounded-full flex items-center justify-center ${isDark ? "bg-slate-700/50" : "bg-slate-200/80"}`}>
+            <div className={`ui-soft-float mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full ${isDark ? "bg-slate-700/50" : "bg-slate-200/80"}`}>
               <svg className="h-6 w-6 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
               </svg>

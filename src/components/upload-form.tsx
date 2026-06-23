@@ -519,15 +519,22 @@ export function UploadForm({
                 onClick={() => void runInfringementCheckForUploads()}
                 disabled={isCheckingInfringement || uploadedAssetIds.length === 0}
                 className={[
-                  "ui-press rounded-md px-3.5 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+                  "ui-press inline-flex items-center gap-2 rounded-md px-3.5 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60",
                 ].join(" ")}
                 style={{ backgroundColor: colors.primary }}
               >
-                {isCheckingInfringement
-                  ? infringementProgress
-                    ? t(`检测中 ${infringementProgress.completed}/${infringementProgress.total}`, `Checking ${infringementProgress.completed}/${infringementProgress.total}`)
-                    : t("检测中...", "Checking...")
-                  : t(`一键侵权检测 ${uploadedAssetIds.length} 张`, `Check ${uploadedAssetIds.length} uploaded`)}
+                {isCheckingInfringement ? (
+                  <>
+                    <span className="ui-activity" aria-hidden="true" />
+                    <span>
+                      {infringementProgress
+                        ? t(`检测中 ${infringementProgress.completed}/${infringementProgress.total}`, `Checking ${infringementProgress.completed}/${infringementProgress.total}`)
+                        : t("检测中...", "Checking...")}
+                    </span>
+                  </>
+                ) : (
+                  t(`一键侵权检测 ${uploadedAssetIds.length} 张`, `Check ${uploadedAssetIds.length} uploaded`)
+                )}
               </button>
               <Link
                 href="/infringement-check"
@@ -542,13 +549,16 @@ export function UploadForm({
               </Link>
             </div>
             {infringementProgress ? (
-              <div className={["mt-4 rounded-md border p-3", isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.08] bg-black/[0.02]"].join(" ")}>
-                <div className={["flex items-center justify-between gap-3 text-[13px]", isDark ? "text-zinc-300" : "text-zinc-600"].join(" ")}>
-                  <span>
-                    {t(
-                      `检测进度 ${infringementProgress.completed}/${infringementProgress.total}`,
-                      `Check progress ${infringementProgress.completed}/${infringementProgress.total}`,
-                    )}
+              <div className={["ui-scan-panel mt-4 rounded-md border p-3", isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.08] bg-black/[0.02]"].join(" ")}>
+                <div className={["relative flex items-center justify-between gap-3 text-[13px]", isDark ? "text-zinc-300" : "text-zinc-600"].join(" ")}>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="ui-activity" aria-hidden="true" />
+                    <span className="truncate">
+                      {t(
+                        `检测进度 ${infringementProgress.completed}/${infringementProgress.total}`,
+                        `Check progress ${infringementProgress.completed}/${infringementProgress.total}`,
+                      )}
+                    </span>
                   </span>
                   <span>{infringementProgressPercent}%</span>
                 </div>

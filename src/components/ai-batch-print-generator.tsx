@@ -822,7 +822,7 @@ export function AiBatchPrintGenerator() {
                         <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
                         {item.status === "uploading" || item.status === "generating" ? (
                           <div className="ui-task-overlay text-[10px]">
-                            <span className="ui-spinner" />
+                            <span className="ui-activity" aria-hidden="true" />
                           </div>
                         ) : null}
                       </div>
@@ -996,7 +996,7 @@ export function AiBatchPrintGenerator() {
                       >
                         {selectedItem.status === "uploading" || selectedItem.status === "generating" ? (
                           <div className="text-center">
-                            <div className={`mx-auto h-9 w-9 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-cyan-400" : "border-cyan-500"}`} />
+                            <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
                             <p className="mt-3 text-sm text-slate-500">
                               {selectedItem.status === "uploading" ? t("正在上传原图...", "Uploading source image...") : t("AI 正在生成印花...", "AI is generating print...")}
                             </p>

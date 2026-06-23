@@ -146,7 +146,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
   return (
     <div className="ui-page-enter flex flex-col gap-8">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950">
+      <section className="ui-ambient-panel relative overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950">
         <Image
           src="/images/hero-tech.png"
           alt=""
@@ -156,9 +156,9 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
           className="object-cover object-right opacity-60"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/90 to-[#0a0a0a]/30" />
-        <div className="relative flex flex-col items-start gap-4 px-6 py-8 sm:px-9 sm:py-10 lg:max-w-[60%]">
+        <div className="relative z-10 flex flex-col items-start gap-4 px-6 py-8 sm:px-9 sm:py-10 lg:max-w-[60%]">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.06] px-3 py-1 text-[11px] font-medium tracking-wide text-zinc-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span className="ui-metric-dot h-1.5 w-1.5 rounded-full bg-emerald-400 text-emerald-400" />
             {t("全流程批量处理管线", "End-to-end batch pipeline")}
           </span>
           <h1 className="text-2xl font-semibold leading-[1.2] tracking-tight text-white sm:text-3xl">
@@ -175,14 +175,14 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/upload"
-              className="inline-flex h-9 items-center rounded-md px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
+              className="ui-press inline-flex h-9 items-center rounded-md px-4 text-[13px] font-medium text-white transition-opacity hover:opacity-90"
               style={{ background: colors.primary }}
             >
               {t("开始上传素材", "Start uploading")}
             </Link>
             <Link
               href="/dashboard"
-              className="inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.04] px-4 text-[13px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
+              className="ui-press inline-flex h-9 items-center rounded-md border border-white/15 bg-white/[0.04] px-4 text-[13px] font-medium text-zinc-200 transition-colors hover:bg-white/[0.08]"
             >
               {t("查看仪表盘", "View dashboard")}
             </Link>
@@ -219,7 +219,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
             <Link
               key={tool.href}
               href={tool.href}
-              className={`ui-lift group flex flex-col overflow-hidden transition-colors ${cardClass} ${
+              className={`ui-lift ui-hover-sheen group flex flex-col overflow-hidden transition-colors ${cardClass} ${
                 isDark ? "hover:border-white/20" : "hover:border-black/20"
               }`}
             >
@@ -275,7 +275,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
             {workflowSteps.map((step, index) => (
               <li
                 key={step.zh}
-                className={`ui-lift relative flex flex-col gap-2 rounded-lg border p-4 ${
+                className={`ui-lift ui-hover-sheen relative flex flex-col gap-2 rounded-lg border p-4 ${
                   isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-black/[0.06] bg-black/[0.02]"
                 }`}
               >
@@ -304,7 +304,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
             <Link
               key={link.href}
               href={link.href}
-              className={`ui-lift group flex items-center gap-3.5 p-4 transition-colors ${cardClass} ${
+              className={`ui-lift ui-hover-sheen group flex items-center gap-3.5 p-4 transition-colors ${cardClass} ${
                 isDark ? "hover:border-white/20" : "hover:border-black/20"
               }`}
             >

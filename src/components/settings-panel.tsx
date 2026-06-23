@@ -9,8 +9,8 @@ export function SettingsPanel() {
   const colors = ACCENT_COLORS[accent];
 
   const cardClass = isDark
-    ? "rounded-[20px] border border-white/[0.08] bg-white/[0.04] p-6 backdrop-blur-xl"
-    : "rounded-[20px] border border-black/[0.05] bg-white/80 p-6 backdrop-blur-xl";
+    ? "ui-hover-sheen rounded-[20px] border border-white/[0.08] bg-white/[0.04] p-6 backdrop-blur-xl"
+    : "ui-hover-sheen rounded-[20px] border border-black/[0.05] bg-white/80 p-6 backdrop-blur-xl";
 
   const sectionTitle = `text-sm font-bold mb-4 ${isDark ? "text-white" : "text-slate-900"}`;
 
@@ -93,7 +93,7 @@ export function SettingsPanel() {
                 key={color}
                 type="button"
                 onClick={() => setAccent(color)}
-                className={`group relative flex items-center gap-3 overflow-hidden rounded-xl border p-3 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
+                className={`ui-hover-sheen group relative flex items-center gap-3 overflow-hidden rounded-xl border p-3 outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
                   isActive
                     ? "border-2"
                     : isDark
@@ -136,7 +136,7 @@ function ModeCard({ active, onClick, isDark, accentColor, glow, children }: {
     <button
       type="button"
       onClick={onClick}
-      className={`group relative overflow-hidden rounded-xl border p-4 text-left outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
+      className={`ui-hover-sheen group relative overflow-hidden rounded-xl border p-4 text-left outline-none transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.99] ${
         active
           ? "border-2"
           : isDark

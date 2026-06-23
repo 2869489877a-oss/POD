@@ -102,6 +102,7 @@ export function Sidebar() {
                         aria-current={isActive ? "page" : undefined}
                         className={[
                           "ui-press group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-[background-color,color,transform] duration-150 hover:translate-x-0.5",
+                          isActive ? "ui-nav-current" : "",
                           isActive
                             ? isDark
                               ? "bg-white/[0.08] font-medium text-white"

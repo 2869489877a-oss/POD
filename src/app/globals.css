@@ -17,6 +17,8 @@
   --muted-foreground: #a1a1aa;
   --faint-foreground: #71717a;
   --radius: 0.5rem;
+  --motion-smooth: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-standard: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 [data-accent="violet"]  { --accent: #8b5cf6; --accent-strong: #7c3aed; --accent-glow: rgba(139, 92, 246, 0.35); }
@@ -220,6 +222,55 @@ a {
   to { transform: rotate(360deg); }
 }
 
+@keyframes ui-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ui-core-pulse {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-label-sheen {
+  0% { background-position: 120% 50%; }
+  100% { background-position: -120% 50%; }
+}
+
+@keyframes ui-surface-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 160% 50%; }
+}
+
+@keyframes ui-sheen-pass {
+  0% { transform: translateX(-130%) skewX(-18deg); }
+  100% { transform: translateX(130%) skewX(-18deg); }
+}
+
+@keyframes ui-soft-float {
+  0%,
+  100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes ui-rail-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scaleY(0.72);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
 @keyframes ui-scan-line {
   0% { top: 0; transform: translateY(-100%); opacity: 0; }
   12% { opacity: 1; }
@@ -246,15 +297,15 @@ a {
 .animate-toast-in { animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 .ui-enter {
-  animation: ui-enter-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-enter-up 0.32s var(--motion-smooth) both;
 }
 
 .ui-page-enter {
-  animation: ui-page-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-page-in 0.34s var(--motion-smooth) both;
 }
 
 .ui-reveal-right {
-  animation: ui-reveal-right 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-reveal-right 0.3s var(--motion-smooth) both;
 }
 
 .ui-delay-1 { animation-delay: 45ms; }
@@ -263,7 +314,7 @@ a {
 .ui-delay-4 { animation-delay: 180ms; }
 
 .ui-stagger > * {
-  animation: ui-enter-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-enter-up 0.32s var(--motion-smooth) both;
 }
 
 .ui-stagger > *:nth-child(2) { animation-delay: 45ms; }
@@ -273,7 +324,7 @@ a {
 .ui-stagger > *:nth-child(6) { animation-delay: 225ms; }
 
 .ui-pop-in {
-  animation: ui-pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-pop-in 0.24s var(--motion-smooth) both;
 }
 
 .ui-modal-overlay {
@@ -281,11 +332,11 @@ a {
 }
 
 .ui-modal-panel {
-  animation: ui-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-pop-in 0.26s var(--motion-smooth) both;
 }
 
 .ui-status-pop {
-  animation: ui-status-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: ui-status-pop 0.22s var(--motion-smooth) both;
 }
 
 .ui-lift {
@@ -317,7 +368,7 @@ a {
 .ui-progress-fill {
   position: relative;
   overflow: hidden;
-  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width 0.42s var(--motion-smooth);
 }
 
 .ui-progress-fill::after {
@@ -326,7 +377,7 @@ a {
   inset: 0;
   width: 45%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
-  animation: ui-progress-sweep 1.35s ease-in-out infinite;
+  animation: ui-progress-sweep 1.8s var(--motion-smooth) infinite;
 }
 
 .ui-spinner {
@@ -337,6 +388,272 @@ a {
   border-right-color: transparent;
   border-radius: 999px;
   animation: ui-spin 0.8s linear infinite;
+}
+
+.ui-activity {
+  position: relative;
+  display: inline-flex;
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: rgb(103, 232, 249);
+  isolation: isolate;
+}
+
+.ui-activity::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    conic-gradient(from 25deg, transparent 0deg, rgba(103, 232, 249, 0.25) 92deg, rgba(103, 232, 249, 0.95) 152deg, transparent 220deg),
+    radial-gradient(circle at center, rgba(103, 232, 249, 0.12), transparent 62%);
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.55));
+  animation: ui-orbit 1.25s var(--motion-standard) infinite;
+}
+
+.ui-activity::after {
+  content: "";
+  width: 0.46rem;
+  height: 0.46rem;
+  border-radius: inherit;
+  background: currentColor;
+  box-shadow:
+    0 0 0 4px rgba(103, 232, 249, 0.16),
+    0 0 18px rgba(103, 232, 249, 0.8);
+  animation: ui-core-pulse 1.2s ease-in-out infinite;
+}
+
+.ui-activity-lg {
+  display: flex;
+  width: 2.25rem;
+  height: 2.25rem;
+}
+
+.ui-activity-lg::after {
+  width: 0.62rem;
+  height: 0.62rem;
+}
+
+.ui-activity-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+.ui-activity-sm::after {
+  width: 0.32rem;
+  height: 0.32rem;
+  box-shadow:
+    0 0 0 3px rgba(103, 232, 249, 0.14),
+    0 0 12px rgba(103, 232, 249, 0.72);
+}
+
+.ui-task-label {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.72), #ffffff, rgba(255, 255, 255, 0.72));
+  background-size: 220% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: ui-label-sheen 2s var(--motion-smooth) infinite;
+}
+
+.ui-scan-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-scan-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(110deg, transparent 0%, rgba(6, 182, 212, 0.14) 38%, rgba(255, 255, 255, 0.3) 48%, rgba(6, 182, 212, 0.12) 58%, transparent 100%);
+  background-size: 220% 100%;
+  mix-blend-mode: screen;
+  opacity: 0.72;
+  animation: ui-surface-flow 2.4s var(--motion-smooth) infinite;
+}
+
+.ui-ambient-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-ambient-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 18%, rgba(34, 211, 238, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 24%, rgba(16, 185, 129, 0.12), transparent 26%),
+    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.08) 42%, transparent 58%);
+  background-size: 100% 100%, 100% 100%, 220% 100%;
+  opacity: 0.9;
+  animation: ui-surface-flow 7s var(--motion-smooth) infinite;
+}
+
+.ui-hover-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-hover-sheen::after {
+  content: "";
+  position: absolute;
+  inset: -35% -65%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.18), transparent);
+  opacity: 0;
+  transform: translateX(-130%) skewX(-18deg);
+}
+
+.ui-hover-sheen:hover::after {
+  opacity: 1;
+  animation: ui-sheen-pass 0.85s var(--motion-smooth) both;
+}
+
+.ui-nav-current {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-nav-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 14px currentColor;
+  transform-origin: center;
+  animation: ui-rail-breathe 1.9s ease-in-out infinite;
+}
+
+.ui-nav-current::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, currentColor, transparent 45%);
+  opacity: 0.08;
+}
+
+.ui-page-header {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-page-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: min(22rem, 70%);
+  height: 1px;
+  background: linear-gradient(90deg, rgb(34, 211, 238), rgba(16, 185, 129, 0.6), transparent);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.28);
+}
+
+.ui-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.ui-kicker::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: rgb(34, 211, 238);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.62);
+  animation: ui-core-pulse 1.8s ease-in-out infinite;
+}
+
+.ui-metric-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-metric-card::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: 0;
+  transform: translateX(-35%);
+  transition: opacity 0.28s var(--motion-smooth), transform 0.45s var(--motion-smooth);
+}
+
+.ui-metric-card:hover::after {
+  opacity: 0.5;
+  transform: translateX(35%);
+}
+
+.ui-metric-dot {
+  box-shadow: 0 0 12px currentColor;
+  animation: ui-core-pulse 2.4s ease-in-out infinite;
+}
+
+.ui-soft-float {
+  animation: ui-soft-float 3.2s ease-in-out infinite;
+}
+
+.ui-drop-zone {
+  overflow: hidden;
+  transition: border-color 0.2s var(--motion-smooth), box-shadow 0.2s var(--motion-smooth), transform 0.2s var(--motion-smooth), background-color 0.2s var(--motion-smooth);
+}
+
+.ui-drop-zone:hover {
+  transform: translateY(-1px);
+}
+
+.ui-drop-zone::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 0%, rgba(34, 211, 238, 0.14) 44%, transparent 60%);
+  background-size: 220% 100%;
+  opacity: 0;
+}
+
+.ui-drop-zone-active {
+  box-shadow: 0 16px 45px rgba(34, 211, 238, 0.14);
+  transform: translateY(-2px);
+}
+
+.ui-drop-zone-active::before {
+  opacity: 1;
+  animation: ui-surface-flow 1.6s var(--motion-smooth) infinite;
+}
+
+.ui-drop-icon {
+  animation: ui-soft-float 3s ease-in-out infinite;
+}
+
+.ui-result-stage {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-result-stage[data-live="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0%, rgba(34, 211, 238, 0.14) 46%, transparent 62%);
+  background-size: 220% 100%;
+  animation: ui-surface-flow 2.2s var(--motion-smooth) infinite;
 }
 
 .ui-task-overlay {
@@ -354,7 +671,7 @@ a {
   font-weight: 700;
   text-align: center;
   backdrop-filter: blur(2px);
-  animation: fade-in 0.18s ease-out both;
+  animation: fade-in 0.22s var(--motion-smooth) both;
 }
 
 .ui-task-overlay::after {
@@ -366,7 +683,7 @@ a {
   border-radius: 999px;
   background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.95), transparent);
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.45);
-  animation: ui-scan-line 1.35s ease-in-out infinite;
+  animation: ui-scan-line 1.8s var(--motion-smooth) infinite;
 }
 
 .ui-task-card {
@@ -677,23 +994,35 @@ a {
 @keyframes auth-status-pop {
   0% {
     opacity: 0;
-    transform: scale(0.4);
+    filter: blur(8px);
+    transform: translateY(10px) scale(0.72);
   }
-  60% {
-    transform: scale(1.08);
+  68% {
+    filter: blur(0);
+    transform: translateY(0) scale(1.035);
   }
   100% {
     opacity: 1;
+    filter: blur(0);
     transform: scale(1);
   }
 }
 
 @keyframes auth-ring-pulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+    box-shadow:
+      0 0 0 0 rgba(16, 185, 129, 0.5),
+      0 0 0 rgba(16, 185, 129, 0);
+  }
+  45% {
+    box-shadow:
+      0 0 0 13px rgba(16, 185, 129, 0.22),
+      0 0 34px rgba(16, 185, 129, 0.36);
   }
   100% {
-    box-shadow: 0 0 0 24px rgba(16, 185, 129, 0);
+    box-shadow:
+      0 0 0 26px rgba(16, 185, 129, 0),
+      0 0 24px rgba(16, 185, 129, 0.18);
   }
 }
 
@@ -709,6 +1038,21 @@ a {
 @keyframes auth-stroke-draw {
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes auth-success-core {
+  0% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+      0 0 0 rgba(16, 185, 129, 0);
+    transform: scale(0.86);
+  }
+  100% {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+      0 14px 38px rgba(16, 185, 129, 0.34);
+    transform: scale(1);
   }
 }
 
@@ -751,21 +1095,25 @@ a {
 }
 
 .auth-status-pop {
-  animation: auth-status-pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: auth-status-pop 0.58s var(--motion-smooth) both;
 }
 
 .auth-ring-success {
-  animation: auth-ring-pulse 0.9s ease-out 0.15s both;
+  animation: auth-ring-pulse 1.15s var(--motion-smooth) 0.08s both;
 }
 
 .auth-ring-error {
   animation: auth-ring-pulse-error 0.9s ease-out 0.15s both;
 }
 
+.auth-ring-success > div {
+  animation: auth-success-core 0.5s var(--motion-smooth) 0.08s both;
+}
+
 .auth-stroke {
   stroke-dasharray: 48;
   stroke-dashoffset: 48;
-  animation: auth-stroke-draw 0.4s ease-out 0.25s forwards;
+  animation: auth-stroke-draw 0.58s var(--motion-smooth) 0.22s forwards;
 }
 
 .auth-shake {

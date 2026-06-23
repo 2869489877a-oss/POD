@@ -1104,7 +1104,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                       <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
                       {running ? (
                         <div className="ui-task-overlay text-[10px]">
-                          <span className="ui-spinner" />
+                          <span className="ui-activity" aria-hidden="true" />
                         </div>
                       ) : null}
                     </div>
@@ -1560,7 +1560,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
             >
               {running ? (
                 <div className="w-full max-w-md text-center">
-                  <div className={`mx-auto h-9 w-9 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-cyan-400" : "border-cyan-500"}`} />
+                  <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
                   <p className="mt-3 text-sm text-slate-500">{statusLabel}</p>
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200/80">
                     <div

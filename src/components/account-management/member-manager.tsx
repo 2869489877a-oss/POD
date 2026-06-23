@@ -90,7 +90,7 @@ export function MemberManager({
       {/* Today usage overview */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {statCards.map((card) => (
-          <section key={card.labelZh} className={`p-5 ${cardClass}`}>
+          <section key={card.labelZh} className={`ui-hover-sheen ui-metric-card p-5 ${cardClass}`}>
             <p className={`text-xs ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
               {t(card.labelZh, card.labelEn)}
             </p>
@@ -156,7 +156,14 @@ export function MemberManager({
                 const frozen = member.status === "frozen";
 
                 return (
-                  <tr key={member.id} className={frozen ? "opacity-60" : undefined}>
+                  <tr
+                    key={member.id}
+                    className={[
+                      "transition-colors duration-150",
+                      frozen ? "opacity-60" : "",
+                      isDark ? "hover:bg-white/[0.03]" : "hover:bg-black/[0.02]",
+                    ].join(" ")}
+                  >
                     <td className="px-5 py-3">
                       <p className={`text-[13px] font-medium ${isDark ? "text-zinc-200" : "text-zinc-900"}`}>
                         {member.display_name || member.email.split("@")[0]}
@@ -336,7 +343,7 @@ export function MemberManager({
 type ButtonIconName = "activity" | "gauge" | "key" | "lock" | "plus" | "trash" | "unlock" | "x";
 
 const buttonMotionClass =
-  "inline-flex items-center justify-center gap-2 outline-none transition-all duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50";
+  "ui-hover-sheen inline-flex items-center justify-center gap-2 outline-none transition-all duration-150 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-[var(--accent)] active:translate-y-0 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50";
 
 function primaryButtonClass(extra = "") {
   return `${buttonMotionClass} rounded-lg text-white shadow-sm hover:shadow-lg ${extra}`;

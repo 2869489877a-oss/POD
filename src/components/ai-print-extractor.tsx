@@ -97,14 +97,17 @@ export function AiPrintExtractor() {
         {error && <p className="text-sm text-red-500">{error}</p>}
       </form>
 
-      <div className={`flex items-center justify-center rounded-xl border p-4 min-h-[400px] ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}>
+      <div
+        className={`ui-result-stage flex min-h-[400px] items-center justify-center rounded-xl border p-4 ${isDark ? "border-white/5 bg-slate-800/30" : "border-slate-200 bg-slate-50"}`}
+        data-live={processing ? "true" : "false"}
+      >
         {processing ? (
-          <div className="text-center">
-            <div className={`mx-auto h-10 w-10 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-blue-400" : "border-blue-500"}`} />
+          <div className="relative z-10 text-center">
+            <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
             <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("正在本地换底...", "Replacing background locally...")}</p>
           </div>
         ) : resultUrl ? (
-          <div className="space-y-3 text-center">
+          <div className="relative z-10 space-y-3 text-center">
             <div
               className="rounded-lg p-4 shadow-lg"
               style={{

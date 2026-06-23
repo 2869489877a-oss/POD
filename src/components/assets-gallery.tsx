@@ -860,8 +860,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   </label>
                   {isAssetDeleting ? (
                     <div className="ui-task-overlay z-20">
-                      <span className="ui-spinner" />
-                      <span>{deletePhase === "checking" ? t("检查引用", "Checking") : t("删除中", "Deleting")}</span>
+                      <span className="ui-activity" aria-hidden="true" />
+                      <span className="ui-task-label">{deletePhase === "checking" ? t("检查引用", "Checking") : t("删除中", "Deleting")}</span>
                     </div>
                   ) : null}
                   <span

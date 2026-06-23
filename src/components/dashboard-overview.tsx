@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import type { DashboardStats } from "@/lib/actions/dashboard";
-import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
+import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
 
 type Props = {
   stats: DashboardStats;
@@ -24,28 +24,28 @@ export function DashboardOverview({ stats }: Props) {
 
   const summaryCards = [
     {
-      label: t("今日上传", "Today Uploads"),
-      value: String(stats.todayUploads),
-      note: t("今天新增的素材", "New assets today"),
       dot: "#3b82f6",
+      label: t("今日上传", "Today Uploads"),
+      note: t("今天新增的素材", "New assets today"),
+      value: String(stats.todayUploads),
     },
     {
-      label: t("素材总数", "Total Assets"),
-      value: String(stats.totalAssets),
-      note: t("素材库中的图片总量", "Total images in the asset library"),
       dot: "#10b981",
+      label: t("素材总数", "Total Assets"),
+      note: t("素材库中的图片总量", "Total images in the asset library"),
+      value: String(stats.totalAssets),
     },
     {
-      label: t("处理中任务", "Active Jobs"),
-      value: String(stats.pendingJobs),
-      note: t("等待或正在处理的任务", "Queued or processing jobs"),
       dot: "#f59e0b",
+      label: t("处理中任务", "Active Jobs"),
+      note: t("等待或正在处理的任务", "Queued or processing jobs"),
+      value: String(stats.pendingJobs),
     },
     {
-      label: t("商品草稿", "Product Drafts"),
-      value: String(stats.totalDrafts),
-      note: t("已创建的商品草稿数", "Created product drafts"),
       dot: "#f43f5e",
+      label: t("商品草稿", "Product Drafts"),
+      note: t("已创建的商品草稿数", "Created product drafts"),
+      value: String(stats.totalDrafts),
     },
   ];
 
@@ -55,9 +55,8 @@ export function DashboardOverview({ stats }: Props) {
 
   return (
     <>
-      {/* Hero banner */}
       <section
-        className={`ui-enter relative overflow-hidden rounded-[10px] border ${
+        className={`ui-enter ui-ambient-panel relative overflow-hidden rounded-[10px] border ${
           isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-zinc-950"
         }`}
       >
@@ -70,11 +69,9 @@ export function DashboardOverview({ stats }: Props) {
           className="object-cover object-right opacity-70"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/85 to-transparent" />
-        <div className="relative flex flex-col gap-3 px-6 py-8 sm:px-8 sm:py-10 lg:max-w-[60%]">
+        <div className="relative z-10 flex flex-col gap-3 px-6 py-8 sm:px-8 sm:py-10 lg:max-w-[60%]">
           <div className="flex items-center gap-2">
-            <span
-              className="rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-zinc-300"
-            >
+            <span className="rounded-full border border-white/15 bg-white/[0.06] px-2.5 py-0.5 text-[11px] font-medium tracking-wide text-zinc-300">
               {t("内部系统", "Internal")}
             </span>
             <span className="font-mono text-[11px] text-zinc-500">POD PIPELINE</span>
@@ -95,35 +92,40 @@ export function DashboardOverview({ stats }: Props) {
         {summaryCards.map((card, index) => (
           <div
             key={card.label}
-            className={`ui-lift p-5 ${cardClass}`}
-            style={{ animationDelay: `${index * 60}ms` }}
+            className={`ui-lift ui-hover-sheen ui-metric-card p-5 ${cardClass}`}
+            style={{ animationDelay: `${index * 60}ms`, color: card.dot }}
           >
-            <div className="flex items-center gap-2">
-              <span className="h-1.5 w-1.5 rounded-full" style={{ background: card.dot }} />
-              <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-                {card.label}
+            <div className="relative z-10">
+              <div className="flex items-center gap-2">
+                <span
+                  className="ui-metric-dot h-1.5 w-1.5 rounded-full"
+                  style={{ background: card.dot, color: card.dot }}
+                />
+                <p className={`text-[13px] font-medium ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                  {card.label}
+                </p>
+              </div>
+              <p className={`mt-3 text-[32px] font-semibold leading-none tracking-tight tabular-nums ${isDark ? "text-white" : "text-zinc-900"}`}>
+                {card.value}
+              </p>
+              <p className={`mt-2.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+                {card.note}
               </p>
             </div>
-            <p className={`mt-3 text-[32px] font-semibold leading-none tracking-tight tabular-nums ${isDark ? "text-white" : "text-zinc-900"}`}>
-              {card.value}
-            </p>
-            <p className={`mt-2.5 text-xs ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
-              {card.note}
-            </p>
           </div>
         ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className={`ui-enter ui-delay-1 p-6 ${cardClass}`}>
-          <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
+        <section className={`ui-enter ui-delay-1 ui-hover-sheen p-6 ${cardClass}`}>
+          <h3 className={`relative z-10 text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
             {t("批处理流程", "Batch Workflow")}
           </h3>
-          <div className="mt-4 grid gap-1.5 sm:grid-cols-2">
+          <div className="relative z-10 mt-4 grid gap-1.5 sm:grid-cols-2">
             {workflowItems.map((item, index) => (
               <div
                 key={item.zh}
-                className={`ui-reveal-right flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 ${
+                className={`ui-reveal-right ui-hover-sheen flex items-center gap-3 rounded-md border px-3 py-2.5 transition-[border-color,background-color,transform] duration-150 hover:translate-x-0.5 ${
                   isDark
                     ? "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]"
                     : "border-black/[0.06] bg-black/[0.01] hover:border-black/[0.12]"
@@ -145,7 +147,7 @@ export function DashboardOverview({ stats }: Props) {
           </div>
         </section>
 
-        <section className={`ui-enter ui-delay-2 relative overflow-hidden p-6 ${cardClass}`}>
+        <section className={`ui-enter ui-delay-2 ui-hover-sheen relative overflow-hidden p-6 ${cardClass}`}>
           <Image
             src="/images/workflow-tech.png"
             alt=""
@@ -160,20 +162,23 @@ export function DashboardOverview({ stats }: Props) {
                 : "bg-gradient-to-t from-white via-white/85 to-white/60"
             }`}
           />
-          <div className="relative">
-          <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
-            {t("系统说明", "System Notes")}
-          </h3>
-          <div className={`mt-4 space-y-2.5 text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-            <p>{t("内部 POD 商品图批量处理系统。", "Internal POD product image batch processing system.")}</p>
-            <p>{t("支持图片上传、批量处理、套图生成和导出功能。", "Supports image upload, batch processing, mockup generation, and export workflows.")}</p>
-          </div>
-          <div className={`mt-5 flex items-center gap-2 rounded-md border px-3 py-2 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-black/[0.06] bg-black/[0.01]"}`}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: colors.primary }} />
-            <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
-              {t("数据每次进入页面时自动刷新", "Stats refresh on every page load")}
-            </p>
-          </div>
+          <div className="relative z-10">
+            <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
+              {t("系统说明", "System Notes")}
+            </h3>
+            <div className={`mt-4 space-y-2.5 text-[13px] leading-relaxed ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+              <p>{t("内部 POD 商品图批量处理系统。", "Internal POD product image batch processing system.")}</p>
+              <p>{t("支持图片上传、批量处理、套图生成和导出功能。", "Supports image upload, batch processing, mockup generation, and export workflows.")}</p>
+            </div>
+            <div className={`mt-5 flex items-center gap-2 rounded-md border px-3 py-2 ${isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-black/[0.06] bg-black/[0.01]"}`}>
+              <span
+                className="ui-metric-dot h-1.5 w-1.5 rounded-full"
+                style={{ background: colors.primary, color: colors.primary }}
+              />
+              <p className={`text-xs ${isDark ? "text-zinc-400" : "text-zinc-500"}`}>
+                {t("数据每次进入页面时自动刷新", "Stats refresh on every page load")}
+              </p>
+            </div>
           </div>
         </section>
       </div>

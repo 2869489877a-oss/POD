@@ -721,8 +721,8 @@ export function CollectorLibraryManager() {
                   />
                   {isItemMutating ? (
                     <div className="ui-task-overlay z-20">
-                      <span className="ui-spinner" />
-                      <span>{pendingMode === "promote" ? t("正在入库", "Importing") : t("正在删除", "Deleting")}</span>
+                      <span className="ui-activity" aria-hidden="true" />
+                      <span className="ui-task-label">{pendingMode === "promote" ? t("正在入库", "Importing") : t("正在删除", "Deleting")}</span>
                     </div>
                   ) : null}
                 </div>

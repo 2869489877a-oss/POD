@@ -887,9 +887,16 @@ export function InfringementChecksManager({
             type="button"
             onClick={() => void runChecks(Array.from(selectedIds))}
             disabled={selectedCount === 0 || isRunning}
-            className="ui-press rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            className="ui-press inline-flex items-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-300"
           >
-            {isRunning ? t("检测中...", "Checking...") : t("检测所选素材", "Check Selected")}
+            {isRunning ? (
+              <>
+                <span className="ui-activity" aria-hidden="true" />
+                <span>{t("检测中...", "Checking...")}</span>
+              </>
+            ) : (
+              t("检测所选素材", "Check Selected")
+            )}
           </button>
           <button
             type="button"
@@ -902,10 +909,13 @@ export function InfringementChecksManager({
         </div>
 
         {isRunning ? (
-          <div className="ui-enter mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
-            <div className="flex items-center justify-between gap-3">
-              <span>{t(`规则引擎正在扫描 ${checkingAssetIds.size} 张素材...`, `Rule engine is scanning ${checkingAssetIds.size} asset(s)...`)}</span>
-              <span>{t("运行中", "Running")}</span>
+          <div className="ui-enter ui-scan-panel mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
+            <div className="relative flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="ui-activity" aria-hidden="true" />
+                <span className="truncate">{t(`规则引擎正在扫描 ${checkingAssetIds.size} 张素材...`, `Rule engine is scanning ${checkingAssetIds.size} asset(s)...`)}</span>
+              </span>
+              <span className="shrink-0 font-semibold">{t("运行中", "Running")}</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-cyan-100">
               <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
@@ -1408,8 +1418,8 @@ export function InfringementChecksManager({
                   </label>
                   {isChecking ? (
                     <div className="ui-task-overlay z-20">
-                      <span className="ui-spinner" />
-                      <span>{t("检测中", "Checking")}</span>
+                      <span className="ui-activity" aria-hidden="true" />
+                      <span className="ui-task-label">{t("检测中", "Checking")}</span>
                     </div>
                   ) : null}
                 </div>

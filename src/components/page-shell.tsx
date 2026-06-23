@@ -22,8 +22,8 @@ export function PageShell({ title, description, titleZh, titleEn, descriptionZh,
 
   return (
     <section className="animate-fade-in space-y-6">
-      <header className={`border-b pb-6 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
-        <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
+      <header className={`ui-page-header border-b pb-6 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+        <p className={`ui-kicker text-[11px] font-medium uppercase tracking-[0.14em] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
           {t("POD 工作台", "POD Workspace")}
         </p>
         <h2 className={`mt-1.5 text-balance text-[28px] font-semibold leading-tight tracking-tight md:text-[32px] ${isDark ? "text-white" : "text-zinc-900"}`}>
