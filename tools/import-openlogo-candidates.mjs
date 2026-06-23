@@ -14,7 +14,9 @@ const HF_DATASET_ID = "Voxel51/OpenLogo";
 const DEFAULT_HF_ENDPOINT = (process.env.HF_ENDPOINT || "https://hf-mirror.com").replace(/\/+$/, "");
 const DATASET_PAGE_URL = `https://huggingface.co/datasets/${HF_DATASET_ID}`;
 const DEFAULT_COUNT = 300;
+const DEFAULT_OFFSET = 0;
 const MAX_COUNT = 2000;
+const MAX_OFFSET = 20000;
 const DEFAULT_MAX_PER_LABEL = 8;
 const DEFAULT_DELAY_MS = 120;
 const DEFAULT_CONCURRENCY = 3;
@@ -123,6 +125,7 @@ Usage:
 Options:
   --collector-root <dir>     Collector library root. Defaults to LOCAL_DATA_DIR/collector-library or /wmsFile/pod-ai-data/collector-library on Linux.
   --count <n>                Number of images to import. Default ${DEFAULT_COUNT}, max ${MAX_COUNT}.
+  --offset <n>               Skip the first n balanced candidates. Use 1000 for the second batch. Default ${DEFAULT_OFFSET}, max ${MAX_OFFSET}.
   --max-per-label <n>        Balanced cap per inferred brand/label. Default ${DEFAULT_MAX_PER_LABEL}.
   --delay-ms <n>             Delay before each image request. Default ${DEFAULT_DELAY_MS}.
   --concurrency <n>          Download concurrency. Default ${DEFAULT_CONCURRENCY}, max ${MAX_CONCURRENCY}.
@@ -146,6 +149,7 @@ function parseArgs(argv) {
     force: false,
     hfEndpoint: DEFAULT_HF_ENDPOINT,
     maxPerLabel: DEFAULT_MAX_PER_LABEL,
+    offset: DEFAULT_OFFSET,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -175,6 +179,12 @@ function parseArgs(argv) {
 
     if (arg === "--count" && next) {
       options.count = Math.max(1, Math.min(MAX_COUNT, Number(next) || DEFAULT_COUNT));
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--offset" && next) {
+      options.offset = Math.max(0, Math.min(MAX_OFFSET, Number(next) || DEFAULT_OFFSET));
       index += 1;
       continue;
     }
@@ -401,7 +411,12 @@ async function discoverOpenLogoCandidates(options) {
     .filter((candidate) => candidate.label !== "unknown")
     .sort((left, right) => right.score - left.score || left.rfilename.localeCompare(right.rfilename));
 
-  return selectBalanced(imageFiles, options);
+  const selected = selectBalanced(imageFiles, {
+    ...options,
+    count: Math.min(options.count + options.offset, MAX_COUNT + MAX_OFFSET),
+  });
+
+  return selected.slice(options.offset, options.offset + options.count);
 }
 
 async function saveCandidate(candidate, index, options) {
@@ -428,7 +443,8 @@ async function saveCandidate(candidate, index, options) {
   const contentHash = createHash("sha256").update(normalized).digest("hex");
   const imageHash = await computeAverageHash(normalized);
   const targetDir = path.join(options.collectorRoot, employeeSegment, options.date, siteType, candidate.label);
-  const filename = `${String(index + 1).padStart(5, "0")}-${slugify(candidate.label)}-${contentHash.slice(0, 12)}${extensionForFormat(format)}`;
+  const sequence = options.offset + index + 1;
+  const filename = `${String(sequence).padStart(5, "0")}-${slugify(candidate.label)}-${contentHash.slice(0, 12)}${extensionForFormat(format)}`;
   const targetPath = path.join(targetDir, filename);
   const relativePath = path.join(employeeSegment, options.date, siteType, candidate.label, filename);
 
@@ -518,6 +534,7 @@ async function main() {
     failed: failed.length,
     failedSamples: failed.slice(0, 10),
     labels: labels.slice(0, 80),
+    offset: options.offset,
     requested: options.count,
     saved: saved.length,
     savedSamples: saved.slice(0, 20).map((item) => item.relativePath),
