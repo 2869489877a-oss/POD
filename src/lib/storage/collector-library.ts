@@ -1,6 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -17,6 +18,8 @@ const DEFAULT_PUBLIC_PATH = "/uploads/collector";
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const RISK_LIBRARY_BATCH_SIZE = 100;
+const RISK_LIBRARY_PREPARE_CONCURRENCY = 8;
 
 export type CollectorLibraryItem = {
   createdAt: string;
@@ -63,6 +66,15 @@ type ListCollectorItemsInput = {
   limit?: number;
   request?: Request;
   startDate?: string;
+};
+
+type RiskLibraryCandidate = {
+  filename: string;
+  imageHash: string;
+  item: CollectorLibraryItem | null;
+  metadata: Record<string, unknown>;
+  publicUrl: string;
+  relativePath: string;
 };
 
 function stripTrailingSlash(value: string) {
@@ -193,15 +205,12 @@ async function readMetadata(relativePath: string): Promise<Partial<CollectorLibr
   }
 }
 
-async function itemFromRelativePath(relativePath: string, request?: Request): Promise<CollectorLibraryItem | null> {
-  const diskPath = resolveCollectorLibraryPath(relativePath);
-  const fileStat = await stat(diskPath);
-
-  if (!fileStat.isFile()) {
-    return null;
-  }
-
-  const metadata = await readMetadata(relativePath);
+function itemFromMetadata(
+  relativePath: string,
+  metadata: Partial<CollectorLibraryItem>,
+  fileStat: Stats,
+  request?: Request,
+): CollectorLibraryItem {
   const parts = relativePath.split("/");
   const createdAt = metadata.createdAt || fileStat.birthtime.toISOString();
   const uploadDate = metadata.uploadDate || metadata.date || parts[1] || beijingDatePath(new Date(createdAt));
@@ -223,6 +232,18 @@ async function itemFromRelativePath(relativePath: string, request?: Request): Pr
     uploadDate,
     width: metadata.width || null,
   };
+}
+
+async function itemFromRelativePath(relativePath: string, request?: Request): Promise<CollectorLibraryItem | null> {
+  const diskPath = resolveCollectorLibraryPath(relativePath);
+  const fileStat = await stat(diskPath);
+
+  if (!fileStat.isFile()) {
+    return null;
+  }
+
+  const metadata = await readMetadata(relativePath);
+  return itemFromMetadata(relativePath, metadata, fileStat, request);
 }
 
 async function walkCollectorFiles(directory: string, prefix = "", output: string[] = []) {
@@ -479,97 +500,258 @@ function referenceTermsForItem(metadata: Record<string, unknown>) {
   return Array.from(new Set(terms));
 }
 
+function isAverageHash(value: string) {
+  return /^[a-f0-9]{16}$/i.test(value);
+}
+
+function getStoredImageHash(metadata: Record<string, unknown>) {
+  const camelHash = stringMetadataValue(metadata, "imageHash");
+  if (isAverageHash(camelHash)) return camelHash.toLowerCase();
+
+  const snakeHash = stringMetadataValue(metadata, "image_hash");
+  return isAverageHash(snakeHash) ? snakeHash.toLowerCase() : "";
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+) {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  return results;
+}
+
+async function prepareRiskLibraryCandidate(relativePath: string, request?: Request): Promise<RiskLibraryCandidate> {
+  const diskPath = resolveCollectorLibraryPath(relativePath);
+  const storedMetadata = await readMetadata(relativePath);
+  const fileStat = await stat(diskPath);
+
+  if (!fileStat.isFile()) {
+    throw new Error("Collector path is not a file");
+  }
+
+  const metadataRecord = storedMetadata as Record<string, unknown>;
+  const item = itemFromMetadata(relativePath, storedMetadata, fileStat, request);
+  let imageHash = getStoredImageHash(metadataRecord);
+
+  if (!imageHash) {
+    const buffer = await readFile(diskPath);
+    const metadata = await sharp(buffer).metadata();
+
+    if (!metadata.width || !metadata.height || !metadata.format) {
+      throw new Error("Unable to read image dimensions or format");
+    }
+
+    if (!ALLOWED_FORMATS.has(metadata.format)) {
+      throw new Error("Unsupported image format: " + metadata.format);
+    }
+
+    imageHash = await computeAverageHash(buffer);
+  }
+
+  return {
+    filename: item?.filename || path.basename(relativePath),
+    imageHash,
+    item,
+    metadata: metadataRecord,
+    publicUrl: item?.publicUrl || buildCollectorLibraryPublicUrl(relativePath, request),
+    relativePath,
+  };
+}
+
+function riskLibrarySuccessResult(
+  candidate: RiskLibraryCandidate,
+  status: "added" | "skipped",
+  referenceId?: string,
+): CollectorOperationResult {
+  return {
+    filename: candidate.filename,
+    image_hash: candidate.imageHash,
+    public_url: candidate.publicUrl,
+    reference_id: referenceId,
+    relative_path: candidate.relativePath,
+    status,
+    success: true,
+  };
+}
+
+function riskLibraryInsertRow(candidate: RiskLibraryCandidate) {
+  return {
+    category: "visual_review",
+    description: "Collector library image marked as a high-risk visual reference.",
+    image_hash: candidate.imageHash,
+    image_url: candidate.publicUrl,
+    is_active: true,
+    library_type: "high_risk",
+    notes: "auto:collector-risk-library path=" + candidate.relativePath,
+    risk_level: "high",
+    severity: "high",
+    source_label: stringMetadataValue(candidate.metadata, "dataset") || candidate.item?.siteType || "collector-library",
+    source_url:
+      candidate.item?.sourceUrl ||
+      candidate.item?.pageUrl ||
+      stringMetadataValue(candidate.metadata, "sourceUrl") ||
+      candidate.publicUrl,
+    terms: referenceTermsForItem(candidate.metadata),
+    title: referenceTitleForItem(candidate.item, candidate.metadata, candidate.relativePath),
+  };
+}
+
 export async function addCollectorItemsToRiskLibrary(
   relativePaths: string[],
   request?: Request,
 ): Promise<CollectorOperationResult[]> {
   const supabase = createSupabaseServiceRoleClient();
-  const results: CollectorOperationResult[] = [];
-
-  for (const relativePath of relativePaths) {
+  const resultsByPath = new Map<string, CollectorOperationResult>();
+  const prepared = await mapWithConcurrency(relativePaths, RISK_LIBRARY_PREPARE_CONCURRENCY, async (relativePath) => {
     try {
-      const diskPath = resolveCollectorLibraryPath(relativePath);
-      const buffer = await readFile(diskPath);
-      const metadata = await sharp(buffer).metadata();
-
-      if (!metadata.width || !metadata.height || !metadata.format) {
-        throw new Error("Unable to read image dimensions or format");
-      }
-
-      if (!ALLOWED_FORMATS.has(metadata.format)) {
-        throw new Error("Unsupported image format: " + metadata.format);
-      }
-
-      const item = await itemFromRelativePath(relativePath, request);
-      const storedMetadata = (await readMetadata(relativePath)) as Record<string, unknown>;
-      const storedHash = stringMetadataValue(storedMetadata, "imageHash");
-      const imageHash = /^[a-f0-9]{16}$/i.test(storedHash) ? storedHash.toLowerCase() : await computeAverageHash(buffer);
-      const publicUrl = item?.publicUrl || buildCollectorLibraryPublicUrl(relativePath, request);
-
-      const { data: existing, error: existingError } = await supabase
-        .from("infringement_reference_items")
-        .select("id")
-        .eq("image_hash", imageHash)
-        .limit(1);
-
-      if (existingError) {
-        throw new Error(existingError.message);
-      }
-
-      if (existing && existing.length > 0) {
-        results.push({
-          filename: item?.filename || path.basename(relativePath),
-          image_hash: imageHash,
-          public_url: publicUrl,
-          reference_id: existing[0].id,
-          relative_path: relativePath,
-          status: "skipped",
-          success: true,
-        });
-        continue;
-      }
-
-      const { data, error } = await supabase
-        .from("infringement_reference_items")
-        .insert({
-          category: "visual_review",
-          description: "Collector library image marked as a high-risk visual reference.",
-          image_hash: imageHash,
-          image_url: publicUrl,
-          is_active: true,
-          library_type: "high_risk",
-          notes: "auto:collector-risk-library path=" + relativePath,
-          risk_level: "high",
-          severity: "high",
-          source_label: stringMetadataValue(storedMetadata, "dataset") || item?.siteType || "collector-library",
-          source_url: item?.sourceUrl || item?.pageUrl || stringMetadataValue(storedMetadata, "sourceUrl") || publicUrl,
-          terms: referenceTermsForItem(storedMetadata),
-          title: referenceTitleForItem(item, storedMetadata, relativePath),
-        })
-        .select("id")
-        .single();
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      results.push({
-        filename: item?.filename || path.basename(relativePath),
-        image_hash: imageHash,
-        public_url: publicUrl,
-        reference_id: data.id,
-        relative_path: relativePath,
-        status: "added",
-        success: true,
-      });
+      return {
+        candidate: await prepareRiskLibraryCandidate(relativePath, request),
+        relativePath,
+      };
     } catch (error) {
-      results.push({
+      return {
         error: getErrorMessage(error),
-        relative_path: relativePath,
-        success: false,
-      });
+        relativePath,
+      };
+    }
+  });
+
+  const candidates: RiskLibraryCandidate[] = [];
+
+  for (const item of prepared) {
+    if (item.candidate) {
+      candidates.push(item.candidate);
+      continue;
+    }
+
+    resultsByPath.set(item.relativePath, {
+      error: item.error,
+      relative_path: item.relativePath,
+      success: false,
+    });
+  }
+
+  const firstCandidateByHash = new Map<string, RiskLibraryCandidate>();
+  const duplicateCandidates: RiskLibraryCandidate[] = [];
+
+  for (const candidate of candidates) {
+    if (firstCandidateByHash.has(candidate.imageHash)) {
+      duplicateCandidates.push(candidate);
+      continue;
+    }
+
+    firstCandidateByHash.set(candidate.imageHash, candidate);
+  }
+
+  const uniqueCandidates = Array.from(firstCandidateByHash.values());
+  const existingReferenceByHash = new Map<string, string>();
+
+  for (const hashChunk of chunkArray(Array.from(firstCandidateByHash.keys()), RISK_LIBRARY_BATCH_SIZE)) {
+    const { data, error } = await supabase
+      .from("infringement_reference_items")
+      .select("id,image_hash")
+      .in("image_hash", hashChunk);
+
+    if (error) {
+      for (const candidate of uniqueCandidates) {
+        resultsByPath.set(candidate.relativePath, {
+          error: error.message,
+          relative_path: candidate.relativePath,
+          success: false,
+        });
+      }
+      return relativePaths.map(
+        (relativePath) =>
+          resultsByPath.get(relativePath) || {
+            error: error.message,
+            relative_path: relativePath,
+            success: false,
+          },
+      );
+    }
+
+    for (const row of data || []) {
+      if (typeof row.image_hash === "string" && typeof row.id === "string") {
+        existingReferenceByHash.set(row.image_hash.toLowerCase(), row.id);
+      }
     }
   }
 
-  return results;
+  const candidatesToInsert: RiskLibraryCandidate[] = [];
+
+  for (const candidate of uniqueCandidates) {
+    const referenceId = existingReferenceByHash.get(candidate.imageHash);
+    if (referenceId) {
+      resultsByPath.set(candidate.relativePath, riskLibrarySuccessResult(candidate, "skipped", referenceId));
+      continue;
+    }
+
+    candidatesToInsert.push(candidate);
+  }
+
+  for (const candidateChunk of chunkArray(candidatesToInsert, RISK_LIBRARY_BATCH_SIZE)) {
+    const { data, error } = await supabase
+      .from("infringement_reference_items")
+      .insert(candidateChunk.map(riskLibraryInsertRow))
+      .select("id,image_hash");
+
+    if (error) {
+      for (const candidate of candidateChunk) {
+        resultsByPath.set(candidate.relativePath, {
+          error: error.message,
+          relative_path: candidate.relativePath,
+          success: false,
+        });
+      }
+      continue;
+    }
+
+    const insertedReferenceByHash = new Map<string, string>();
+    for (const row of data || []) {
+      if (typeof row.image_hash === "string" && typeof row.id === "string") {
+        insertedReferenceByHash.set(row.image_hash.toLowerCase(), row.id);
+      }
+    }
+
+    for (const candidate of candidateChunk) {
+      resultsByPath.set(candidate.relativePath, riskLibrarySuccessResult(candidate, "added", insertedReferenceByHash.get(candidate.imageHash)));
+    }
+  }
+
+  for (const candidate of duplicateCandidates) {
+    const referenceId =
+      existingReferenceByHash.get(candidate.imageHash) ||
+      resultsByPath.get(firstCandidateByHash.get(candidate.imageHash)?.relativePath || "")?.reference_id;
+    resultsByPath.set(candidate.relativePath, riskLibrarySuccessResult(candidate, "skipped", referenceId));
+  }
+
+  return relativePaths.map(
+    (relativePath) =>
+      resultsByPath.get(relativePath) || {
+        error: "Risk library import did not return a result",
+        relative_path: relativePath,
+        success: false,
+      },
+  );
 }
