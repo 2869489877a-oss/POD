@@ -898,7 +898,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       onClick={() => openAssetDetail(asset.id)}
                       className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                     >
-                      {t("查看详情", "View Details")}
+                      {t("查看图片", "Preview")}
                     </button>
                     <button
                       type="button"
@@ -1026,49 +1026,57 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           aria-modal="true"
           aria-labelledby="asset-detail-title"
         >
-          <div className={["animate-scale-in relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md", detailPanelClass].join(" ")}
+          <div className={["animate-scale-in relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-md", detailPanelClass].join(" ")}
             onMouseDown={(event) => event.stopPropagation()}>
-            <div className={["flex shrink-0 items-start justify-between gap-4 border-b px-4 py-3 sm:px-6 sm:py-4", detailHeaderClass].join(" ")}>
+            <button
+              type="button"
+              onClick={closeAssetDetail}
+              className={["absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border text-lg font-semibold transition", detailButtonClass].join(" ")}
+              aria-label={t("关闭预览", "Close preview")}
+            >
+              ×
+            </button>
+            <div className={["flex shrink-0 items-start justify-between gap-4 border-b px-4 py-3 pr-16 sm:px-6 sm:py-4 sm:pr-16", detailHeaderClass].join(" ")}>
               <div>
                 <h3 id="asset-detail-title" className={["text-base font-semibold", detailTitleClass].join(" ")}>
-                  {t("图片详情", "Image Details")}
+                  {t("图片预览", "Image Preview")}
                 </h3>
                 <p className={["mt-1 text-sm", detailMutedClass].join(" ")}>{selectedAsset.filename}</p>
-              </div>
-              <div className="flex shrink-0 flex-wrap justify-end gap-2">
-                <a
-                  href={getAssetPreviewUrl(selectedAsset)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={["rounded-md border px-3 py-2 text-sm font-medium transition", detailButtonClass].join(" ")}
-                >
-                  {t("打开大图", "Open Image")}
-                </a>
-                <button
-                  type="button"
-                  onClick={() => void downloadAsset(selectedAsset)}
-                  className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-800"
-                >
-                  {t("下载到本地", "Download")}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeAssetDetail}
-                  className={["rounded-md border px-3 py-2 text-sm font-medium transition", detailButtonClass].join(" ")}
-                >
-                  {t("关闭", "Close")}
-                </button>
               </div>
             </div>
 
             <div className="grid gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
-              <div className={["flex min-h-[220px] items-center justify-center rounded-md p-3 sm:min-h-[360px]", detailImageFrameClass].join(" ")}>
+              <div className={["relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-md p-3 sm:min-h-[520px]", detailImageFrameClass].join(" ")}>
                 <img
                   src={getDisplayImageSrc(getAssetPreviewUrl(selectedAsset))}
                   alt={selectedAsset.filename}
                   decoding="async"
-                  className="max-h-[58vh] w-full object-contain"
+                  className="max-h-[70vh] w-full object-contain"
                 />
+                <div className={["absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-end gap-2 border-t p-3 backdrop-blur", isDark ? "border-white/[0.08] bg-black/60" : "border-zinc-200 bg-white/85"].join(" ")}>
+                  <button
+                    type="button"
+                    onClick={() => void downloadAsset(selectedAsset)}
+                    className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-800"
+                  >
+                    {t("下载", "Download")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteAssetIds([selectedAsset.id])}
+                    disabled={isDeleting || isResizeRunning}
+                    className={["rounded-md border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed", detailDangerButtonClass].join(" ")}
+                  >
+                    {isDeleting ? t("删除中...", "Deleting...") : t("删除", "Delete")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeAssetDetail}
+                    className={["rounded-md border px-3 py-2 text-sm font-medium transition", detailButtonClass].join(" ")}
+                  >
+                    {t("关闭", "Close")}
+                  </button>
+                </div>
               </div>
 
               <dl className="space-y-4 text-sm">
@@ -1197,7 +1205,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     </dd>
                   </div>
                 ) : null}
-                <div>
+                <div className="hidden">
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([selectedAsset.id])}
