@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { useSettings } from "@/lib/settings/context";
 
@@ -126,6 +127,7 @@ export function CollectorLibraryManager() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
@@ -216,6 +218,10 @@ export function CollectorLibraryManager() {
 
   useEffect(() => {
     void loadItems();
+  }, []);
+
+  useEffect(() => {
+    setIsMounted(true);
   }, []);
 
   useEffect(() => {
@@ -754,19 +760,23 @@ export function CollectorLibraryManager() {
         </section>
       )}
 
-      {previewItem ? (
+      {previewItem && isMounted ? createPortal((
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
+          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/70 px-3 py-4 sm:px-6 sm:py-6"
           role="dialog"
           aria-modal="true"
-          onClick={() => setPreviewPath(null)}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setPreviewPath(null);
+            }
+          }}
         >
           <div
             className={[
-              "relative flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border shadow-2xl",
+              "relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-md border shadow-2xl sm:max-h-[calc(100vh-3rem)]",
               isDark ? "border-white/[0.10] bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-950",
             ].join(" ")}
-            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
           >
             <div className={["flex items-start justify-between gap-4 border-b px-5 py-4", isDark ? "border-white/[0.08]" : "border-zinc-200"].join(" ")}>
               <div className="min-w-0">
@@ -864,7 +874,7 @@ export function CollectorLibraryManager() {
             </div>
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
     </div>
   );
 }
