@@ -125,6 +125,7 @@ export function CollectorLibraryManager() {
   const [isMutating, setIsMutating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
@@ -151,6 +152,10 @@ export function CollectorLibraryManager() {
     return Array.from(years).sort((a, b) => b.localeCompare(a));
   }, [calendarMonth, dateBuckets]);
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")), []);
+  const previewItem = useMemo(
+    () => items.find((item) => item.relativePath === previewPath) || null,
+    [items, previewPath],
+  );
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -218,6 +223,12 @@ export function CollectorLibraryManager() {
       setCalendarMonth(dateBuckets[0].date.slice(0, 7));
     }
   }, [dateBuckets, endDate, startDate]);
+
+  useEffect(() => {
+    if (previewPath && !previewItem) {
+      setPreviewPath(null);
+    }
+  }, [previewItem, previewPath]);
 
   function applyRecentDays(days: number) {
     setEndDate(latestUploadDate);
@@ -292,6 +303,33 @@ export function CollectorLibraryManager() {
       for (const item of filteredItems) next.add(item.relativePath);
       return next;
     });
+  }
+
+  async function downloadCollectorItem(item: CollectorLibraryItem) {
+    setError(null);
+
+    try {
+      const response = await fetch(item.publicUrl);
+      if (!response.ok) {
+        throw new Error(response.statusText || "HTTP " + response.status);
+      }
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = item.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      setError(
+        downloadError instanceof Error
+          ? t("下载失败: " + downloadError.message, "Download failed: " + downloadError.message)
+          : t("下载失败", "Download failed"),
+      );
+    }
   }
 
   async function mutateSelected(paths: string[], mode: "delete" | "promote") {
@@ -675,15 +713,16 @@ export function CollectorLibraryManager() {
                     {item.sourceUrl || item.pageUrl || t("无来源链接", "No source URL")}
                   </p>
                   <div className="grid grid-cols-3 gap-2">
-                    <a
-                      href={item.publicUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(event) => event.stopPropagation()}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPreviewPath(item.relativePath);
+                      }}
                       className={neutralButtonClass + " text-center"}
                     >
-                      {t("查看", "Open")}
-                    </a>
+                      {t("预览", "Preview")}
+                    </button>
                     <button
                       type="button"
                       onClick={(event) => {
@@ -714,6 +753,118 @@ export function CollectorLibraryManager() {
           })}
         </section>
       )}
+
+      {previewItem ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreviewPath(null)}
+        >
+          <div
+            className={[
+              "relative flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-md border shadow-2xl",
+              isDark ? "border-white/[0.10] bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-950",
+            ].join(" ")}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className={["flex items-start justify-between gap-4 border-b px-5 py-4", isDark ? "border-white/[0.08]" : "border-zinc-200"].join(" ")}>
+              <div className="min-w-0">
+                <h2 className="truncate text-base font-semibold">{previewItem.filename}</h2>
+                <p className={"mt-1 truncate text-sm " + mutedClass}>
+                  {previewItem.employeeName} / {t("上传", "Uploaded")} {getUploadDate(previewItem)} / {previewItem.siteType}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewPath(null)}
+                className={neutralButtonClass + " h-9 w-9 shrink-0 px-0 text-lg leading-none"}
+                aria-label={t("关闭预览", "Close preview")}
+              >
+                x
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className={isDark ? "min-h-[55vh] overflow-auto bg-black" : "min-h-[55vh] overflow-auto bg-zinc-100"}>
+                <div className="flex min-h-[55vh] items-center justify-center p-4">
+                  <img
+                    src={previewItem.publicUrl}
+                    alt={previewItem.filename}
+                    className="max-h-[72vh] max-w-full object-contain"
+                  />
+                </div>
+              </div>
+
+              <aside className={["space-y-4 overflow-y-auto border-l p-5", isDark ? "border-white/[0.08]" : "border-zinc-200"].join(" ")}>
+                <div>
+                  <p className={"text-xs font-medium " + mutedClass}>{t("图片信息", "Image Info")}</p>
+                  <dl className="mt-3 space-y-2 text-sm">
+                    <div className="flex justify-between gap-3">
+                      <dt className={mutedClass}>{t("尺寸", "Size")}</dt>
+                      <dd className="text-right font-medium">
+                        {previewItem.width && previewItem.height ? previewItem.width + " x " + previewItem.height : t("尺寸未知", "Unknown size")}
+                      </dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className={mutedClass}>{t("文件大小", "File Size")}</dt>
+                      <dd className="text-right font-medium">{formatFileSize(previewItem.fileSize)}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className={mutedClass}>{t("格式", "Format")}</dt>
+                      <dd className="text-right font-medium">{previewItem.format || "-"}</dd>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <dt className={mutedClass}>{t("上传时间", "Uploaded At")}</dt>
+                      <dd className="text-right font-medium">{formatDate(previewItem.createdAt)}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <p className={"text-xs font-medium " + mutedClass}>{t("来源", "Source")}</p>
+                  <p className={"mt-2 break-all text-sm leading-6 " + mutedClass}>
+                    {previewItem.sourceUrl || previewItem.pageUrl || t("无来源链接", "No source URL")}
+                  </p>
+                </div>
+
+                <div className="grid gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void downloadCollectorItem(previewItem)}
+                    className="rounded-md bg-cyan-500 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:-translate-y-0.5 hover:bg-cyan-400"
+                  >
+                    {t("下载到本地", "Download")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void mutateSelected([previewItem.relativePath], "promote")}
+                    disabled={isMutating}
+                    className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isMutating ? t("处理中", "Working") : t("入素材库", "Import to Assets")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void mutateSelected([previewItem.relativePath], "delete")}
+                    disabled={isMutating}
+                    className="rounded-md border border-red-400 px-4 py-2 text-sm font-medium text-red-500 transition hover:-translate-y-0.5 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {t("删除", "Delete")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPreviewPath(null)}
+                    className={neutralButtonClass}
+                  >
+                    {t("关闭", "Close")}
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
