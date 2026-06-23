@@ -61,7 +61,7 @@ export class TongyiProvider implements ImageProvider {
         },
         parameters,
       }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(240_000),
     });
 
     const text = await response.text();
@@ -163,7 +163,7 @@ export class TongyiProvider implements ImageProvider {
     const buffer = await safeFetchBuffer(value, {
       allowedContentTypes: ["image/"],
       maxBytes: 25 * 1024 * 1024,
-      timeoutMs: 30_000,
+      timeoutMs: 60_000,
     });
     return {
       imageBase64: buffer.toString("base64"),

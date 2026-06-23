@@ -112,7 +112,10 @@ const BACKGROUND_COLOR_OPTIONS = [
   { id: "pink", zh: "粉色", en: "Pink", swatch: "#ec4899" },
 ] as const;
 
-const MAX_AI_GRID_SIDE = 2048;
+const MAX_AI_GRID_SIDE_BY_GRID_SIZE: Record<2 | 3, number> = {
+  2: 2048,
+  3: 1536,
+};
 
 type BackgroundColorOption = (typeof BACKGROUND_COLOR_OPTIONS)[number];
 
@@ -364,7 +367,8 @@ async function buildGridDraft(items: GridSourceItem[], autoCrop: boolean, gridSi
     const crops = bitmaps.map((bitmap) => (autoCrop ? getPrintCrop(bitmap.width, bitmap.height) : fullCrop(bitmap.width, bitmap.height)));
     const sourceCellWidth = Math.max(...crops.map((crop) => crop.width));
     const sourceCellHeight = Math.max(...crops.map((crop) => crop.height));
-    const outputScale = Math.min(1, MAX_AI_GRID_SIDE / Math.max(sourceCellWidth * gridSize, sourceCellHeight * gridSize));
+    const maxGridSide = MAX_AI_GRID_SIDE_BY_GRID_SIZE[gridSize as 2 | 3] ?? 1536;
+    const outputScale = Math.min(1, maxGridSide / Math.max(sourceCellWidth * gridSize, sourceCellHeight * gridSize));
     const cellWidth = Math.max(1, Math.round(sourceCellWidth * outputScale));
     const cellHeight = Math.max(1, Math.round(sourceCellHeight * outputScale));
     const initialTransforms = bitmaps.map((bitmap, index) => {
@@ -450,6 +454,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [splitPieces, setSplitPieces] = useState<SplitGridPiece[]>([]);
   const [status, setStatus] = useState<GridStatus>("idle");
+  const [progressPercent, setProgressPercent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -494,6 +499,22 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
           : isDark
             ? "bg-white/[0.06] text-slate-400"
             : "bg-slate-100 text-slate-600";
+  const progressText =
+    status === "compositing"
+      ? t("1% - 正在生成可调参考拼图", "1% - Building adjustable reference grid")
+      : status === "uploading"
+        ? t(`${Math.max(progressPercent, 12)}% - 正在上传参考拼图`, `${Math.max(progressPercent, 12)}% - Uploading reference grid`)
+        : status === "generating"
+          ? t(`${progressPercent}% - AI 正在处理${gridNameZh}，九宫格会比四宫格更久`, `${progressPercent}% - AI is generating the ${gridLabel} result`)
+          : status === "splitting"
+            ? t(`${progressPercent}% - 正在拆分并保存到素材库`, `${progressPercent}% - Splitting and saving results`)
+            : status === "completed"
+              ? t("100% - 已生成并保存完成", "100% - Generated and saved")
+              : status === "failed"
+                ? t(`${progressPercent || 1}% - 任务失败`, `${progressPercent || 1}% - Task failed`)
+                : status === "cancelled"
+                  ? t(`${progressPercent || 1}% - 已取消`, `${progressPercent || 1}% - Cancelled`)
+                  : t("0% - 等待开始", "0% - Ready");
 
   const sourceNames = useMemo(() => items.map((item, index) => `${String(index + 1).padStart(2, "0")}-${sanitizeName(item.file.name)}`), [items]);
 
@@ -567,6 +588,45 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     }
   }, [gridDraft, gridSize, previewImages, selectedCellIndex, totalCells]);
 
+  useEffect(() => {
+    const progressCeilings: Record<GridStatus, number> = {
+      cancelled: progressPercent,
+      completed: 100,
+      compositing: 12,
+      failed: progressPercent,
+      generating: gridSize === 3 ? 88 : 84,
+      idle: 0,
+      splitting: 98,
+      uploading: 30,
+    };
+    const progressFloors: Record<GridStatus, number> = {
+      cancelled: progressPercent,
+      completed: 100,
+      compositing: 1,
+      failed: progressPercent || 1,
+      generating: 31,
+      idle: 0,
+      splitting: 89,
+      uploading: 13,
+    };
+
+    setProgressPercent((current) => Math.max(current, progressFloors[status]));
+
+    if (!running) {
+      if (status === "idle") setProgressPercent(0);
+      if (status === "completed") setProgressPercent(100);
+      return;
+    }
+
+    const intervalMs = status === "generating" ? (gridSize === 3 ? 1800 : 1200) : 450;
+    const step = status === "generating" ? 1 : 3;
+    const timer = window.setInterval(() => {
+      setProgressPercent((current) => Math.min(progressCeilings[status], Math.max(progressFloors[status], current + step)));
+    }, intervalMs);
+
+    return () => window.clearInterval(timer);
+  }, [gridSize, progressPercent, running, status]);
+
   function resetGeneratedState(options: { clearDraft?: boolean } = {}) {
     if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
     setGridPreviewUrl(null);
@@ -582,6 +642,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     setGeneratedUrl(null);
     setSplitPieces([]);
     setStatus("idle");
+    setProgressPercent(0);
     setError(null);
     setMessage(null);
   }
@@ -658,6 +719,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     setMessage(null);
     if (status === "completed" || status === "failed" || status === "cancelled") {
       setStatus("idle");
+      setProgressPercent(0);
     }
   }
 
@@ -666,6 +728,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
 
     try {
       setStatus("compositing");
+      setProgressPercent(1);
       setError(null);
       setMessage(null);
       setUploadUrl(null);
@@ -680,6 +743,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       setSelectedCellIndex(0);
       setDragState(null);
       setStatus("idle");
+      setProgressPercent(0);
       setMessage(t("Grid is ready. Adjust each cell, then generate with AI.", "Grid is ready. Adjust each cell, then generate with AI."));
     } catch (buildError) {
       setStatus("failed");
@@ -820,16 +884,20 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     setMessage(null);
     setSplitPieces([]);
     setGeneratedUrl(null);
+    setProgressPercent(1);
 
     try {
+      setStatus("compositing");
       const grid = await buildAdjustedGridImage(items, gridDraft, gridSize);
       if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
       setGridPreviewUrl(URL.createObjectURL(grid.file));
       setGridDimensions({ height: grid.height, width: grid.width });
+      setProgressPercent(12);
 
       setStatus("uploading");
       const imageUrl = await uploadSourceImage(grid.file, controller.signal);
       setUploadUrl(imageUrl);
+      setProgressPercent(30);
 
       setStatus("generating");
       const response = await fetch("/api/ai/generate-image", {
@@ -852,9 +920,12 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       }
 
       setGeneratedUrl(data.result_url);
+      setProgressPercent(88);
       setStatus("splitting");
       await splitGeneratedResult(data.result_url, controller.signal);
+      setProgressPercent(99);
       setStatus("completed");
+      setProgressPercent(100);
       setMessage(t(`${gridNameZh}已生成并拆分为 ${totalCells} 张图片，结果已保存到素材库。`, `The ${gridLabel} grid was generated and split into ${totalCells} images. Results were saved to Assets.`));
     } catch (runError) {
       if (controller.signal.aborted) {
@@ -1477,9 +1548,23 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
               }}
             >
               {running ? (
-                <div className="text-center">
+                <div className="w-full max-w-md text-center">
                   <div className={`mx-auto h-9 w-9 animate-spin rounded-full border-2 border-t-transparent ${isDark ? "border-cyan-400" : "border-cyan-500"}`} />
                   <p className="mt-3 text-sm text-slate-500">{statusLabel}</p>
+                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200/80">
+                    <div
+                      className={`h-full rounded-full bg-gradient-to-r ${colors.gradient} transition-all duration-500`}
+                      style={{ width: `${clampValue(progressPercent || 1, 1, 100)}%` }}
+                    />
+                  </div>
+                  <p className={`mt-2 text-xs font-semibold ${isDark ? "text-cyan-300" : "text-cyan-700"}`}>
+                    {progressText}
+                  </p>
+                  {gridSize === 3 && status === "generating" ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {t("九宫格一次处理 9 张图，生成阶段会明显长于四宫格。", "A 3x3 grid processes 9 images, so generation takes longer than 2x2.")}
+                    </p>
+                  ) : null}
                 </div>
               ) : generatedUrl ? (
                 <img src={generatedUrl} alt="AI generated grid" className="max-h-[360px] rounded-xl object-contain shadow-lg" />

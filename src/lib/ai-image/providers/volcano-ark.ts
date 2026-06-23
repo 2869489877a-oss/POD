@@ -129,7 +129,7 @@ export class VolcanoArkProvider implements ImageProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(240_000),
     });
 
     if (!response.ok) {
@@ -148,7 +148,7 @@ export class VolcanoArkProvider implements ImageProvider {
       const buf = await safeFetchBuffer(first.url, {
         allowedContentTypes: ["image/"],
         maxBytes: 25 * 1024 * 1024,
-        timeoutMs: 30_000,
+        timeoutMs: 60_000,
       });
       return { imageBase64: buf.toString("base64"), mimeType: "image/png" };
     }

@@ -69,7 +69,7 @@ async function prepareReferenceImage(referenceUrl: string): Promise<PreparedRefe
 
   const image = await readImageBinary(referenceUrl, {
     maxBytes: MAX_REFERENCE_IMAGE_BYTES,
-    timeoutMs: 30_000,
+    timeoutMs: 60_000,
   });
 
   return {
