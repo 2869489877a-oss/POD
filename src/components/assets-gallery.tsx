@@ -218,6 +218,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [resizeMessage, setResizeMessage] = useState<string | null>(null);
   const [isResizeRunning, setIsResizeRunning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingAssetIds, setDeletingAssetIds] = useState<Set<string>>(new Set());
+  const [deletePhase, setDeletePhase] = useState<"checking" | "deleting" | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const preloadedImageUrls = useRef<Set<string>>(new Set());
   const selectedCount = selectedIds.size;
@@ -364,6 +366,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     }
 
     setIsDeleting(true);
+    setDeletingAssetIds(new Set(assetIds));
+    setDeletePhase("checking");
     setError(null);
     setDeleteMessage(null);
 
@@ -394,6 +398,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         return;
       }
 
+      setDeletePhase("deleting");
       const response = await fetch("/api/assets", {
         body: JSON.stringify({
           asset_ids: assetIds,
@@ -431,6 +436,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       setError(requestError instanceof Error ? requestError.message : t("删除素材失败", "Failed to delete assets"));
     } finally {
       setIsDeleting(false);
+      setDeletingAssetIds(new Set());
+      setDeletePhase(null);
     }
   }
 
@@ -809,14 +816,16 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         >
           {assets.map((asset) => {
             const isSelected = selectedIds.has(asset.id);
+            const isAssetDeleting = deletingAssetIds.has(asset.id);
             const previewUrl = getAssetPreviewUrl(asset);
             const sourceLabel = getAssetSourceLabel(asset);
 
             return (
               <article
                 key={asset.id}
+                data-task-active={isAssetDeleting}
                 className={[
-                  "ui-enter ui-lift group overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow,transform] duration-150 ease-out [contain-intrinsic-size:360px] [content-visibility:auto] hover:shadow-sm",
+                  "ui-enter ui-lift ui-task-card group overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow,transform] duration-150 ease-out [contain-intrinsic-size:360px] [content-visibility:auto] hover:shadow-sm",
                   isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
                 ].join(" ")}
               >
@@ -844,10 +853,17 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleAsset(asset.id)}
+                      disabled={isAssetDeleting}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
                     {t("选择", "Select")}
                   </label>
+                  {isAssetDeleting ? (
+                    <div className="ui-task-overlay z-20">
+                      <span className="ui-spinner" />
+                      <span>{deletePhase === "checking" ? t("检查引用", "Checking") : t("删除中", "Deleting")}</span>
+                    </div>
+                  ) : null}
                   <span
                     className={[
                       "ui-status-pop absolute right-3 top-3 rounded-md px-2.5 py-1 text-xs font-medium",

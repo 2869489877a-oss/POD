@@ -128,6 +128,8 @@ export function CollectorLibraryManager() {
   const [error, setError] = useState<string | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [pendingMutationPaths, setPendingMutationPaths] = useState<Set<string>>(new Set());
+  const [pendingMutationMode, setPendingMutationMode] = useState<"delete" | "promote" | null>(null);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
@@ -179,6 +181,7 @@ export function CollectorLibraryManager() {
 
   const selectedCount = selected.size;
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
+  const previewPendingMode = previewItem && pendingMutationPaths.has(previewItem.relativePath) ? pendingMutationMode : null;
   const panelClass = isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-white";
   const mutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
   const textClass = isDark ? "text-white" : "text-zinc-950";
@@ -349,6 +352,8 @@ export function CollectorLibraryManager() {
     }
 
     setIsMutating(true);
+    setPendingMutationPaths(new Set(paths));
+    setPendingMutationMode(mode);
     setError(null);
     setMessage(null);
 
@@ -384,6 +389,8 @@ export function CollectorLibraryManager() {
       setError(requestError instanceof Error ? requestError.message : t("操作失败", "Operation failed"));
     } finally {
       setIsMutating(false);
+      setPendingMutationPaths(new Set());
+      setPendingMutationMode(null);
     }
   }
 
@@ -665,23 +672,33 @@ export function CollectorLibraryManager() {
       {error ? <pre className="ui-enter whitespace-pre-wrap rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</pre> : null}
 
       {filteredItems.length === 0 ? (
-        <section className={"rounded-md border p-8 text-center " + panelClass}>
+        <section className={"ui-enter rounded-md border p-8 text-center " + panelClass}>
           <p className={"text-sm " + mutedClass}>
             {isLoading ? t("正在读取采集库...", "Loading collector library...") : t("暂无采集图片", "No collected images yet")}
           </p>
+          {isLoading ? (
+            <div className={["mx-auto mt-4 h-1.5 max-w-sm overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-zinc-100"].join(" ")}>
+              <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
+            </div>
+          ) : null}
         </section>
       ) : (
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {filteredItems.map((item) => {
             const isSelected = selected.has(item.relativePath);
             const uploadDate = getUploadDate(item);
+            const pendingMode = pendingMutationPaths.has(item.relativePath) ? pendingMutationMode : null;
+            const isItemMutating = pendingMode !== null;
 
             return (
               <article
                 key={item.relativePath}
-                onClick={() => toggleItem(item.relativePath)}
+                onClick={() => {
+                  if (!isItemMutating) toggleItem(item.relativePath);
+                }}
+                data-task-active={isItemMutating}
                 className={[
-                  "ui-enter ui-lift group overflow-hidden rounded-md border transition-[border-color,box-shadow,transform] duration-150 ease-out",
+                  "ui-enter ui-lift ui-task-card group overflow-hidden rounded-md border transition-[border-color,box-shadow,transform] duration-150 ease-out",
                   isDark ? "bg-white/[0.03]" : "bg-white",
                   isSelected ? "border-emerald-500 ring-2 ring-emerald-500/20" : isDark ? "border-white/[0.08]" : "border-zinc-200",
                 ].join(" ")}
@@ -692,6 +709,7 @@ export function CollectorLibraryManager() {
                     checked={isSelected}
                     onClick={(event) => event.stopPropagation()}
                     onChange={() => toggleItem(item.relativePath)}
+                    disabled={isItemMutating}
                     className="absolute left-3 top-3 z-10 h-4 w-4 rounded border-zinc-300"
                   />
                   <img
@@ -701,6 +719,12 @@ export function CollectorLibraryManager() {
                     decoding="async"
                     className="h-full w-full object-contain"
                   />
+                  {isItemMutating ? (
+                    <div className="ui-task-overlay z-20">
+                      <span className="ui-spinner" />
+                      <span>{pendingMode === "promote" ? t("正在入库", "Importing") : t("正在删除", "Deleting")}</span>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="space-y-3 p-3">
                   <div>
@@ -738,7 +762,7 @@ export function CollectorLibraryManager() {
                       disabled={isMutating}
                       className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {t("入库", "Import")}
+                      {pendingMode === "promote" ? t("入库中", "Importing") : t("入库", "Import")}
                     </button>
                     <button
                       type="button"
@@ -749,7 +773,7 @@ export function CollectorLibraryManager() {
                       disabled={isMutating}
                       className="rounded-md border border-red-400 px-3 py-2 text-sm font-medium text-red-500 transition hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {t("删除", "Delete")}
+                      {pendingMode === "delete" ? t("删除中", "Deleting") : t("删除", "Delete")}
                     </button>
                   </div>
                   <p className={"text-[11px] " + mutedClass}>{t("上传时间", "Uploaded at")}: {formatDate(item.createdAt)}</p>
@@ -852,7 +876,7 @@ export function CollectorLibraryManager() {
                     disabled={isMutating}
                     className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {isMutating ? t("处理中", "Working") : t("入素材库", "Import to Assets")}
+                    {previewPendingMode === "promote" ? t("正在入库", "Importing") : t("入素材库", "Import to Assets")}
                   </button>
                   <button
                     type="button"
@@ -860,7 +884,7 @@ export function CollectorLibraryManager() {
                     disabled={isMutating}
                     className="rounded-md border border-red-400 px-4 py-2 text-sm font-medium text-red-500 transition hover:-translate-y-0.5 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {t("删除", "Delete")}
+                    {previewPendingMode === "delete" ? t("正在删除", "Deleting") : t("删除", "Delete")}
                   </button>
                   <button
                     type="button"

@@ -144,7 +144,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
   ];
 
   return (
-    <div className="animate-fade-in flex flex-col gap-8">
+    <div className="ui-page-enter flex flex-col gap-8">
       {/* Hero */}
       <section className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-950">
         <Image
@@ -189,7 +189,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
           </div>
 
           {/* Stats strip */}
-          <dl className="mt-2 flex flex-wrap gap-x-8 gap-y-3">
+          <dl className="ui-stagger mt-2 flex flex-wrap gap-x-8 gap-y-3">
             {statItems.map((item) => (
               <div key={item.label} className="flex flex-col gap-0.5">
                 <dt className="text-[11px] text-zinc-500">{item.label}</dt>
@@ -214,12 +214,12 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
             </p>
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="ui-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {featuredTools.map((tool) => (
             <Link
               key={tool.href}
               href={tool.href}
-              className={`group flex flex-col overflow-hidden transition-colors ${cardClass} ${
+              className={`ui-lift group flex flex-col overflow-hidden transition-colors ${cardClass} ${
                 isDark ? "hover:border-white/20" : "hover:border-black/20"
               }`}
             >
@@ -261,7 +261,7 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
       </section>
 
       {/* Workflow */}
-      <section className={`overflow-hidden ${cardClass}`}>
+      <section className={`ui-enter ui-delay-1 overflow-hidden ${cardClass}`}>
         <div className="flex flex-col gap-6 p-6 sm:p-8">
           <div>
             <h2 className={`text-lg font-semibold tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
@@ -271,11 +271,11 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
               {t("五步完成从素材到可上架商品", "Five steps from raw asset to listable product")}
             </p>
           </div>
-          <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <ol className="ui-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
             {workflowSteps.map((step, index) => (
               <li
                 key={step.zh}
-                className={`relative flex flex-col gap-2 rounded-lg border p-4 ${
+                className={`ui-lift relative flex flex-col gap-2 rounded-lg border p-4 ${
                   isDark ? "border-white/[0.06] bg-white/[0.02]" : "border-black/[0.06] bg-black/[0.02]"
                 }`}
               >
@@ -295,16 +295,16 @@ export function HomeHub({ stats }: { stats: DashboardStats }) {
       </section>
 
       {/* Quick links */}
-      <section className="flex flex-col gap-4">
+      <section className="ui-enter ui-delay-2 flex flex-col gap-4">
         <h2 className={`text-lg font-semibold tracking-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
           {t("快捷入口", "Quick access")}
         </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="ui-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {quickLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className={`group flex items-center gap-3.5 p-4 transition-colors ${cardClass} ${
+              className={`ui-lift group flex items-center gap-3.5 p-4 transition-colors ${cardClass} ${
                 isDark ? "hover:border-white/20" : "hover:border-black/20"
               }`}
             >

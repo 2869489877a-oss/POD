@@ -339,6 +339,7 @@ export function InfringementChecksManager({
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [checkingAssetIds, setCheckingAssetIds] = useState<Set<string>>(new Set());
   const [selectedItem, setSelectedItem] = useState<InfringementListItem | null>(null);
   const [reviewStatus, setReviewStatus] = useState<Exclude<CheckStatus, "pending">>("review");
   const [reviewNote, setReviewNote] = useState("");
@@ -574,6 +575,7 @@ export function InfringementChecksManager({
     }
 
     setIsRunning(true);
+    setCheckingAssetIds(new Set(assetIds));
     setError(null);
     setMessage(t(`正在检测 ${assetIds.length} 张素材...`, `Checking ${assetIds.length} asset(s)...`));
 
@@ -596,6 +598,7 @@ export function InfringementChecksManager({
       setError(requestError instanceof Error ? requestError.message : t("侵权检测失败", "Infringement check failed"));
     } finally {
       setIsRunning(false);
+      setCheckingAssetIds(new Set());
     }
   }
 
@@ -901,7 +904,7 @@ export function InfringementChecksManager({
         {isRunning ? (
           <div className="ui-enter mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
             <div className="flex items-center justify-between gap-3">
-              <span>{t("规则引擎正在扫描素材...", "Rule engine is scanning assets...")}</span>
+              <span>{t(`规则引擎正在扫描 ${checkingAssetIds.size} 张素材...`, `Rule engine is scanning ${checkingAssetIds.size} asset(s)...`)}</span>
               <span>{t("运行中", "Running")}</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-cyan-100">
@@ -1373,12 +1376,14 @@ export function InfringementChecksManager({
           const evidenceQuality = evidence.evidence_quality ?? "none";
           const previewUrl = item.asset.processed_url ?? item.asset.original_url;
           const isSelected = selectedIds.has(item.asset.id);
+          const isChecking = checkingAssetIds.has(item.asset.id);
 
           return (
             <article
               key={item.asset.id}
+              data-task-active={isChecking}
               className={[
-                "ui-enter ui-lift overflow-hidden rounded-md border bg-white transition",
+                "ui-enter ui-lift ui-task-card overflow-hidden rounded-md border bg-white transition",
                 isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
               ].join(" ")}
             >
@@ -1396,10 +1401,17 @@ export function InfringementChecksManager({
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleAsset(item.asset.id)}
+                      disabled={isChecking}
                       className="h-4 w-4 rounded border-zinc-300"
                     />
                     {t("选择", "Select")}
                   </label>
+                  {isChecking ? (
+                    <div className="ui-task-overlay z-20">
+                      <span className="ui-spinner" />
+                      <span>{t("检测中", "Checking")}</span>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-4 p-4">
@@ -1474,7 +1486,7 @@ export function InfringementChecksManager({
                       disabled={isRunning}
                       className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
-                      {t("重新检测", "Re-check")}
+                      {isChecking ? t("检测中", "Checking") : t("重新检测", "Re-check")}
                     </button>
                     <button
                       type="button"

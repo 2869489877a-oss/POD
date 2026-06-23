@@ -57,7 +57,7 @@ export function DashboardOverview({ stats }: Props) {
     <>
       {/* Hero banner */}
       <section
-        className={`relative overflow-hidden rounded-[10px] border ${
+        className={`ui-enter relative overflow-hidden rounded-[10px] border ${
           isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-zinc-950"
         }`}
       >
@@ -91,11 +91,11 @@ export function DashboardOverview({ stats }: Props) {
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="ui-stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card, index) => (
           <div
             key={card.label}
-            className={`animate-fade-in p-5 ${cardClass}`}
+            className={`ui-lift p-5 ${cardClass}`}
             style={{ animationDelay: `${index * 60}ms` }}
           >
             <div className="flex items-center gap-2">
@@ -115,7 +115,7 @@ export function DashboardOverview({ stats }: Props) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className={`p-6 ${cardClass}`}>
+        <section className={`ui-enter ui-delay-1 p-6 ${cardClass}`}>
           <h3 className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-900"}`}>
             {t("批处理流程", "Batch Workflow")}
           </h3>
@@ -123,11 +123,12 @@ export function DashboardOverview({ stats }: Props) {
             {workflowItems.map((item, index) => (
               <div
                 key={item.zh}
-                className={`flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 ${
+                className={`ui-reveal-right flex items-center gap-3 rounded-md border px-3 py-2.5 transition-colors duration-150 ${
                   isDark
                     ? "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]"
                     : "border-black/[0.06] bg-black/[0.01] hover:border-black/[0.12]"
                 }`}
+                style={{ animationDelay: `${index * 35}ms` }}
               >
                 <span
                   className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[11px] font-semibold tabular-nums ${
@@ -144,7 +145,7 @@ export function DashboardOverview({ stats }: Props) {
           </div>
         </section>
 
-        <section className={`relative overflow-hidden p-6 ${cardClass}`}>
+        <section className={`ui-enter ui-delay-2 relative overflow-hidden p-6 ${cardClass}`}>
           <Image
             src="/images/workflow-tech.png"
             alt=""

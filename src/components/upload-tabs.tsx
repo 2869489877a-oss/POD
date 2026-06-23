@@ -45,7 +45,7 @@ export function UploadTabs() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-3 lg:grid-cols-3" role="tablist" aria-label={t("素材类型", "Asset type")}>
+      <section className="ui-stagger grid gap-3 lg:grid-cols-3" role="tablist" aria-label={t("素材类型", "Asset type")}>
         {UPLOAD_ENTRIES.map((entry) => {
           const isActive = entry.source === activeSource;
 
@@ -57,7 +57,7 @@ export function UploadTabs() {
               aria-selected={isActive}
               onClick={() => setActiveSource(entry.source)}
               className={[
-                "group rounded-[10px] border p-4 text-left transition-colors duration-150",
+                "ui-lift ui-press group relative overflow-hidden rounded-[10px] border p-4 text-left transition-colors duration-150",
                 isActive
                   ? isDark
                     ? "bg-white/[0.06]"
@@ -69,8 +69,15 @@ export function UploadTabs() {
               style={isActive ? { borderColor: colors.primary } : undefined}
             >
               <span
+                className="absolute inset-x-0 top-0 h-0.5 origin-left transition-transform duration-200"
+                style={{
+                  background: colors.primary,
+                  transform: isActive ? "scaleX(1)" : "scaleX(0)",
+                }}
+              />
+              <span
                 className={[
-                  "inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-semibold",
+                  "inline-flex h-8 w-8 items-center justify-center rounded-md border text-[13px] font-semibold transition-transform duration-150 group-hover:scale-105",
                   isDark ? "border-white/[0.08] bg-white/[0.04]" : "border-black/[0.08] bg-black/[0.03]",
                 ].join(" ")}
                 style={{ color: isActive ? colors.primary : undefined }}
@@ -98,13 +105,15 @@ export function UploadTabs() {
         })}
       </section>
 
-      <UploadForm
-        assetSource={activeEntry.source}
-        titleZh={`${activeEntry.zh}上传`}
-        titleEn={`${activeEntry.en} Upload`}
-        descriptionZh={activeEntry.descriptionZh}
-        descriptionEn={activeEntry.descriptionEn}
-      />
+      <div key={activeEntry.source} className="ui-enter">
+        <UploadForm
+          assetSource={activeEntry.source}
+          titleZh={`${activeEntry.zh}上传`}
+          titleEn={`${activeEntry.en} Upload`}
+          descriptionZh={activeEntry.descriptionZh}
+          descriptionEn={activeEntry.descriptionEn}
+        />
+      </div>
     </div>
   );
 }

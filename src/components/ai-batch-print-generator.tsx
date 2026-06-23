@@ -810,14 +810,22 @@ export function AiBatchPrintGenerator() {
                   {queue.map((item, index) => (
                     <div
                       key={item.id}
+                      data-task-active={item.status === "uploading" || item.status === "generating"}
                       onClick={() => setSelectedId(item.id)}
-                      className={`grid w-full grid-cols-[56px_1fr] gap-3 p-3 text-left transition ${
+                      className={`ui-task-card grid w-full grid-cols-[56px_1fr] gap-3 p-3 text-left transition ${
                         selectedItem?.id === item.id
                           ? isDark ? "bg-cyan-500/10" : "bg-cyan-50"
                           : isDark ? "hover:bg-white/[0.03]" : "hover:bg-white"
                       }`}
                     >
-                      <img src={item.previewUrl} alt="" className="h-14 w-14 rounded-xl object-cover" />
+                      <div className="relative h-14 w-14 overflow-hidden rounded-xl">
+                        <img src={item.previewUrl} alt="" className="h-full w-full object-cover" />
+                        {item.status === "uploading" || item.status === "generating" ? (
+                          <div className="ui-task-overlay text-[10px]">
+                            <span className="ui-spinner" />
+                          </div>
+                        ) : null}
+                      </div>
                       <span className="min-w-0">
                         <span className={`block truncate text-sm font-semibold ${isDark ? "text-slate-200" : "text-slate-900"}`}>
                           {String(index + 1).padStart(2, "0")} · {item.file.name}

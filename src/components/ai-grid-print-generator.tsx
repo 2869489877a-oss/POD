@@ -1094,9 +1094,20 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
           {items.length > 0 ? (
             <div className={gridSize === 3 ? "grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3" : "grid grid-cols-2 gap-3"}>
               {items.map((item, index) => (
-                <article key={item.id} className={`rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/20" : "border-black/[0.05] bg-white/80"}`}>
+                <article
+                  key={item.id}
+                  data-task-active={running}
+                  className={`ui-task-card rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/20" : "border-black/[0.05] bg-white/80"}`}
+                >
                   <div className="flex items-start gap-3">
-                    <img src={item.previewUrl} alt={item.file.name} className="h-20 w-20 rounded-xl object-cover" />
+                    <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl">
+                      <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
+                      {running ? (
+                        <div className="ui-task-overlay text-[10px]">
+                          <span className="ui-spinner" />
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <p className={`truncate text-sm font-bold ${isDark ? "text-slate-200" : "text-slate-900"}`}>
                         {index + 1}. {item.file.name}
