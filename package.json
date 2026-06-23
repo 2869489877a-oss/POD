@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:celebrity-seeds": "node tools/build-celebrity-seeds.mjs",
+    "seed:collector-risk-images": "node tools/seed-collector-risk-images.mjs",
     "start": "next start",
     "lint": "eslint"
   },

@@ -133,6 +133,8 @@ export type InfringementDetectionResult = {
     rule_term_count?: number;
     visual_review_required?: boolean;
     visual_review_reason?: string;
+    weak_evidence_cap_applied?: boolean;
+    weak_evidence_source?: "filename" | "metadata";
     weak_match_count?: number;
   };
   matched_rules: InfringementRuleMatch[];

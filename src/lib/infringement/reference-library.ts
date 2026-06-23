@@ -46,12 +46,13 @@ type CompiledReferenceSet = {
 };
 
 const categoryLimits: Array<{ category: InfringementRuleCategory; limit: number }> = [
-  { category: "character", limit: 320 },
-  { category: "brand", limit: 280 },
-  { category: "sports", limit: 220 },
-  { category: "celebrity", limit: 180 },
-  { category: "logo", limit: 100 },
-  { category: "copyright_phrase", limit: 100 },
+  { category: "character", limit: 560 },
+  { category: "brand", limit: 520 },
+  { category: "sports", limit: 420 },
+  { category: "celebrity", limit: 320 },
+  { category: "logo", limit: 220 },
+  { category: "copyright_phrase", limit: 220 },
+  { category: "marketplace", limit: 140 },
 ];
 
 const validLibraryTypes = new Set<InfringementReferenceLibraryType>(["high_risk", "allowlist"]);

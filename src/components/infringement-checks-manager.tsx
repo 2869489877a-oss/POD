@@ -46,7 +46,10 @@ type DetectionEvidence = {
   product_text_count?: number;
   score_breakdown?: ScoreBreakdown[];
   strong_match_count?: number;
+  visual_review_reason?: string;
   visual_review_required?: boolean;
+  weak_evidence_cap_applied?: boolean;
+  weak_evidence_source?: "filename" | "metadata";
   weak_match_count?: number;
 };
 
@@ -167,7 +170,7 @@ const evidenceQualityStyles: Record<EvidenceQuality, string> = {
   none: "bg-zinc-100 text-zinc-700",
   standard: "bg-sky-50 text-sky-700",
   strong: "bg-emerald-50 text-emerald-700",
-  visual_only: "bg-zinc-100 text-zinc-700",
+  visual_only: "bg-cyan-50 text-cyan-700",
   weak: "bg-amber-50 text-amber-700",
 };
 
@@ -287,7 +290,12 @@ function parseDetectionEvidence(value: unknown): DetectionEvidence {
     product_text_count: typeof record.product_text_count === "number" ? record.product_text_count : undefined,
     score_breakdown: scoreBreakdown,
     strong_match_count: typeof record.strong_match_count === "number" ? record.strong_match_count : undefined,
+    visual_review_reason: typeof record.visual_review_reason === "string" ? record.visual_review_reason : undefined,
     visual_review_required: typeof record.visual_review_required === "boolean" ? record.visual_review_required : undefined,
+    weak_evidence_cap_applied: typeof record.weak_evidence_cap_applied === "boolean" ? record.weak_evidence_cap_applied : undefined,
+    weak_evidence_source: record.weak_evidence_source === "filename" || record.weak_evidence_source === "metadata"
+      ? record.weak_evidence_source
+      : undefined,
     weak_match_count: typeof record.weak_match_count === "number" ? record.weak_match_count : undefined,
   };
 }
@@ -323,6 +331,18 @@ function getRiskLevel(check: InfringementCheckRow | null): RiskLevel {
 
 function getCopyrightStatus(value: string): CopyrightStatus {
   return isCopyrightStatus(value) ? value : "unknown";
+}
+
+function isVisualReviewMatch(match: RuleMatch) {
+  return match.rule_id === "visual-review-required";
+}
+
+function getDisplayRiskLabel(riskLevel: RiskLevel, evidence: DetectionEvidence | null) {
+  if (evidence?.visual_review_required) {
+    return { en: "Visual Check", zh: "看图确认" };
+  }
+
+  return riskLevelLabels[riskLevel];
 }
 
 export function InfringementChecksManager({
@@ -790,6 +810,10 @@ export function InfringementChecksManager({
 
   const selectedEvidence = selectedItem ? parseDetectionEvidence(selectedItem.latest_check?.evidence) : null;
   const selectedRuleMatches = selectedItem ? parseRuleMatches(selectedItem.latest_check?.matched_rules) : [];
+  const selectedActionableRuleMatches = selectedRuleMatches.filter((match) => !isVisualReviewMatch(match));
+  const selectedRiskLabel = selectedItem
+    ? getDisplayRiskLabel(getRiskLevel(selectedItem.latest_check), selectedEvidence)
+    : riskLevelLabels.unknown;
 
   return (
     <div className="space-y-6">
@@ -1384,6 +1408,8 @@ export function InfringementChecksManager({
           const matches = parseRuleMatches(item.latest_check?.matched_rules);
           const evidence = parseDetectionEvidence(item.latest_check?.evidence);
           const evidenceQuality = evidence.evidence_quality ?? "none";
+          const actionableMatches = matches.filter((match) => !isVisualReviewMatch(match));
+          const displayRiskLabel = getDisplayRiskLabel(riskLevel, evidence);
           const previewUrl = item.asset.processed_url ?? item.asset.original_url;
           const isSelected = selectedIds.has(item.asset.id);
           const isChecking = checkingAssetIds.has(item.asset.id);
@@ -1445,7 +1471,7 @@ export function InfringementChecksManager({
                   <div className="grid gap-3 text-xs text-zinc-600 sm:grid-cols-4">
                     <div>
                       <p className="text-zinc-500">{t("风险等级", "Risk")}</p>
-                      <p className="mt-1 font-medium text-zinc-950">{t(riskLevelLabels[riskLevel].zh, riskLevelLabels[riskLevel].en)}</p>
+                      <p className="mt-1 font-medium text-zinc-950">{t(displayRiskLabel.zh, displayRiskLabel.en)}</p>
                     </div>
                     <div>
                       <p className="text-zinc-500">{t("证据强度", "Evidence")}</p>
@@ -1467,16 +1493,23 @@ export function InfringementChecksManager({
                     </div>
                   </div>
 
-                  {matches.length > 0 ? (
+                  {evidence.visual_review_required ? (
+                    <div className="rounded-md border border-cyan-200 bg-cyan-50 p-3 text-xs leading-5 text-cyan-800">
+                      {t(
+                        "当前只是缺少可自动判断的文字、哈希或商品上下文，需要人工看图确认；这不是规则库命中，也不代表已经侵权。",
+                        "This image only needs a visual check because reliable text, hash, or product context is missing. It is not a rule hit and does not mean infringement was found.",
+                      )}
+                    </div>
+                  ) : actionableMatches.length > 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
                       <p className="text-xs font-semibold text-amber-800">{t("命中规则", "Matched Rules")}</p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {matches.slice(0, 5).map((match, index) => (
+                        {actionableMatches.slice(0, 5).map((match, index) => (
                           <span key={`${match.rule_id ?? "rule"}-${index}`} className="rounded bg-white px-2 py-1 text-xs text-amber-800">
                             {match.label ?? t("规则", "Rule")}：{match.matched ?? "-"}
                           </span>
                         ))}
-                        {matches.length > 5 ? <span className="text-xs text-amber-700">+{matches.length - 5}</span> : null}
+                        {actionableMatches.length > 5 ? <span className="text-xs text-amber-700">+{actionableMatches.length - 5}</span> : null}
                       </div>
                     </div>
                   ) : (
@@ -1588,7 +1621,7 @@ export function InfringementChecksManager({
                     <div>
                       <dt className="text-zinc-500">{t("风险等级", "Risk")}</dt>
                       <dd className="mt-1 font-medium text-zinc-950">
-                        {t(riskLevelLabels[getRiskLevel(selectedItem.latest_check)].zh, riskLevelLabels[getRiskLevel(selectedItem.latest_check)].en)}
+                        {t(selectedRiskLabel.zh, selectedRiskLabel.en)}
                       </dd>
                     </div>
                     <div>
@@ -1629,8 +1662,15 @@ export function InfringementChecksManager({
                 <div className="rounded-md border border-zinc-200 p-4">
                   <h4 className="text-sm font-semibold text-zinc-950">{t("命中明细", "Match Details")}</h4>
                   <div className="mt-3 space-y-2">
-                    {selectedRuleMatches.length > 0 ? (
-                      selectedRuleMatches.map((match, index) => {
+                    {selectedEvidence?.visual_review_required ? (
+                      <div className="rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm leading-6 text-cyan-800">
+                        {t(
+                          "当前只是缺少可自动判断的文字、哈希或商品上下文，需要人工看图确认；这不是规则库命中，也不代表已经侵权。",
+                          "This image only needs a visual check because reliable text, hash, or product context is missing. It is not a rule hit and does not mean infringement was found.",
+                        )}
+                      </div>
+                    ) : selectedActionableRuleMatches.length > 0 ? (
+                      selectedActionableRuleMatches.map((match, index) => {
                         const score = getScoreBreakdownForMatch(selectedEvidence, match)?.score;
 
                         return (

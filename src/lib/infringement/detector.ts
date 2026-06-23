@@ -206,7 +206,7 @@ function isStrongEvidenceField(field: string) {
 
 function scoreMatch(match: InfringementRuleMatch) {
   if (match.rule_id === "visual-review-required") {
-    return 18;
+    return 10;
   }
 
   const weighted = severityScore[match.severity] * getFieldWeight(match.field);
@@ -225,8 +225,13 @@ function getEvidenceQuality(matches: InfringementRuleMatch[]): EvidenceQuality {
   return "standard";
 }
 
-function applyEvidenceQualityCap(score: number, matches: InfringementRuleMatch[], evidenceQuality: EvidenceQuality) {
-  if (evidenceQuality === "visual_only") return Math.min(score, 18);
+function applyEvidenceQualityCap(
+  score: number,
+  matches: InfringementRuleMatch[],
+  evidenceQuality: EvidenceQuality,
+  options: { meaningfulFilenameEvidence?: boolean } = {},
+) {
+  if (evidenceQuality === "visual_only") return Math.min(score, 10);
   if (evidenceQuality !== "weak") return score;
 
   const highestSeverity = matches.reduce<InfringementRiskLevel>((current, match) => {
@@ -236,6 +241,13 @@ function applyEvidenceQualityCap(score: number, matches: InfringementRuleMatch[]
     if (match.severity === "low" && current === "unknown") return "low";
     return current;
   }, "unknown");
+
+  if (!options.meaningfulFilenameEvidence) {
+    if (highestSeverity === "critical") return Math.min(score, 52);
+    if (highestSeverity === "high") return Math.min(score, 42);
+    if (highestSeverity === "medium") return Math.min(score, 32);
+    return Math.min(score, 22);
+  }
 
   if (highestSeverity === "critical") return Math.min(score, 68);
   if (highestSeverity === "high") return Math.min(score, 58);
@@ -343,11 +355,24 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
   const rawScoreWithDensity = allowlistMatched
     ? 0
     : Math.min(100, highestScore + Math.max(0, uniqueRuleCount - 1) * densityBonus);
-  const scoreWithDensity = allowlistMatched ? 0 : applyEvidenceQualityCap(rawScoreWithDensity, matches, evidenceQuality);
+  const meaningfulFilenameEvidence = matches.some((match) => (
+    match.field === "filename" &&
+    match.rule_id !== "visual-review-required" &&
+    !isLowInformationFilename(input.asset.filename)
+  ));
+  const scoreWithDensity = allowlistMatched
+    ? 0
+    : applyEvidenceQualityCap(rawScoreWithDensity, matches, evidenceQuality, { meaningfulFilenameEvidence });
   const riskLevel = allowlistMatched ? "unknown" : riskLevelFromScore(scoreWithDensity);
   const status = allowlistMatched ? "clear" : statusFromRiskLevel(riskLevel);
   const strongMatchCount = matches.filter((match) => isStrongEvidenceField(match.field)).length;
   const weakMatchCount = matches.filter((match) => WEAK_EVIDENCE_FIELDS.has(match.field)).length;
+  const weakEvidenceSource = evidenceQuality === "weak"
+    ? (meaningfulFilenameEvidence ? "filename" : "metadata")
+    : undefined;
+  const reportedMatches = visualReviewRequired
+    ? highRiskMatches
+    : matches;
 
   return {
     confidence: scoreWithDensity,
@@ -366,13 +391,15 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       rule_term_count: infringementRuleStats.totalTerms,
       score_breakdown: scoreBreakdown,
       strong_match_count: strongMatchCount,
+      weak_evidence_cap_applied: evidenceQuality === "weak",
+      weak_evidence_source: weakEvidenceSource,
       visual_review_reason: visualReviewRequired
         ? "No reliable rights context is available for this image asset. OCR text alone does not clear protected character or logo risk."
         : undefined,
       visual_review_required: visualReviewRequired,
       weak_match_count: weakMatchCount,
     },
-    matched_rules: matches,
+    matched_rules: reportedMatches,
     recommendation: allowlistMatched
       ? "白名单参考库命中，且未发现其它高风险规则命中。可作为低风险素材继续使用，但仍建议保留授权或来源记录。"
       : getRecommendation(riskLevel, matches.length, visualReviewRequired, evidenceQuality),
