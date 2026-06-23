@@ -1,24 +1,15 @@
 import type { ImageGenParams, ImageGenResult, ImageProvider, ProviderConfig } from "../types";
 import { makeProviderError } from "../errors";
-import { resolveReferenceImageBase64 } from "@/lib/ai-image/reference-image";
+import { resolveReferenceImageDataUrl } from "@/lib/ai-image/reference-image";
 import { safeFetchBuffer } from "@/lib/network/safe-fetch";
 
 type VolcanoImageResponse = {
   data?: Array<{ b64_json?: string; url?: string }>;
 };
 
-type VolcanoImageOperation = "edit" | "generate";
-
-type VolcanoImageRequest = {
-  body: Record<string, unknown>;
-  operation: VolcanoImageOperation;
-};
-
 const SEEDREAM_MIN_PIXELS = 3_686_400;
 const SEEDREAM_MAX_SIDE = 4096;
 const SIZE_STEP = 16;
-const AI_IMAGE_REQUEST_TIMEOUT_MS = 120_000;
-const AI_IMAGE_RESULT_DOWNLOAD_TIMEOUT_MS = 30_000;
 
 function roundToStep(value: number) {
   return Math.max(SIZE_STEP, Math.ceil(value / SIZE_STEP) * SIZE_STEP);
@@ -27,16 +18,12 @@ function roundToStep(value: number) {
 export class VolcanoArkProvider implements ImageProvider {
   constructor(private readonly displayName: string) {}
 
-  private resolveEndpoint(baseUrl: string, operation: VolcanoImageOperation): string {
+  private resolveEndpoint(baseUrl: string): string {
     const normalized = baseUrl.trim().replace(/\/+$/, "");
-    const targetPath = operation === "edit" ? "/images/edits" : "/images/generations";
-
-    if (normalized.endsWith("/api/v3/images/edits") || normalized.endsWith("/api/v3/images/generations")) {
-      return normalized.replace(/\/api\/v3\/images\/(?:edits|generations)$/i, `/api/v3${targetPath}`);
-    }
-
-    if (normalized.endsWith("/api/v3")) return `${normalized}${targetPath}`;
-    return `${normalized}/api/v3${targetPath}`;
+    if (normalized.endsWith("/api/v3/images/generations")) return normalized;
+    if (normalized.endsWith("/api/v3/images/edits")) return normalized.replace(/\/images\/edits$/i, "/images/generations");
+    if (normalized.endsWith("/api/v3")) return `${normalized}/images/generations`;
+    return `${normalized}/api/v3/images/generations`;
   }
 
   private resolveSize(modelId: string, width?: number, height?: number): string {
@@ -87,30 +74,16 @@ export class VolcanoArkProvider implements ImageProvider {
     return /seedream/i.test(modelId);
   }
 
-  private async buildRequest(config: ProviderConfig, params: ImageGenParams): Promise<VolcanoImageRequest> {
+  private async buildRequestBody(config: ProviderConfig, params: ImageGenParams): Promise<Record<string, unknown>> {
     const isSeedream = this.isSeedreamModel(config.modelId);
-    const referenceImage = params.referenceUrl ? await resolveReferenceImageBase64(params.referenceUrl) : undefined;
+    const referenceImage = params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined;
     const promptParts = [params.prompt];
     if (params.style) promptParts.push(`Style: ${params.style}`);
     if (isSeedream && params.negativePrompt) promptParts.push(`Avoid: ${params.negativePrompt}`);
-    const prompt = promptParts.join("\n");
-
-    if (referenceImage) {
-      return {
-        operation: "edit",
-        body: {
-          model: config.modelId,
-          prompt,
-          image: referenceImage,
-          n: 1,
-          response_format: "b64_json",
-        },
-      };
-    }
 
     const body: Record<string, unknown> = {
       model: config.modelId,
-      prompt,
+      prompt: promptParts.join("\n"),
       n: 1,
       size: this.resolveSize(config.modelId, params.width, params.height),
       response_format: "url",
@@ -121,13 +94,21 @@ export class VolcanoArkProvider implements ImageProvider {
       body.negative_prompt = params.negativePrompt;
     }
 
+    if (referenceImage) {
+      body.image = referenceImage;
+    }
+
     if (isSeedream) {
       body.output_format = "png";
       body.optimize_prompt_options = { mode: "standard" };
-      body.sequential_image_generation = "disabled";
+      body.sequential_image_generation = referenceImage ? "auto" : "disabled";
+
+      if (referenceImage) {
+        body.sequential_image_generation_options = { max_images: 1 };
+      }
     }
 
-    return { body, operation: "generate" };
+    return body;
   }
 
   async generate(config: ProviderConfig, params: ImageGenParams): Promise<ImageGenResult> {
@@ -135,9 +116,9 @@ export class VolcanoArkProvider implements ImageProvider {
       throw new Error(`${this.displayName} requires a Volcano Ark base_url`);
     }
 
-    const request = await this.buildRequest(config, params);
-    const url = this.resolveEndpoint(config.baseUrl, request.operation);
-    return this.doRequest(url, config.apiKey, request.body);
+    const url = this.resolveEndpoint(config.baseUrl);
+    const body = await this.buildRequestBody(config, params);
+    return this.doRequest(url, config.apiKey, body);
   }
 
   private async doRequest(url: string, apiKey: string, body: Record<string, unknown>): Promise<ImageGenResult> {
@@ -148,7 +129,7 @@ export class VolcanoArkProvider implements ImageProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(AI_IMAGE_REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!response.ok) {
@@ -167,7 +148,7 @@ export class VolcanoArkProvider implements ImageProvider {
       const buf = await safeFetchBuffer(first.url, {
         allowedContentTypes: ["image/"],
         maxBytes: 25 * 1024 * 1024,
-        timeoutMs: AI_IMAGE_RESULT_DOWNLOAD_TIMEOUT_MS,
+        timeoutMs: 30_000,
       });
       return { imageBase64: buf.toString("base64"), mimeType: "image/png" };
     }
