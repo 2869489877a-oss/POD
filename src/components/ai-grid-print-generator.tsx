@@ -112,6 +112,8 @@ const BACKGROUND_COLOR_OPTIONS = [
   { id: "pink", zh: "粉色", en: "Pink", swatch: "#ec4899" },
 ] as const;
 
+const MAX_AI_GRID_SIDE = 2048;
+
 type BackgroundColorOption = (typeof BACKGROUND_COLOR_OPTIONS)[number];
 
 function gridDisplayName(gridSize: number, language: "zh" | "en") {
@@ -360,17 +362,20 @@ async function buildGridDraft(items: GridSourceItem[], autoCrop: boolean, gridSi
   const bitmaps = await Promise.all(items.map((item) => createImageBitmap(item.file)));
   try {
     const crops = bitmaps.map((bitmap) => (autoCrop ? getPrintCrop(bitmap.width, bitmap.height) : fullCrop(bitmap.width, bitmap.height)));
-    const cellWidth = Math.max(...crops.map((crop) => crop.width));
-    const cellHeight = Math.max(...crops.map((crop) => crop.height));
+    const sourceCellWidth = Math.max(...crops.map((crop) => crop.width));
+    const sourceCellHeight = Math.max(...crops.map((crop) => crop.height));
+    const outputScale = Math.min(1, MAX_AI_GRID_SIDE / Math.max(sourceCellWidth * gridSize, sourceCellHeight * gridSize));
+    const cellWidth = Math.max(1, Math.round(sourceCellWidth * outputScale));
+    const cellHeight = Math.max(1, Math.round(sourceCellHeight * outputScale));
     const initialTransforms = bitmaps.map((bitmap, index) => {
       const crop = crops[index];
       return {
         imageHeight: bitmap.height,
         imageWidth: bitmap.width,
         rotation: 0,
-        scale: 1,
-        x: bitmap.width / 2 - (crop.x + crop.width / 2),
-        y: bitmap.height / 2 - (crop.y + crop.height / 2),
+        scale: outputScale,
+        x: (bitmap.width / 2 - (crop.x + crop.width / 2)) * outputScale,
+        y: (bitmap.height / 2 - (crop.y + crop.height / 2)) * outputScale,
       };
     });
 
@@ -1146,7 +1151,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
           </div>
 
           {gridDraft && selectedTransform ? (
-            <div className={`rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
+            <div className={`hidden rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
@@ -1291,7 +1296,13 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                   onPointerMove={handleCanvasPointerMove}
                   onPointerUp={handleCanvasPointerUp}
                   onPointerCancel={handleCanvasPointerUp}
-                  className={`max-h-[440px] w-full rounded-xl object-contain shadow-lg touch-none ${running ? "cursor-not-allowed" : "cursor-move"}`}
+                  className={`block rounded-xl shadow-lg touch-none ${running ? "cursor-not-allowed" : "cursor-move"}`}
+                  style={{
+                    height: "auto",
+                    maxHeight: gridSize === 3 ? "620px" : "520px",
+                    maxWidth: "100%",
+                    width: "auto",
+                  }}
                 />
               ) : gridPreviewUrl ? (
                 <img src={gridPreviewUrl} alt={`${gridLabel} grid preview`} className="max-h-[360px] rounded-xl object-contain shadow-lg" />
@@ -1299,6 +1310,130 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                 <p className="text-sm text-slate-500">{t(`点击“生成可调拼图”后会先看到 ${gridLabel} 参考图。`, `Click Build Adjustable Grid to preview the ${gridLabel} reference image first.`)}</p>
               )}
             </div>
+            {gridDraft && selectedTransform ? (
+              <div className={`mt-4 rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
+                      {t("校准当前预览格子", "Adjust Current Preview Cell")}
+                    </p>
+                    <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                      {t("点击上方预览图选择格子，拖动图片位置。", "Click a cell above, then drag to position it.")}
+                    </p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isDark ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-700"}`}>
+                    {selectedCellIndex + 1} / {totalCells}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-9">
+                  {Array.from({ length: totalCells }, (_, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setSelectedCellIndex(index)}
+                      disabled={running}
+                      className={`h-9 rounded-lg border text-xs font-bold transition disabled:opacity-50 ${
+                        selectedCellIndex === index
+                          ? `border-transparent bg-gradient-to-r ${colors.gradient} text-white`
+                          : isDark
+                            ? "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                            : "border-black/[0.06] bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {index + 1}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <label className={`block text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="flex items-center justify-between gap-3">
+                      <span>{t("缩放", "Scale")}</span>
+                      <span>{selectedTransform.scale.toFixed(2)}x</span>
+                    </span>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="3"
+                      step="0.01"
+                      value={selectedTransform.scale}
+                      disabled={running}
+                      onChange={(event) =>
+                        updateSelectedTransform((transform) => ({
+                          ...transform,
+                          scale: Number(event.target.value),
+                        }))
+                      }
+                      className="mt-2 w-full accent-cyan-400"
+                    />
+                  </label>
+
+                  <label className={`block text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                    <span className="flex items-center justify-between gap-3">
+                      <span>{t("旋转", "Rotate")}</span>
+                      <span>{Math.round(selectedTransform.rotation)}°</span>
+                    </span>
+                    <input
+                      type="range"
+                      min="-180"
+                      max="180"
+                      step="1"
+                      value={selectedTransform.rotation}
+                      disabled={running}
+                      onChange={(event) =>
+                        updateSelectedTransform((transform) => ({
+                          ...transform,
+                          rotation: Number(event.target.value),
+                        }))
+                      }
+                      className="mt-2 w-full accent-cyan-400"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <button
+                    type="button"
+                    onClick={() => fitSelectedCell("cover")}
+                    disabled={running}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {t("铺满", "Fill")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fitSelectedCell("contain")}
+                    disabled={running}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {t("适应", "Fit")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSelectedTransform((transform) => ({
+                        ...transform,
+                        x: 0,
+                        y: 0,
+                      }))
+                    }
+                    disabled={running}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {t("居中", "Center")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetSelectedCell}
+                    disabled={running}
+                    className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                  >
+                    {t("重置", "Reset")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {uploadUrl ? (
               <a href={uploadUrl} target="_blank" rel="noreferrer" className={`mt-3 inline-flex text-xs font-semibold ${isDark ? "text-cyan-300" : "text-cyan-700"}`}>
                 {t("打开已上传拼图", "Open uploaded grid")}
