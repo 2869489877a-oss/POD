@@ -30,6 +30,26 @@ type RuleMatch = {
   severity?: string;
 };
 
+type EvidenceQuality = "strong" | "standard" | "weak" | "visual_only" | "none";
+
+type ScoreBreakdown = {
+  field?: string;
+  matched?: string;
+  rule_id?: string;
+  score?: number;
+  severity?: string;
+};
+
+type DetectionEvidence = {
+  evidence_quality?: EvidenceQuality;
+  ocr_chars?: number;
+  product_text_count?: number;
+  score_breakdown?: ScoreBreakdown[];
+  strong_match_count?: number;
+  visual_review_required?: boolean;
+  weak_match_count?: number;
+};
+
 type RunChecksResponse = {
   checks?: InfringementCheckRow[];
   error?: string;
@@ -135,6 +155,22 @@ const copyrightStyles: Record<CopyrightStatus, string> = {
   unknown: "bg-zinc-100 text-zinc-700",
 };
 
+const evidenceQualityLabels: Record<EvidenceQuality, { en: string; zh: string }> = {
+  none: { en: "No Evidence", zh: "无证据" },
+  standard: { en: "Context", zh: "上下文" },
+  strong: { en: "Strong", zh: "强证据" },
+  visual_only: { en: "Visual Review", zh: "看图复核" },
+  weak: { en: "Weak", zh: "弱证据" },
+};
+
+const evidenceQualityStyles: Record<EvidenceQuality, string> = {
+  none: "bg-zinc-100 text-zinc-700",
+  standard: "bg-sky-50 text-sky-700",
+  strong: "bg-emerald-50 text-emerald-700",
+  visual_only: "bg-zinc-100 text-zinc-700",
+  weak: "bg-amber-50 text-amber-700",
+};
+
 const ruleCategoryLabels: Record<InfringementRuleCategory, { en: string; zh: string }> = {
   brand: { en: "Brand / Trademark", zh: "品牌 / 商标" },
   celebrity: { en: "Celebrity / Likeness", zh: "名人 / 肖像" },
@@ -220,12 +256,48 @@ function isCopyrightStatus(value: string): value is CopyrightStatus {
   return ["unknown", "owned", "commercial_ok", "risky", "forbidden"].includes(value);
 }
 
+function isEvidenceQuality(value: unknown): value is EvidenceQuality {
+  return (
+    typeof value === "string" &&
+    ["strong", "standard", "weak", "visual_only", "none"].includes(value)
+  );
+}
+
 function parseRuleMatches(value: unknown): RuleMatch[] {
   if (!Array.isArray(value)) {
     return [];
   }
 
   return value.filter((item): item is RuleMatch => typeof item === "object" && item !== null);
+}
+
+function parseDetectionEvidence(value: unknown): DetectionEvidence {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+
+  const record = value as Record<string, unknown>;
+  const scoreBreakdown = Array.isArray(record.score_breakdown)
+    ? record.score_breakdown.filter((item): item is ScoreBreakdown => typeof item === "object" && item !== null)
+    : undefined;
+
+  return {
+    evidence_quality: isEvidenceQuality(record.evidence_quality) ? record.evidence_quality : undefined,
+    ocr_chars: typeof record.ocr_chars === "number" ? record.ocr_chars : undefined,
+    product_text_count: typeof record.product_text_count === "number" ? record.product_text_count : undefined,
+    score_breakdown: scoreBreakdown,
+    strong_match_count: typeof record.strong_match_count === "number" ? record.strong_match_count : undefined,
+    visual_review_required: typeof record.visual_review_required === "boolean" ? record.visual_review_required : undefined,
+    weak_match_count: typeof record.weak_match_count === "number" ? record.weak_match_count : undefined,
+  };
+}
+
+function getScoreBreakdownForMatch(evidence: DetectionEvidence | null, match: RuleMatch) {
+  return evidence?.score_breakdown?.find((item) => (
+    item.rule_id === match.rule_id &&
+    item.field === match.field &&
+    item.matched === match.matched
+  ));
 }
 
 function formatDate(value: string | null, locale: string) {
@@ -712,6 +784,9 @@ export function InfringementChecksManager({
       setIsSeedingBuiltIn(false);
     }
   }
+
+  const selectedEvidence = selectedItem ? parseDetectionEvidence(selectedItem.latest_check?.evidence) : null;
+  const selectedRuleMatches = selectedItem ? parseRuleMatches(selectedItem.latest_check?.matched_rules) : [];
 
   return (
     <div className="space-y-6">
@@ -1282,6 +1357,8 @@ export function InfringementChecksManager({
           const riskLevel = getRiskLevel(item.latest_check);
           const copyrightStatus = getCopyrightStatus(item.asset.copyright_status);
           const matches = parseRuleMatches(item.latest_check?.matched_rules);
+          const evidence = parseDetectionEvidence(item.latest_check?.evidence);
+          const evidenceQuality = evidence.evidence_quality ?? "none";
           const previewUrl = item.asset.processed_url ?? item.asset.original_url;
           const isSelected = selectedIds.has(item.asset.id);
 
@@ -1331,10 +1408,18 @@ export function InfringementChecksManager({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 text-xs text-zinc-600 sm:grid-cols-3">
+                  <div className="grid gap-3 text-xs text-zinc-600 sm:grid-cols-4">
                     <div>
                       <p className="text-zinc-500">{t("风险等级", "Risk")}</p>
                       <p className="mt-1 font-medium text-zinc-950">{t(riskLevelLabels[riskLevel].zh, riskLevelLabels[riskLevel].en)}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500">{t("证据强度", "Evidence")}</p>
+                      <p className="mt-1">
+                        <span className={["rounded-md px-2 py-1 font-medium", evidenceQualityStyles[evidenceQuality]].join(" ")}>
+                          {t(evidenceQualityLabels[evidenceQuality].zh, evidenceQualityLabels[evidenceQuality].en)}
+                        </span>
+                      </p>
                     </div>
                     <div>
                       <p className="text-zinc-500">{t("置信分", "Score")}</p>
@@ -1473,8 +1558,27 @@ export function InfringementChecksManager({
                       </dd>
                     </div>
                     <div>
+                      <dt className="text-zinc-500">{t("证据强度", "Evidence")}</dt>
+                      <dd className="mt-1">
+                        {(() => {
+                          const quality = selectedEvidence?.evidence_quality ?? "none";
+                          return (
+                            <span className={["rounded-md px-2 py-1 text-xs font-medium", evidenceQualityStyles[quality]].join(" ")}>
+                              {t(evidenceQualityLabels[quality].zh, evidenceQualityLabels[quality].en)}
+                            </span>
+                          );
+                        })()}
+                      </dd>
+                    </div>
+                    <div>
                       <dt className="text-zinc-500">{t("置信分", "Score")}</dt>
                       <dd className="mt-1 font-medium text-zinc-950">{selectedItem.latest_check?.confidence ?? 0}/100</dd>
+                    </div>
+                    <div>
+                      <dt className="text-zinc-500">{t("强 / 弱命中", "Strong / Weak")}</dt>
+                      <dd className="mt-1 font-medium text-zinc-950">
+                        {selectedEvidence?.strong_match_count ?? 0} / {selectedEvidence?.weak_match_count ?? 0}
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-zinc-500">{t("复核时间", "Reviewed At")}</dt>
@@ -1491,16 +1595,27 @@ export function InfringementChecksManager({
                 <div className="rounded-md border border-zinc-200 p-4">
                   <h4 className="text-sm font-semibold text-zinc-950">{t("命中明细", "Match Details")}</h4>
                   <div className="mt-3 space-y-2">
-                    {parseRuleMatches(selectedItem.latest_check?.matched_rules).length > 0 ? (
-                      parseRuleMatches(selectedItem.latest_check?.matched_rules).map((match, index) => (
-                        <div key={`${match.rule_id ?? "match"}-${index}`} className="rounded-md bg-zinc-50 p-3 text-sm text-zinc-700">
-                          <p className="font-medium text-zinc-950">{match.label ?? t("规则", "Rule")}</p>
-                          <p className="mt-1">
-                            {t("命中词：", "Matched: ")}{match.matched ?? "-"} · {t("字段：", "Field: ")}{match.field ?? "-"}
-                          </p>
-                          {match.description ? <p className="mt-1 text-zinc-500">{match.description}</p> : null}
-                        </div>
-                      ))
+                    {selectedRuleMatches.length > 0 ? (
+                      selectedRuleMatches.map((match, index) => {
+                        const score = getScoreBreakdownForMatch(selectedEvidence, match)?.score;
+
+                        return (
+                          <div key={`${match.rule_id ?? "match"}-${index}`} className="rounded-md bg-zinc-50 p-3 text-sm text-zinc-700">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="font-medium text-zinc-950">{match.label ?? t("规则", "Rule")}</p>
+                              {typeof score === "number" ? (
+                                <span className="rounded-md bg-white px-2 py-1 text-xs font-medium text-zinc-600">
+                                  {t("证据分", "Evidence Score")} {score}/100
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1">
+                              {t("命中词：", "Matched: ")}{match.matched ?? "-"} · {t("字段：", "Field: ")}{match.field ?? "-"}
+                            </p>
+                            {match.description ? <p className="mt-1 text-zinc-500">{match.description}</p> : null}
+                          </div>
+                        );
+                      })
                     ) : (
                       <p className="text-sm text-zinc-500">{t("没有规则命中。", "No rule matches.")}</p>
                     )}

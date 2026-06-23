@@ -21,6 +21,10 @@ const severityScore = {
 
 const SAFE_COPYRIGHT_STATUSES = new Set(["owned", "commercial_ok"]);
 
+type EvidenceQuality = "strong" | "standard" | "weak" | "visual_only" | "none";
+
+const WEAK_EVIDENCE_FIELDS = new Set(["filename", "original_url", "source"]);
+
 let lastDatabaseReferenceItems: InfringementReferenceItem[] | undefined;
 let lastCombinedReferenceItems: InfringementReferenceItem[] = builtInHighRiskReferenceItems;
 
@@ -133,9 +137,22 @@ function getFields(input: InfringementDetectionInput) {
   return fields.filter((field) => field.value.trim().length > 0);
 }
 
-function getRecommendation(riskLevel: InfringementRiskLevel, matchCount: number, visualReviewRequired: boolean) {
+function getRecommendation(
+  riskLevel: InfringementRiskLevel,
+  matchCount: number,
+  visualReviewRequired: boolean,
+  evidenceQuality: EvidenceQuality,
+) {
   if (visualReviewRequired) {
     return "该素材缺少可用文字上下文，规则库暂时无法判断图片内部是否包含名人肖像、球队、Logo、队服文字或不雅手势。本次仅标记为待人工看图复核，不代表已经命中侵权风险。";
+  }
+
+  if (evidenceQuality === "weak") {
+    return "仅在文件名、来源链接或分类等弱证据字段中发现风险词，不能直接判定图片内容侵权。建议人工看图并核对来源；如图片本身没有对应人物、角色、球队、品牌 Logo 或受保护文字，可手动标记为可用。";
+  }
+
+  if (evidenceQuality === "standard") {
+    return "检测到部分上下文字段命中风险词，但证据强度低于 OCR、标题或图片哈希命中。建议结合图片内容和来源人工复核。";
   }
 
   if (riskLevel === "critical") {
@@ -164,6 +181,66 @@ function statusFromRiskLevel(riskLevel: InfringementRiskLevel) {
   if (riskLevel === "high") return "risky" as const;
   if (riskLevel === "medium" || riskLevel === "low") return "review" as const;
   return "clear" as const;
+}
+
+function getFieldWeight(field: string) {
+  if (field === "image_hash") return 1.18;
+  if (field === "image_text_ocr") return 1;
+  if (/^product_\d+_(title|description|tags|bullet_points)$/.test(field)) return 1;
+  if (/^product_\d+_sku$/.test(field)) return 0.55;
+  if (/^product_\d+_product_type$/.test(field)) return 0.45;
+  if (field === "filename") return 0.62;
+  if (field === "original_url") return 0.45;
+  if (field === "source") return 0.25;
+  if (field === "image_visual_content") return 0.72;
+  return 0.75;
+}
+
+function isStrongEvidenceField(field: string) {
+  return (
+    field === "image_hash" ||
+    field === "image_text_ocr" ||
+    /^product_\d+_(title|description|tags|bullet_points)$/.test(field)
+  );
+}
+
+function scoreMatch(match: InfringementRuleMatch) {
+  if (match.rule_id === "visual-review-required") {
+    return 18;
+  }
+
+  const weighted = severityScore[match.severity] * getFieldWeight(match.field);
+  const imageHashBonus = match.field === "image_hash" ? 8 : 0;
+  return Math.min(100, Math.round(weighted + imageHashBonus));
+}
+
+function getEvidenceQuality(matches: InfringementRuleMatch[]): EvidenceQuality {
+  const nonVisualMatches = matches.filter((match) => match.rule_id !== "visual-review-required");
+  if (nonVisualMatches.length === 0) {
+    return matches.some((match) => match.rule_id === "visual-review-required") ? "visual_only" : "none";
+  }
+
+  if (nonVisualMatches.some((match) => isStrongEvidenceField(match.field))) return "strong";
+  if (nonVisualMatches.every((match) => WEAK_EVIDENCE_FIELDS.has(match.field))) return "weak";
+  return "standard";
+}
+
+function applyEvidenceQualityCap(score: number, matches: InfringementRuleMatch[], evidenceQuality: EvidenceQuality) {
+  if (evidenceQuality === "visual_only") return Math.min(score, 18);
+  if (evidenceQuality !== "weak") return score;
+
+  const highestSeverity = matches.reduce<InfringementRiskLevel>((current, match) => {
+    if (match.severity === "critical") return "critical";
+    if (match.severity === "high" && current !== "critical") return "high";
+    if (match.severity === "medium" && current !== "critical" && current !== "high") return "medium";
+    if (match.severity === "low" && current === "unknown") return "low";
+    return current;
+  }, "unknown");
+
+  if (highestSeverity === "critical") return Math.min(score, 68);
+  if (highestSeverity === "high") return Math.min(score, 58);
+  if (highestSeverity === "medium") return Math.min(score, 42);
+  return Math.min(score, 28);
 }
 
 function riskLevelFromScore(score: number): InfringementRiskLevel {
@@ -252,18 +329,32 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
   const allowlistMatched = allowlistMatches.length > 0 && highRiskMatches.length === 0;
   const visualReviewRequired = !allowlistMatched && shouldRequireVisualReview(input, highRiskMatches);
   const matches = visualReviewRequired ? [...highRiskMatches, createVisualReviewMatch()] : highRiskMatches;
-  const highestScore = matches.reduce((score, match) => Math.max(score, severityScore[match.severity]), 0);
-  const scoreWithDensity = allowlistMatched
+  const evidenceQuality = getEvidenceQuality(matches);
+  const scoreBreakdown = matches.map((match) => ({
+    field: match.field,
+    matched: match.matched,
+    rule_id: match.rule_id,
+    score: scoreMatch(match),
+    severity: match.severity,
+  }));
+  const highestScore = scoreBreakdown.reduce((score, match) => Math.max(score, match.score), 0);
+  const uniqueRuleCount = new Set(matches.map((match) => match.rule_id)).size;
+  const densityBonus = evidenceQuality === "strong" ? 4 : evidenceQuality === "standard" ? 3 : 2;
+  const rawScoreWithDensity = allowlistMatched
     ? 0
-    : Math.min(100, highestScore + Math.max(0, matches.length - 1) * 3);
+    : Math.min(100, highestScore + Math.max(0, uniqueRuleCount - 1) * densityBonus);
+  const scoreWithDensity = allowlistMatched ? 0 : applyEvidenceQualityCap(rawScoreWithDensity, matches, evidenceQuality);
   const riskLevel = allowlistMatched ? "unknown" : riskLevelFromScore(scoreWithDensity);
   const status = allowlistMatched ? "clear" : statusFromRiskLevel(riskLevel);
+  const strongMatchCount = matches.filter((match) => isStrongEvidenceField(match.field)).length;
+  const weakMatchCount = matches.filter((match) => WEAK_EVIDENCE_FIELDS.has(match.field)).length;
 
   return {
     confidence: scoreWithDensity,
     evidence: {
       allowlist_matched: allowlistMatched,
       allowlist_matches: allowlistMatches,
+      evidence_quality: evidenceQuality,
       fields_scanned: fields.map((field) => field.name),
       high_risk_reference_count: builtInHighRiskReferenceItems.length,
       high_risk_reference_matches: highRiskReferenceMatches,
@@ -273,15 +364,18 @@ export function runInfringementDetection(input: InfringementDetectionInput): Inf
       rule_count: infringementRuleStats.totalRules,
       rule_engine_version: RULE_ENGINE_VERSION,
       rule_term_count: infringementRuleStats.totalTerms,
+      score_breakdown: scoreBreakdown,
+      strong_match_count: strongMatchCount,
       visual_review_reason: visualReviewRequired
         ? "No reliable rights context is available for this image asset. OCR text alone does not clear protected character or logo risk."
         : undefined,
       visual_review_required: visualReviewRequired,
+      weak_match_count: weakMatchCount,
     },
     matched_rules: matches,
     recommendation: allowlistMatched
       ? "白名单参考库命中，且未发现其它高风险规则命中。可作为低风险素材继续使用，但仍建议保留授权或来源记录。"
-      : getRecommendation(riskLevel, matches.length, visualReviewRequired),
+      : getRecommendation(riskLevel, matches.length, visualReviewRequired, evidenceQuality),
     risk_level: riskLevel,
     status,
   };

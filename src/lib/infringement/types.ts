@@ -114,16 +114,26 @@ export type InfringementDetectionResult = {
     fields_scanned: string[];
     allowlist_matched?: boolean;
     allowlist_matches?: InfringementReferenceMatch[];
+    evidence_quality?: "strong" | "standard" | "weak" | "visual_only" | "none";
     high_risk_reference_count?: number;
     high_risk_reference_matches?: InfringementReferenceMatch[];
     ocr_chars?: number;
     product_text_count: number;
     reference_library_count?: number;
+    score_breakdown?: Array<{
+      field: string;
+      matched: string;
+      rule_id: string;
+      score: number;
+      severity: InfringementSeverity;
+    }>;
+    strong_match_count?: number;
     rule_count?: number;
     rule_engine_version: string;
     rule_term_count?: number;
     visual_review_required?: boolean;
     visual_review_reason?: string;
+    weak_match_count?: number;
   };
   matched_rules: InfringementRuleMatch[];
   recommendation: string;
