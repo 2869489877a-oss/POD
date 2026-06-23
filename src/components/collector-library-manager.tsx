@@ -83,6 +83,34 @@ function addDays(dateKey: string, days: number) {
   return formatUploadDateKey(date.toISOString());
 }
 
+function shiftMonth(monthKey: string, offset: number) {
+  const date = dateKeyToDate(monthKey + "-01");
+  date.setMonth(date.getMonth() + offset);
+  return formatUploadDateKey(date.toISOString()).slice(0, 7);
+}
+
+function buildCalendarDays(monthKey: string) {
+  const firstDay = dateKeyToDate(monthKey + "-01");
+  const gridStart = new Date(firstDay);
+  gridStart.setDate(firstDay.getDate() - firstDay.getDay());
+
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(gridStart);
+    date.setDate(gridStart.getDate() + index);
+    const dateKey = formatUploadDateKey(date.toISOString());
+    return {
+      dateKey,
+      day: Number(dateKey.slice(8, 10)),
+      inMonth: dateKey.startsWith(monthKey),
+    };
+  });
+}
+
+function monthTitle(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  return year + "年" + Number(month) + "月";
+}
+
 export function CollectorLibraryManager() {
   const { isDark, t } = useSettings();
   const [items, setItems] = useState<CollectorLibraryItem[]>([]);
@@ -90,6 +118,7 @@ export function CollectorLibraryManager() {
   const [employeeFilter, setEmployeeFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => formatUploadDateKey(new Date().toISOString()).slice(0, 7));
   const [siteFilter, setSiteFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -112,17 +141,25 @@ export function CollectorLibraryManager() {
   }, [items]);
   const maxDateCount = Math.max(1, ...dateBuckets.map((bucket) => bucket.count));
   const latestUploadDate = dateBuckets[0]?.date || formatUploadDateKey(new Date().toISOString());
+  const activeStartDate = startDate && endDate && startDate > endDate ? endDate : startDate;
+  const activeEndDate = startDate && endDate && startDate > endDate ? startDate : endDate;
+  const dateCountMap = useMemo(() => new Map(dateBuckets.map((bucket) => [bucket.date, bucket.count])), [dateBuckets]);
+  const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
+  const calendarYears = useMemo(() => {
+    const years = new Set(dateBuckets.map((bucket) => bucket.date.slice(0, 4)));
+    years.add(calendarMonth.slice(0, 4));
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [calendarMonth, dateBuckets]);
+  const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0")), []);
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const fromDate = startDate && endDate && startDate > endDate ? endDate : startDate;
-    const toDate = startDate && endDate && startDate > endDate ? startDate : endDate;
 
     return items.filter((item) => {
       const uploadDate = getUploadDate(item);
       if (employeeFilter !== "all" && item.employeeName !== employeeFilter) return false;
-      if (fromDate && uploadDate < fromDate) return false;
-      if (toDate && uploadDate > toDate) return false;
+      if (activeStartDate && uploadDate < activeStartDate) return false;
+      if (activeEndDate && uploadDate > activeEndDate) return false;
       if (siteFilter !== "all" && item.siteType !== siteFilter) return false;
       if (!keyword) return true;
 
@@ -131,7 +168,7 @@ export function CollectorLibraryManager() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [employeeFilter, endDate, items, query, siteFilter, startDate]);
+  }, [activeEndDate, activeStartDate, employeeFilter, items, query, siteFilter]);
 
   const selectedCount = selected.size;
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
@@ -176,24 +213,59 @@ export function CollectorLibraryManager() {
     void loadItems();
   }, []);
 
+  useEffect(() => {
+    if (dateBuckets.length > 0 && !startDate && !endDate) {
+      setCalendarMonth(dateBuckets[0].date.slice(0, 7));
+    }
+  }, [dateBuckets, endDate, startDate]);
+
   function applyRecentDays(days: number) {
     setEndDate(latestUploadDate);
     setStartDate(addDays(latestUploadDate, -(days - 1)));
+    setCalendarMonth(latestUploadDate.slice(0, 7));
   }
 
   function applyThisMonth() {
     setStartDate(latestUploadDate.slice(0, 8) + "01");
     setEndDate(latestUploadDate);
+    setCalendarMonth(latestUploadDate.slice(0, 7));
   }
 
   function applySingleUploadDate(uploadDate: string) {
     setStartDate(uploadDate);
     setEndDate(uploadDate);
+    setCalendarMonth(uploadDate.slice(0, 7));
   }
 
   function clearDateRange() {
     setStartDate("");
     setEndDate("");
+  }
+
+  function selectCalendarDate(dateKey: string) {
+    setCalendarMonth(dateKey.slice(0, 7));
+
+    if (!startDate || endDate) {
+      setStartDate(dateKey);
+      setEndDate("");
+      return;
+    }
+
+    if (dateKey < startDate) {
+      setStartDate(dateKey);
+      setEndDate(startDate);
+      return;
+    }
+
+    setEndDate(dateKey);
+  }
+
+  function setCalendarYear(year: string) {
+    setCalendarMonth(year + "-" + calendarMonth.slice(5, 7));
+  }
+
+  function setCalendarMonthNumber(month: string) {
+    setCalendarMonth(calendarMonth.slice(0, 4) + "-" + month);
   }
 
   function toggleItem(relativePath: string) {
@@ -320,7 +392,129 @@ export function CollectorLibraryManager() {
         </div>
 
         <div className="mt-4 rounded-md border border-dashed border-cyan-500/25 p-3">
-          <div className="grid gap-3 lg:grid-cols-[0.7fr_0.7fr_auto]">
+          <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+            <div className={isDark ? "rounded-md border border-white/[0.08] bg-zinc-950/40 p-3" : "rounded-md border border-zinc-200 bg-zinc-50 p-3"}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
+                  className={neutralButtonClass + " h-9 w-9 px-0"}
+                  aria-label={t("上个月", "Previous month")}
+                >
+                  {"<"}
+                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={calendarMonth.slice(0, 4)}
+                    onChange={(event) => setCalendarYear(event.target.value)}
+                    className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
+                    aria-label={t("年份", "Year")}
+                  >
+                    {calendarYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={calendarMonth.slice(5, 7)}
+                    onChange={(event) => setCalendarMonthNumber(event.target.value)}
+                    className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
+                    aria-label={t("月份", "Month")}
+                  >
+                    {monthOptions.map((month) => (
+                      <option key={month} value={month}>
+                        {Number(month)}月
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCalendarMonth(shiftMonth(calendarMonth, 1))}
+                  className={neutralButtonClass + " h-9 w-9 px-0"}
+                  aria-label={t("下个月", "Next month")}
+                >
+                  {">"}
+                </button>
+              </div>
+
+              <div className={"mt-3 text-center text-sm font-semibold " + textClass}>{monthTitle(calendarMonth)}</div>
+              <div className={"mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold " + mutedClass}>
+                {["日", "一", "二", "三", "四", "五", "六"].map((day) => (
+                  <span key={day}>{day}</span>
+                ))}
+              </div>
+              <div className="mt-1 grid grid-cols-7 gap-1">
+                {calendarDays.map((day) => {
+                  const count = dateCountMap.get(day.dateKey) || 0;
+                  const isStart = day.dateKey === activeStartDate;
+                  const isEnd = day.dateKey === activeEndDate;
+                  const inRange =
+                    activeStartDate && activeEndDate && day.dateKey >= activeStartDate && day.dateKey <= activeEndDate;
+                  const isSelected = isStart || isEnd || Boolean(inRange);
+                  return (
+                    <button
+                      key={day.dateKey}
+                      type="button"
+                      onClick={() => selectCalendarDate(day.dateKey)}
+                      className={[
+                        "relative h-12 rounded-md border text-xs font-semibold transition hover:-translate-y-0.5",
+                        isSelected
+                          ? "border-cyan-400 bg-cyan-500/20 text-cyan-100"
+                          : day.inMonth
+                            ? isDark
+                              ? "border-white/[0.08] bg-white/[0.03] text-zinc-200 hover:bg-white/[0.08]"
+                              : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-100"
+                            : isDark
+                              ? "border-white/[0.04] bg-transparent text-zinc-600"
+                              : "border-zinc-100 bg-transparent text-zinc-300",
+                      ].join(" ")}
+                    >
+                      <span>{day.day}</span>
+                      {count > 0 ? (
+                        <span className="absolute bottom-1 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-emerald-500 px-1 text-[10px] leading-4 text-white">
+                          {count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between gap-3">
+              <div>
+                <p className={"text-sm font-semibold " + textClass}>{t("上传日期区间", "Upload Date Range")}</p>
+                <p className={"mt-1 text-xs " + mutedClass}>
+                  {activeStartDate || activeEndDate
+                    ? (activeStartDate || activeEndDate) + (activeEndDate && activeEndDate !== activeStartDate ? " - " + activeEndDate : "")
+                    : t("未限制日期", "No date limit")}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => applyRecentDays(7)} className={neutralButtonClass}>
+                  {t("最近 7 天", "Last 7 Days")}
+                </button>
+                <button type="button" onClick={() => applyRecentDays(30)} className={neutralButtonClass}>
+                  {t("最近 30 天", "Last 30 Days")}
+                </button>
+                <button type="button" onClick={applyThisMonth} className={neutralButtonClass}>
+                  {t("本月", "This Month")}
+                </button>
+                <button type="button" onClick={clearDateRange} className={neutralButtonClass}>
+                  {t("清空日期", "Clear Dates")}
+                </button>
+              </div>
+              <div className={isDark ? "rounded-md bg-white/[0.04] p-3" : "rounded-md bg-white p-3"}>
+                <p className={"text-xs " + mutedClass}>
+                  {t("日期格右下角数字表示当天上传数量。先点开始日期，再点结束日期，即可筛选区间。", "The number on each date is that day's upload count. Click a start date, then an end date to filter the range.")}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden">
             <label className="block text-sm font-medium">
               <span className={textClass}>{t("上传日期起", "Upload Date From")}</span>
               <input
@@ -356,7 +550,7 @@ export function CollectorLibraryManager() {
           </div>
 
           {dateBuckets.length > 0 ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+            <div className="hidden">
               {dateBuckets.slice(0, 18).map((bucket) => {
                 const activeStartDate = startDate && endDate && startDate > endDate ? endDate : startDate;
                 const activeEndDate = startDate && endDate && startDate > endDate ? startDate : endDate;
