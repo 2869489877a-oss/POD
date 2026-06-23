@@ -11,6 +11,8 @@ const repoRoot = path.resolve(__dirname, "..");
 
 const DEFAULT_WIDTH = 1200;
 const DEFAULT_HEIGHT = 1200;
+const DEFAULT_GENERATED_COUNT = 24;
+const MAX_GENERATED_COUNT = 1000;
 const employeeName = "\u7cfb\u7edf\u751f\u6210";
 const employeeSegment = "system-generated";
 const siteType = "risk-seed";
@@ -172,7 +174,7 @@ const seeds = [
 
 function parseArgs(argv) {
   const result = {
-    count: seeds.length,
+    count: DEFAULT_GENERATED_COUNT,
     date: beijingDatePath(),
     force: false,
     localRoot: defaultLocalDataRoot(),
@@ -201,7 +203,7 @@ function parseArgs(argv) {
     }
 
     if (arg === "--count" && next) {
-      result.count = Math.max(1, Math.min(seeds.length, Number(next) || seeds.length));
+      result.count = Math.max(1, Math.min(MAX_GENERATED_COUNT, Number(next) || DEFAULT_GENERATED_COUNT));
       index += 1;
       continue;
     }
@@ -324,24 +326,31 @@ function motifSvg(type, palette) {
   return `<path d="M600 145 670 335l205 5-162 125 58 198-171-114-171 114 58-198-162-125 205-5z" fill="${accent}" stroke="${fg}" stroke-width="12"/>`;
 }
 
-function buildSvg(seed, index) {
+function buildSvg(seed, index, variantIndex) {
   const palette = palettes[index % palettes.length];
   const { bg, fg, accent, soft } = palette;
   const escapedTitle = xmlEscape(seed.title);
   const escapedSubtitle = xmlEscape(seed.subtitle);
   const escapedBadge = xmlEscape(seed.badge);
+  const sampleLabel = `SAMPLE ${String(index + 1).padStart(4, "0")}`;
+  const rotation = ((index * 17) % 18) - 9;
+  const driftX = ((index * 37) % 120) - 60;
+  const driftY = ((index * 53) % 120) - 60;
+  const ringOpacity = 0.1 + ((index % 7) * 0.015);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${DEFAULT_WIDTH}" height="${DEFAULT_HEIGHT}" viewBox="0 0 ${DEFAULT_WIDTH} ${DEFAULT_HEIGHT}">
   <rect width="1200" height="1200" fill="${bg}"/>
-  <circle cx="116" cy="110" r="190" fill="${accent}" opacity=".16"/>
-  <circle cx="1090" cy="1070" r="260" fill="${soft}" opacity=".42"/>
+  <circle cx="${116 + driftX}" cy="${110 + driftY}" r="${180 + (index % 5) * 12}" fill="${accent}" opacity=".16"/>
+  <circle cx="${1090 - driftX}" cy="${1070 - driftY}" r="${235 + (index % 9) * 9}" fill="${soft}" opacity=".42"/>
+  <circle cx="${600 + driftX / 2}" cy="${430 - driftY / 2}" r="${285 + (variantIndex % 8) * 9}" fill="none" stroke="${fg}" stroke-opacity="${ringOpacity}" stroke-width="${4 + (index % 4)}"/>
   <rect x="84" y="82" width="1032" height="1032" rx="64" fill="none" stroke="${fg}" stroke-opacity=".16" stroke-width="4"/>
   <rect x="104" y="94" width="300" height="58" rx="29" fill="${accent}"/>
   <text x="254" y="134" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="30" fill="${bg}">${escapedBadge}</text>
-  ${motifSvg(seed.motif, palette)}
+  <g transform="rotate(${rotation} 600 430)">${motifSvg(seed.motif, palette)}</g>
   <text x="600" y="900" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="70" fill="${fg}" letter-spacing="1">${escapedTitle}</text>
   <text x="600" y="970" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" fill="${fg}" opacity=".72">${escapedSubtitle}</text>
-  <text x="600" y="1045" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" fill="${accent}">SAFE GENERATED RISK-SEED SAMPLE - NO REAL BRAND OR CHARACTER</text>
+  <text x="600" y="1025" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="28" fill="${accent}">${xmlEscape(sampleLabel)} / VARIANT ${String(variantIndex).padStart(2, "0")}</text>
+  <text x="600" y="1075" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" fill="${accent}">SAFE GENERATED RISK-SEED SAMPLE - NO REAL BRAND OR CHARACTER</text>
 </svg>`;
 }
 
@@ -361,8 +370,12 @@ async function main() {
   const skipped = [];
   const startedAt = new Date().toISOString();
 
-  for (const [index, seed] of seeds.slice(0, args.count).entries()) {
-    const filename = `${String(index + 1).padStart(2, "0")}-${slugify(seed.title)}.png`;
+  const padLength = Math.max(2, String(args.count).length);
+
+  for (let index = 0; index < args.count; index += 1) {
+    const seed = seeds[index % seeds.length];
+    const variantIndex = Math.floor(index / seeds.length) + 1;
+    const filename = `${String(index + 1).padStart(padLength, "0")}-${slugify(seed.title)}-v${String(variantIndex).padStart(2, "0")}.png`;
     const targetPath = path.join(targetDir, filename);
     const relativePath = path.join(employeeSegment, args.date, siteType, filename);
 
@@ -371,7 +384,7 @@ async function main() {
       continue;
     }
 
-    const svg = buildSvg(seed, index);
+    const svg = buildSvg(seed, index, variantIndex);
     await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).toFile(targetPath);
     const fileStat = await stat(targetPath);
 
