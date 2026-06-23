@@ -31,6 +31,7 @@ export type CollectorLibraryItem = {
   siteType: string;
   sourceUrl: string | null;
   updatedAt: string;
+  uploadDate: string;
   width: number | null;
 };
 
@@ -54,8 +55,10 @@ type SaveCollectorFileInput = {
 };
 
 type ListCollectorItemsInput = {
+  endDate?: string;
   limit?: number;
   request?: Request;
+  startDate?: string;
 };
 
 function stripTrailingSlash(value: string) {
@@ -145,6 +148,11 @@ function beijingDatePath(date = new Date()) {
   return year + "-" + month + "-" + day;
 }
 
+function normalizeDateKey(value: string | null | undefined) {
+  const trimmed = String(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
 export function getCollectorLibraryRoot() {
   return resolveLocalDataPath(COLLECTOR_LIBRARY_DIR);
 }
@@ -191,10 +199,12 @@ async function itemFromRelativePath(relativePath: string, request?: Request): Pr
 
   const metadata = await readMetadata(relativePath);
   const parts = relativePath.split("/");
+  const createdAt = metadata.createdAt || fileStat.birthtime.toISOString();
+  const uploadDate = metadata.uploadDate || metadata.date || parts[1] || beijingDatePath(new Date(createdAt));
 
   return {
-    createdAt: metadata.createdAt || fileStat.birthtime.toISOString(),
-    date: metadata.date || parts[1] || "",
+    createdAt,
+    date: uploadDate,
     employeeName: metadata.employeeName || parts[0] || "未分类",
     fileSize: metadata.fileSize || fileStat.size,
     filename: metadata.filename || path.basename(relativePath),
@@ -206,6 +216,7 @@ async function itemFromRelativePath(relativePath: string, request?: Request): Pr
     siteType: metadata.siteType || parts[2] || "generic",
     sourceUrl: metadata.sourceUrl || null,
     updatedAt: fileStat.mtime.toISOString(),
+    uploadDate,
     width: metadata.width || null,
   };
 }
@@ -239,13 +250,18 @@ async function walkCollectorFiles(directory: string, prefix = "", output: string
   return output;
 }
 
-export async function listCollectorItems({ limit = 2000, request }: ListCollectorItemsInput = {}) {
+export async function listCollectorItems({ endDate, limit = 2000, request, startDate }: ListCollectorItemsInput = {}) {
   const root = getCollectorLibraryRoot();
   const relativePaths = await walkCollectorFiles(root);
   const items: CollectorLibraryItem[] = [];
+  const normalizedStartDate = normalizeDateKey(startDate);
+  const normalizedEndDate = normalizeDateKey(endDate);
 
   for (const relativePath of relativePaths) {
     const item = await itemFromRelativePath(relativePath, request);
+    if (!item) continue;
+    if (normalizedStartDate && item.uploadDate < normalizedStartDate) continue;
+    if (normalizedEndDate && item.uploadDate > normalizedEndDate) continue;
     if (item) items.push(item);
   }
 
@@ -305,6 +321,7 @@ export async function saveCollectorFile({
     siteType: site,
     sourceUrl: sourceUrl || null,
     updatedAt: new Date().toISOString(),
+    uploadDate: date,
     width: metadata.width,
   };
 

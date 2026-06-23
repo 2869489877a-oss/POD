@@ -18,6 +18,7 @@ type CollectorLibraryItem = {
   siteType: string;
   sourceUrl: string | null;
   updatedAt: string;
+  uploadDate?: string;
   width: number | null;
 };
 
@@ -52,12 +53,43 @@ function formatDate(value: string) {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
+function formatUploadDateKey(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "1970";
+  const month = parts.find((part) => part.type === "month")?.value || "01";
+  const day = parts.find((part) => part.type === "day")?.value || "01";
+  return year + "-" + month + "-" + day;
+}
+
+function getUploadDate(item: CollectorLibraryItem) {
+  return item.uploadDate || item.date || formatUploadDateKey(item.createdAt);
+}
+
+function dateKeyToDate(dateKey: string) {
+  return new Date(dateKey + "T00:00:00+08:00");
+}
+
+function addDays(dateKey: string, days: number) {
+  const date = dateKeyToDate(dateKey);
+  date.setDate(date.getDate() + days);
+  return formatUploadDateKey(date.toISOString());
+}
+
 export function CollectorLibraryManager() {
   const { isDark, t } = useSettings();
   const [items, setItems] = useState<CollectorLibraryItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [employeeFilter, setEmployeeFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [siteFilter, setSiteFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -66,15 +98,31 @@ export function CollectorLibraryManager() {
   const [error, setError] = useState<string | null>(null);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
-  const dates = useMemo(() => uniqueSorted(items.map((item) => item.date)).reverse(), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
+  const dateBuckets = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const uploadDate = getUploadDate(item);
+      counts.set(uploadDate, (counts.get(uploadDate) || 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .map(([date, count]) => ({ count, date }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [items]);
+  const maxDateCount = Math.max(1, ...dateBuckets.map((bucket) => bucket.count));
+  const latestUploadDate = dateBuckets[0]?.date || formatUploadDateKey(new Date().toISOString());
 
   const filteredItems = useMemo(() => {
     const keyword = query.trim().toLowerCase();
+    const fromDate = startDate && endDate && startDate > endDate ? endDate : startDate;
+    const toDate = startDate && endDate && startDate > endDate ? startDate : endDate;
 
     return items.filter((item) => {
+      const uploadDate = getUploadDate(item);
       if (employeeFilter !== "all" && item.employeeName !== employeeFilter) return false;
-      if (dateFilter !== "all" && item.date !== dateFilter) return false;
+      if (fromDate && uploadDate < fromDate) return false;
+      if (toDate && uploadDate > toDate) return false;
       if (siteFilter !== "all" && item.siteType !== siteFilter) return false;
       if (!keyword) return true;
 
@@ -83,7 +131,7 @@ export function CollectorLibraryManager() {
         .toLowerCase()
         .includes(keyword);
     });
-  }, [dateFilter, employeeFilter, items, query, siteFilter]);
+  }, [employeeFilter, endDate, items, query, siteFilter, startDate]);
 
   const selectedCount = selected.size;
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
@@ -104,7 +152,7 @@ export function CollectorLibraryManager() {
     setError(null);
 
     try {
-      const response = await fetch("/api/collector-library?limit=3000", { cache: "no-store" });
+      const response = await fetch("/api/collector-library?limit=5000", { cache: "no-store" });
       const data = (await response.json()) as CollectorResponse;
 
       if (!response.ok) {
@@ -127,6 +175,26 @@ export function CollectorLibraryManager() {
   useEffect(() => {
     void loadItems();
   }, []);
+
+  function applyRecentDays(days: number) {
+    setEndDate(latestUploadDate);
+    setStartDate(addDays(latestUploadDate, -(days - 1)));
+  }
+
+  function applyThisMonth() {
+    setStartDate(latestUploadDate.slice(0, 8) + "01");
+    setEndDate(latestUploadDate);
+  }
+
+  function applySingleUploadDate(uploadDate: string) {
+    setStartDate(uploadDate);
+    setEndDate(uploadDate);
+  }
+
+  function clearDateRange() {
+    setStartDate("");
+    setEndDate("");
+  }
 
   function toggleItem(relativePath: string) {
     setSelected((current) => {
@@ -206,7 +274,7 @@ export function CollectorLibraryManager() {
   return (
     <div className="space-y-4">
       <section className={"rounded-md border p-4 " + panelClass}>
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_0.8fr_auto]">
+        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
           <label className="block text-sm font-medium">
             <span className={textClass}>{t("搜索", "Search")}</span>
             <input
@@ -232,21 +300,6 @@ export function CollectorLibraryManager() {
             </select>
           </label>
           <label className="block text-sm font-medium">
-            <span className={textClass}>{t("日期", "Date")}</span>
-            <select
-              value={dateFilter}
-              onChange={(event) => setDateFilter(event.target.value)}
-              className={"mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none " + inputClass}
-            >
-              <option value="all">{t("全部", "All")}</option>
-              {dates.map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm font-medium">
             <span className={textClass}>{t("网站", "Site")}</span>
             <select
               value={siteFilter}
@@ -264,6 +317,82 @@ export function CollectorLibraryManager() {
           <button type="button" onClick={() => void loadItems()} disabled={isLoading || isMutating} className={neutralButtonClass + " self-end"}>
             {isLoading ? t("刷新中", "Refreshing") : t("刷新", "Refresh")}
           </button>
+        </div>
+
+        <div className="mt-4 rounded-md border border-dashed border-cyan-500/25 p-3">
+          <div className="grid gap-3 lg:grid-cols-[0.7fr_0.7fr_auto]">
+            <label className="block text-sm font-medium">
+              <span className={textClass}>{t("上传日期起", "Upload Date From")}</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className={"mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none " + inputClass}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              <span className={textClass}>{t("上传日期止", "Upload Date To")}</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className={"mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none " + inputClass}
+              />
+            </label>
+            <div className="flex flex-wrap items-end gap-2">
+              <button type="button" onClick={() => applyRecentDays(7)} className={neutralButtonClass}>
+                {t("最近 7 天", "Last 7 Days")}
+              </button>
+              <button type="button" onClick={() => applyRecentDays(30)} className={neutralButtonClass}>
+                {t("最近 30 天", "Last 30 Days")}
+              </button>
+              <button type="button" onClick={applyThisMonth} className={neutralButtonClass}>
+                {t("本月", "This Month")}
+              </button>
+              <button type="button" onClick={clearDateRange} className={neutralButtonClass}>
+                {t("清空日期", "Clear Dates")}
+              </button>
+            </div>
+          </div>
+
+          {dateBuckets.length > 0 ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+              {dateBuckets.slice(0, 18).map((bucket) => {
+                const activeStartDate = startDate && endDate && startDate > endDate ? endDate : startDate;
+                const activeEndDate = startDate && endDate && startDate > endDate ? startDate : endDate;
+                const selectedDate =
+                  activeStartDate && activeEndDate
+                    ? bucket.date >= activeStartDate && bucket.date <= activeEndDate
+                    : bucket.date === activeStartDate || bucket.date === activeEndDate;
+                return (
+                  <button
+                    key={bucket.date}
+                    type="button"
+                    onClick={() => applySingleUploadDate(bucket.date)}
+                    className={[
+                      "rounded-md border p-2 text-left transition hover:-translate-y-0.5",
+                      selectedDate
+                        ? "border-cyan-400 bg-cyan-500/10"
+                        : isDark
+                          ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                          : "border-zinc-200 bg-white hover:bg-zinc-50",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={"text-xs font-semibold " + textClass}>{bucket.date}</span>
+                      <span className={"text-[11px] " + mutedClass}>{bucket.count}</span>
+                    </div>
+                    <div className={isDark ? "mt-2 h-1.5 rounded-full bg-white/[0.08]" : "mt-2 h-1.5 rounded-full bg-zinc-100"}>
+                      <div
+                        className="h-full rounded-full bg-cyan-400"
+                        style={{ width: Math.max(12, Math.round((bucket.count / maxDateCount) * 100)) + "%" }}
+                      />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -307,6 +436,7 @@ export function CollectorLibraryManager() {
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {filteredItems.map((item) => {
             const isSelected = selected.has(item.relativePath);
+            const uploadDate = getUploadDate(item);
 
             return (
               <article
@@ -340,7 +470,7 @@ export function CollectorLibraryManager() {
                       {item.filename}
                     </h3>
                     <p className={"mt-1 truncate text-xs " + mutedClass} title={item.relativePath}>
-                      {item.employeeName} / {item.date} / {item.siteType}
+                      {item.employeeName} / {t("上传", "Uploaded")} {uploadDate} / {item.siteType}
                     </p>
                   </div>
                   <div className={"grid grid-cols-2 gap-2 text-xs " + mutedClass}>
@@ -383,7 +513,7 @@ export function CollectorLibraryManager() {
                       {t("删除", "Delete")}
                     </button>
                   </div>
-                  <p className={"text-[11px] " + mutedClass}>{formatDate(item.createdAt)}</p>
+                  <p className={"text-[11px] " + mutedClass}>{t("上传时间", "Uploaded at")}: {formatDate(item.createdAt)}</p>
                 </div>
               </article>
             );

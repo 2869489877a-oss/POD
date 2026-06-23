@@ -105,7 +105,9 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const limit = Number(url.searchParams.get("limit") || 2000);
-    const items = await listCollectorItems({ limit, request });
+    const endDate = url.searchParams.get("end_date") || undefined;
+    const startDate = url.searchParams.get("start_date") || undefined;
+    const items = await listCollectorItems({ endDate, limit, request, startDate });
     return NextResponse.json({ items, total: items.length });
   } catch (error) {
     return NextResponse.json(
