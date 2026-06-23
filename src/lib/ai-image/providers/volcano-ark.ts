@@ -10,6 +10,8 @@ type VolcanoImageResponse = {
 const SEEDREAM_MIN_PIXELS = 3_686_400;
 const SEEDREAM_MAX_SIDE = 4096;
 const SIZE_STEP = 16;
+const VOLCANO_GENERATION_TIMEOUT_MS = 360_000;
+const VOLCANO_RESULT_DOWNLOAD_TIMEOUT_MS = 120_000;
 
 function roundToStep(value: number) {
   return Math.max(SIZE_STEP, Math.ceil(value / SIZE_STEP) * SIZE_STEP);
@@ -129,7 +131,7 @@ export class VolcanoArkProvider implements ImageProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(240_000),
+      signal: AbortSignal.timeout(VOLCANO_GENERATION_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -148,7 +150,7 @@ export class VolcanoArkProvider implements ImageProvider {
       const buf = await safeFetchBuffer(first.url, {
         allowedContentTypes: ["image/"],
         maxBytes: 25 * 1024 * 1024,
-        timeoutMs: 60_000,
+        timeoutMs: VOLCANO_RESULT_DOWNLOAD_TIMEOUT_MS,
       });
       return { imageBase64: buf.toString("base64"), mimeType: "image/png" };
     }

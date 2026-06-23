@@ -6,6 +6,7 @@ import { readImageBinary } from "@/lib/network/image-buffer";
 
 const MAX_REFERENCE_IMAGE_BYTES = 25 * 1024 * 1024;
 const DEFAULT_IMAGE_CONTENT_TYPE = "image/png";
+const REFERENCE_IMAGE_TIMEOUT_MS = 90_000;
 
 type PreparedReferenceImage = {
   base64: string;
@@ -69,7 +70,7 @@ async function prepareReferenceImage(referenceUrl: string): Promise<PreparedRefe
 
   const image = await readImageBinary(referenceUrl, {
     maxBytes: MAX_REFERENCE_IMAGE_BYTES,
-    timeoutMs: 60_000,
+    timeoutMs: REFERENCE_IMAGE_TIMEOUT_MS,
   });
 
   return {

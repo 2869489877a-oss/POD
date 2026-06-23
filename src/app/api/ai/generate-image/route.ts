@@ -8,7 +8,7 @@ import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 420;
 
 type GenerateImageRequest = {
   prompt?: unknown;

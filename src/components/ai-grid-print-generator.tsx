@@ -26,7 +26,9 @@ type GridStatus = "idle" | "compositing" | "uploading" | "generating" | "splitti
 type GenerateResult = {
   asset_id?: string;
   error?: string;
+  image_base64?: string;
   job_id?: string;
+  mime_type?: string;
   model?: string;
   provider?: string;
   result_url?: string;
@@ -67,6 +69,12 @@ type BuiltGridImage = {
   file: File;
   height: number;
   width: number;
+};
+
+type CanvasFileOptions = {
+  format?: "png" | "webp";
+  maxPngBytes?: number;
+  quality?: number;
 };
 
 type GridCellTransform = {
@@ -114,7 +122,7 @@ const BACKGROUND_COLOR_OPTIONS = [
 
 const MAX_AI_GRID_SIDE_BY_GRID_SIZE: Record<2 | 3, number> = {
   2: 2048,
-  3: 1536,
+  3: 1280,
 };
 
 type BackgroundColorOption = (typeof BACKGROUND_COLOR_OPTIONS)[number];
@@ -186,7 +194,25 @@ function fullCrop(width: number, height: number): CropRect {
   return { height, width, x: 0, y: 0 };
 }
 
-async function canvasToFile(canvas: HTMLCanvasElement, baseName: string) {
+async function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number | undefined, errorMessage: string) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error(errorMessage));
+      },
+      type,
+      quality,
+    );
+  });
+}
+
+async function canvasToFile(canvas: HTMLCanvasElement, baseName: string, options: CanvasFileOptions = {}) {
+  if (options.format === "webp") {
+    const webpBlob = await canvasToBlob(canvas, "image/webp", options.quality ?? 0.9, "无法压缩拼图文件");
+    return new File([webpBlob], `${baseName}.webp`, { type: "image/webp" });
+  }
+
   const pngBlob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
@@ -194,21 +220,11 @@ async function canvasToFile(canvas: HTMLCanvasElement, baseName: string) {
     }, "image/png");
   });
 
-  if (pngBlob.size <= 18 * 1024 * 1024) {
+  if (pngBlob.size <= (options.maxPngBytes ?? 18 * 1024 * 1024)) {
     return new File([pngBlob], `${baseName}.png`, { type: "image/png" });
   }
 
-  const webpBlob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("无法压缩拼图文件"));
-      },
-      "image/webp",
-      0.96,
-    );
-  });
-
+  const webpBlob = await canvasToBlob(canvas, "image/webp", options.quality ?? 0.96, "无法压缩拼图文件");
   return new File([webpBlob], `${baseName}.webp`, { type: "image/webp" });
 }
 
@@ -402,7 +418,7 @@ async function buildAdjustedGridImage(items: GridSourceItem[], draft: GridDraft,
   drawGridCanvas(canvas, images, draft, gridSize);
 
   return {
-    file: await canvasToFile(canvas, `ai-print-grid-${Date.now()}`),
+    file: await canvasToFile(canvas, `ai-print-grid-${Date.now()}`, gridSize === 3 ? { format: "webp", quality: 0.86 } : {}),
     height: canvas.height,
     width: canvas.width,
   };
@@ -847,6 +863,40 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     return imageUrl;
   }
 
+  async function generateFromReference(input: {
+    height: number;
+    prompt: string;
+    referenceUrl: string;
+    saveToAssets: boolean;
+    signal: AbortSignal;
+    width: number;
+  }) {
+    const response = await fetch("/api/ai/generate-image", {
+      body: JSON.stringify({
+        height: input.height,
+        prompt: input.prompt,
+        provider_id: selectedProvider || undefined,
+        reference_url: input.referenceUrl,
+        save_to_assets: input.saveToAssets,
+        width: input.width,
+      }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+      signal: input.signal,
+    });
+    const data = await readJsonResponse<GenerateResult>(response);
+    const inlineResultUrl = data.image_base64
+      ? `data:${data.mime_type || "image/png"};base64,${data.image_base64}`
+      : null;
+    const resultUrl = data.result_url || inlineResultUrl;
+
+    if (!response.ok || !resultUrl) {
+      throw new Error(data.error || t("AI 生成失败", "AI generation failed"));
+    }
+
+    return resultUrl;
+  }
+
   async function splitGeneratedResult(resultUrl: string, signal?: AbortSignal) {
     const response = await fetch("/api/ai/split-grid", {
       body: JSON.stringify({
@@ -900,29 +950,19 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       setProgressPercent(30);
 
       setStatus("generating");
-      const response = await fetch("/api/ai/generate-image", {
-        body: JSON.stringify({
-          height: grid.height,
-          prompt: finalPrompt,
-          provider_id: selectedProvider || undefined,
-          reference_url: imageUrl,
-          save_to_assets: true,
-          width: grid.width,
-        }),
-        headers: { "Content-Type": "application/json" },
-        method: "POST",
+      const resultUrl = await generateFromReference({
+        height: grid.height,
+        prompt: finalPrompt,
+        referenceUrl: imageUrl,
+        saveToAssets: true,
         signal: controller.signal,
+        width: grid.width,
       });
-      const data = await readJsonResponse<GenerateResult>(response);
 
-      if (!response.ok || !data.result_url) {
-        throw new Error(data.error || t("AI 生成失败", "AI generation failed"));
-      }
-
-      setGeneratedUrl(data.result_url);
+      setGeneratedUrl(resultUrl);
       setProgressPercent(88);
       setStatus("splitting");
-      await splitGeneratedResult(data.result_url, controller.signal);
+      await splitGeneratedResult(resultUrl, controller.signal);
       setProgressPercent(99);
       setStatus("completed");
       setProgressPercent(100);
@@ -997,13 +1037,20 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
             {t(`${gridLabel} 拼图剪图板块`, `${gridLabel} Grid Crop Board`)}
           </p>
           <h2 className={`mt-2 text-xl font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
-            {t(`${totalCells} 张图拼成 ${gridLabel}，一次 AI 提取 ${totalCells} 张印花`, `Combine ${totalCells} images into a ${gridLabel} grid and extract ${totalCells} prints in one AI run`)}
+            {gridSize === 3
+              ? t("9 张图拼成 3x3，一张参考图让 AI 提取 9 张印花", "Combine 9 images into one 3x3 reference image and extract 9 prints")
+              : t(`${totalCells} 张图拼成 ${gridLabel}，一次 AI 提取 ${totalCells} 张印花`, `Combine ${totalCells} images into a ${gridLabel} grid and extract ${totalCells} prints in one AI run`)}
           </h2>
           <p className={`mt-2 max-w-4xl text-sm leading-6 ${isDark ? "text-slate-400" : "text-slate-600"}`}>
-            {t(
-              `上传 ${totalCells} 张衣服图后，系统会先按中心印花区域自动裁剪，不降低原始像素，再拼成 ${gridLabel} 参考图发给 AI。AI 成品图会自动按${gridNameZh}拆成 ${totalCells} 张并保存到素材库。`,
-              `Upload ${totalCells} garment images. The system auto-crops the central print area without downscaling source pixels, builds a ${gridLabel} reference grid, sends it to AI, then splits the generated result into ${totalCells} saved assets.`,
-            )}
+            {gridSize === 3
+              ? t(
+                  "上传 9 张衣服图后，系统会先生成可调九宫格；确认后把一张压缩后的 3x3 参考图发给 AI，成品图再自动拆成 9 张保存到素材库。",
+                  "Upload 9 garment images to build an adjustable 3x3 grid. After confirmation, the system sends one compressed 3x3 reference image to AI, then splits the result into 9 saved assets.",
+                )
+              : t(
+                  `上传 ${totalCells} 张衣服图后，系统会先按中心印花区域自动裁剪，不降低原始像素，再拼成 ${gridLabel} 参考图发给 AI。AI 成品图会自动按${gridNameZh}拆成 ${totalCells} 张并保存到素材库。`,
+                  `Upload ${totalCells} garment images. The system auto-crops the central print area without downscaling source pixels, builds a ${gridLabel} reference grid, sends it to AI, then splits the generated result into ${totalCells} saved assets.`,
+                )}
           </p>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
@@ -1573,7 +1620,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                   </p>
                   {gridSize === 3 && status === "generating" ? (
                     <p className="mt-1 text-xs text-slate-500">
-                      {t("九宫格一次处理 9 张图，生成阶段会明显长于四宫格。", "A 3x3 grid processes 9 images, so generation takes longer than 2x2.")}
+                      {t("九宫格会以一张压缩参考图发送给 AI，完成后自动拆成 9 张。", "The 3x3 grid is sent as one compressed reference image, then split into 9 pieces.")}
                     </p>
                   ) : null}
                 </div>
