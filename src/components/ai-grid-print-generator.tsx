@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Local previews and generated asset URLs are user-selected image content. */
 
-import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type DragEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageCropDialog } from "@/components/image-crop-dialog";
 import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
@@ -66,6 +66,24 @@ type CropRect = {
 type BuiltGridImage = {
   file: File;
   height: number;
+  width: number;
+};
+
+type GridCellTransform = {
+  imageHeight: number;
+  imageWidth: number;
+  rotation: number;
+  scale: number;
+  x: number;
+  y: number;
+};
+
+type GridDraft = {
+  cellHeight: number;
+  cellWidth: number;
+  height: number;
+  initialTransforms: GridCellTransform[];
+  transforms: GridCellTransform[];
   width: number;
 };
 
@@ -244,6 +262,143 @@ async function buildGridImage(items: GridSourceItem[], autoCrop: boolean, gridSi
   }
 }
 
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function cloneTransform(transform: GridCellTransform): GridCellTransform {
+  return { ...transform };
+}
+
+async function loadPreviewImage(src: string) {
+  const image = new Image();
+  image.decoding = "async";
+  image.src = src;
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("Failed to load grid preview image"));
+  });
+
+  return image;
+}
+
+function drawGridCanvas(
+  canvas: HTMLCanvasElement,
+  images: HTMLImageElement[],
+  draft: GridDraft,
+  gridSize: number,
+  selectedIndex: number | null = null,
+) {
+  canvas.width = draft.width;
+  canvas.height = draft.height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Failed to create grid canvas");
+  }
+
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  images.forEach((image, index) => {
+    const transform = draft.transforms[index];
+    if (!transform) return;
+
+    const column = index % gridSize;
+    const row = Math.floor(index / gridSize);
+    const cellX = column * draft.cellWidth;
+    const cellY = row * draft.cellHeight;
+    const cellCenterX = cellX + draft.cellWidth / 2;
+    const cellCenterY = cellY + draft.cellHeight / 2;
+
+    context.save();
+    context.beginPath();
+    context.rect(cellX, cellY, draft.cellWidth, draft.cellHeight);
+    context.clip();
+    context.translate(cellCenterX + transform.x, cellCenterY + transform.y);
+    context.rotate((transform.rotation * Math.PI) / 180);
+    context.scale(transform.scale, transform.scale);
+    context.drawImage(image, -transform.imageWidth / 2, -transform.imageHeight / 2, transform.imageWidth, transform.imageHeight);
+    context.restore();
+  });
+
+  context.strokeStyle = "#ffffff";
+  context.lineWidth = Math.max(8, Math.round(Math.min(draft.cellWidth, draft.cellHeight) * 0.008));
+  context.beginPath();
+  for (let line = 1; line < gridSize; line += 1) {
+    context.moveTo(draft.cellWidth * line, 0);
+    context.lineTo(draft.cellWidth * line, canvas.height);
+    context.moveTo(0, draft.cellHeight * line);
+    context.lineTo(canvas.width, draft.cellHeight * line);
+  }
+  context.stroke();
+
+  if (selectedIndex !== null) {
+    const selectedColumn = selectedIndex % gridSize;
+    const selectedRow = Math.floor(selectedIndex / gridSize);
+    context.strokeStyle = "#22d3ee";
+    context.lineWidth = Math.max(10, Math.round(Math.min(draft.cellWidth, draft.cellHeight) * 0.012));
+    context.strokeRect(
+      selectedColumn * draft.cellWidth + context.lineWidth / 2,
+      selectedRow * draft.cellHeight + context.lineWidth / 2,
+      draft.cellWidth - context.lineWidth,
+      draft.cellHeight - context.lineWidth,
+    );
+  }
+}
+
+async function buildGridDraft(items: GridSourceItem[], autoCrop: boolean, gridSize: number): Promise<GridDraft> {
+  const totalCells = gridSize * gridSize;
+
+  if (items.length !== totalCells) {
+    throw new Error(`Need exactly ${totalCells} images to build a ${gridSize}x${gridSize} grid`);
+  }
+
+  const bitmaps = await Promise.all(items.map((item) => createImageBitmap(item.file)));
+  try {
+    const crops = bitmaps.map((bitmap) => (autoCrop ? getPrintCrop(bitmap.width, bitmap.height) : fullCrop(bitmap.width, bitmap.height)));
+    const cellWidth = Math.max(...crops.map((crop) => crop.width));
+    const cellHeight = Math.max(...crops.map((crop) => crop.height));
+    const initialTransforms = bitmaps.map((bitmap, index) => {
+      const crop = crops[index];
+      return {
+        imageHeight: bitmap.height,
+        imageWidth: bitmap.width,
+        rotation: 0,
+        scale: 1,
+        x: bitmap.width / 2 - (crop.x + crop.width / 2),
+        y: bitmap.height / 2 - (crop.y + crop.height / 2),
+      };
+    });
+
+    return {
+      cellHeight,
+      cellWidth,
+      height: cellHeight * gridSize,
+      initialTransforms: initialTransforms.map(cloneTransform),
+      transforms: initialTransforms.map(cloneTransform),
+      width: cellWidth * gridSize,
+    };
+  } finally {
+    bitmaps.forEach((bitmap) => bitmap.close());
+  }
+}
+
+async function buildAdjustedGridImage(items: GridSourceItem[], draft: GridDraft, gridSize: number): Promise<BuiltGridImage> {
+  const images = await Promise.all(items.map((item) => loadPreviewImage(item.previewUrl)));
+  const canvas = document.createElement("canvas");
+  drawGridCanvas(canvas, images, draft, gridSize);
+
+  return {
+    file: await canvasToFile(canvas, `ai-print-grid-${Date.now()}`),
+    height: canvas.height,
+    width: canvas.width,
+  };
+}
+
 async function readJsonResponse<T extends { error?: string }>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) return {} as T;
@@ -270,6 +425,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
   const gridLabel = `${gridSize}x${gridSize}`;
   const gridNameZh = gridDisplayName(gridSize, "zh");
   const inputRef = useRef<HTMLInputElement>(null);
+  const gridCanvasRef = useRef<HTMLCanvasElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const [providers, setProviders] = useState<ProviderOption[]>([]);
   const [selectedProvider, setSelectedProvider] = useState("");
@@ -281,6 +437,10 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
   const [customPrompt, setCustomPrompt] = useState<string | null>(null);
   const [gridPreviewUrl, setGridPreviewUrl] = useState<string | null>(null);
   const [gridDimensions, setGridDimensions] = useState<{ height: number; width: number } | null>(null);
+  const [gridDraft, setGridDraft] = useState<GridDraft | null>(null);
+  const [previewImages, setPreviewImages] = useState<HTMLImageElement[]>([]);
+  const [selectedCellIndex, setSelectedCellIndex] = useState(0);
+  const [dragState, setDragState] = useState<{ index: number; x: number; y: number } | null>(null);
   const [uploadUrl, setUploadUrl] = useState<string | null>(null);
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [splitPieces, setSplitPieces] = useState<SplitGridPiece[]>([]);
@@ -298,7 +458,9 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     .join(" ");
   const cropTargetItem = items.find((item) => item.id === cropTargetId) ?? null;
   const running = status === "compositing" || status === "uploading" || status === "generating" || status === "splitting";
-  const canRun = items.length === totalCells && providers.length > 0 && Boolean(finalPrompt.trim()) && !running;
+  const canBuildGrid = items.length === totalCells && !running;
+  const canGenerate = Boolean(gridDraft) && providers.length > 0 && Boolean(finalPrompt.trim()) && !running;
+  const selectedTransform = gridDraft?.transforms[selectedCellIndex] ?? null;
   const panelClass = `rounded-[20px] border p-5 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/70"}`;
   const inputClass = `w-full rounded-xl border px-3.5 py-2.5 text-sm transition-colors focus:outline-none focus:ring-1 ${isDark ? "border-white/[0.08] bg-white/[0.05] text-slate-200 placeholder:text-slate-500 focus:border-cyan-400/60 focus:ring-cyan-400/40" : "border-black/[0.06] bg-white text-slate-900 placeholder:text-slate-400 focus:border-cyan-500 focus:ring-cyan-500/30"}`;
   const statusLabel =
@@ -361,10 +523,56 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function resetGeneratedState() {
+  useEffect(() => {
+    let cancelled = false;
+
+    if (items.length === 0) {
+      setPreviewImages([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    async function loadImages() {
+      try {
+        const images = await Promise.all(items.map((item) => loadPreviewImage(item.previewUrl)));
+        if (!cancelled) setPreviewImages(images);
+      } catch (imageError) {
+        if (!cancelled) {
+          setPreviewImages([]);
+          setError(imageError instanceof Error ? imageError.message : "Failed to load grid images");
+        }
+      }
+    }
+
+    void loadImages();
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
+
+  useEffect(() => {
+    const draft = gridDraft;
+    if (!draft || !gridCanvasRef.current || previewImages.length !== totalCells) return;
+
+    try {
+      drawGridCanvas(gridCanvasRef.current, previewImages, draft, gridSize, selectedCellIndex);
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : "Failed to draw grid preview");
+    }
+  }, [gridDraft, gridSize, previewImages, selectedCellIndex, totalCells]);
+
+  function resetGeneratedState(options: { clearDraft?: boolean } = {}) {
     if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
     setGridPreviewUrl(null);
-    setGridDimensions(null);
+    if (options.clearDraft) {
+      setGridDraft(null);
+      setSelectedCellIndex(0);
+      setDragState(null);
+      setGridDimensions(null);
+    } else if (!gridDraft) {
+      setGridDimensions(null);
+    }
     setUploadUrl(null);
     setGeneratedUrl(null);
     setSplitPieces([]);
@@ -376,7 +584,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
   function addFiles(files: FileList | File[]) {
     const imageFiles = Array.from(files).filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
-    resetGeneratedState();
+    resetGeneratedState({ clearDraft: true });
 
     const remainingSlots = Math.max(0, totalCells - items.length);
     if (imageFiles.length > remainingSlots) {
@@ -405,7 +613,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     items.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     setItems([]);
     setCropTargetId(null);
-    resetGeneratedState();
+    resetGeneratedState({ clearDraft: true });
   }
 
   function removeItem(id: string) {
@@ -415,7 +623,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       return current.filter((item) => item.id !== id);
     });
     if (cropTargetId === id) setCropTargetId(null);
-    resetGeneratedState();
+    resetGeneratedState({ clearDraft: true });
   }
 
   function applyCropToItem(id: string, croppedFile: File) {
@@ -432,7 +640,127 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       }),
     );
     setCropTargetId(null);
-    resetGeneratedState();
+    resetGeneratedState({ clearDraft: true });
+  }
+
+  function clearGeneratedResultOnly() {
+    if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
+    setGridPreviewUrl(null);
+    setUploadUrl(null);
+    setGeneratedUrl(null);
+    setSplitPieces([]);
+    setError(null);
+    setMessage(null);
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      setStatus("idle");
+    }
+  }
+
+  async function prepareGridDraft() {
+    if (!canBuildGrid) return;
+
+    try {
+      setStatus("compositing");
+      setError(null);
+      setMessage(null);
+      setUploadUrl(null);
+      setGeneratedUrl(null);
+      setSplitPieces([]);
+      if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
+      setGridPreviewUrl(null);
+
+      const draft = await buildGridDraft(items, autoCrop, gridSize);
+      setGridDraft(draft);
+      setGridDimensions({ height: draft.height, width: draft.width });
+      setSelectedCellIndex(0);
+      setDragState(null);
+      setStatus("idle");
+      setMessage(t("Grid is ready. Adjust each cell, then generate with AI.", "Grid is ready. Adjust each cell, then generate with AI."));
+    } catch (buildError) {
+      setStatus("failed");
+      setError(buildError instanceof Error ? buildError.message : t(`${gridLabel} grid build failed`, `${gridLabel} grid build failed`));
+    }
+  }
+
+  function updateCellTransform(index: number, updater: (transform: GridCellTransform) => GridCellTransform) {
+    clearGeneratedResultOnly();
+    setGridDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        transforms: current.transforms.map((transform, transformIndex) =>
+          transformIndex === index ? updater(transform) : transform,
+        ),
+      };
+    });
+  }
+
+  function updateSelectedTransform(updater: (transform: GridCellTransform) => GridCellTransform) {
+    if (!gridDraft || !selectedTransform) return;
+    updateCellTransform(selectedCellIndex, updater);
+  }
+
+  function fitSelectedCell(mode: "contain" | "cover") {
+    if (!gridDraft || !selectedTransform) return;
+    const scaleX = gridDraft.cellWidth / selectedTransform.imageWidth;
+    const scaleY = gridDraft.cellHeight / selectedTransform.imageHeight;
+    const scale = mode === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
+
+    updateSelectedTransform((transform) => ({
+      ...transform,
+      rotation: 0,
+      scale: clampValue(scale, 0.05, 3),
+      x: 0,
+      y: 0,
+    }));
+  }
+
+  function resetSelectedCell() {
+    if (!gridDraft) return;
+    const initial = gridDraft.initialTransforms[selectedCellIndex];
+    if (!initial) return;
+    updateCellTransform(selectedCellIndex, () => cloneTransform(initial));
+  }
+
+  function getCanvasPoint(event: PointerEvent<HTMLCanvasElement>) {
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function handleCanvasPointerDown(event: PointerEvent<HTMLCanvasElement>) {
+    if (!gridDraft || running) return;
+    const point = getCanvasPoint(event);
+    const column = clampValue(Math.floor(point.x / gridDraft.cellWidth), 0, gridSize - 1);
+    const row = clampValue(Math.floor(point.y / gridDraft.cellHeight), 0, gridSize - 1);
+    const index = row * gridSize + column;
+    setSelectedCellIndex(index);
+    setDragState({ index, x: point.x, y: point.y });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleCanvasPointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (!gridDraft || !dragState || running) return;
+    const point = getCanvasPoint(event);
+    const dx = point.x - dragState.x;
+    const dy = point.y - dragState.y;
+
+    updateCellTransform(dragState.index, (transform) => ({
+      ...transform,
+      x: transform.x + dx,
+      y: transform.y + dy,
+    }));
+    setDragState({ ...dragState, x: point.x, y: point.y });
+  }
+
+  function handleCanvasPointerUp(event: PointerEvent<HTMLCanvasElement>) {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragState(null);
   }
 
   async function uploadSourceImage(file: File, signal: AbortSignal) {
@@ -479,7 +807,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
   }
 
   async function runGridExtraction() {
-    if (!canRun) return;
+    if (!canGenerate || !gridDraft) return;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -489,8 +817,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     setGeneratedUrl(null);
 
     try {
-      setStatus("compositing");
-      const grid = await buildGridImage(items, autoCrop, gridSize);
+      const grid = await buildAdjustedGridImage(items, gridDraft, gridSize);
       if (gridPreviewUrl) URL.revokeObjectURL(gridPreviewUrl);
       setGridPreviewUrl(URL.createObjectURL(grid.file));
       setGridDimensions({ height: grid.height, width: grid.width });
@@ -639,7 +966,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                 checked={autoCrop}
                 onChange={(event) => {
                   setAutoCrop(event.target.checked);
-                  resetGeneratedState();
+                  resetGeneratedState({ clearDraft: true });
                 }}
                 type="checkbox"
                 className="h-5 w-5 accent-emerald-500"
@@ -781,14 +1108,24 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+            <button
+              type="button"
+              onClick={() => void prepareGridDraft()}
+              disabled={!canBuildGrid}
+              className={`rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none`}
+            >
+              {status === "compositing" ? statusLabel : t("生成可调拼图", "Build Adjustable Grid")}
+            </button>
             <button
               type="button"
               onClick={() => void runGridExtraction()}
-              disabled={!canRun}
-              className={`rounded-xl bg-gradient-to-r ${colors.gradient} px-4 py-3 text-sm font-semibold text-white shadow-lg ${colors.shadow} transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none`}
+              disabled={!canGenerate}
+              className={`rounded-xl border px-4 py-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                isDark ? "border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/20" : "border-cyan-200 bg-cyan-50 text-cyan-700 hover:bg-cyan-100"
+              }`}
             >
-              {running ? statusLabel : t("拼图并生成", "Build Grid and Generate")}
+              {running && status !== "compositing" ? statusLabel : t("确认并 AI 生成", "Generate With AI")}
             </button>
             <button
               type="button"
@@ -808,6 +1145,131 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
             </button>
           </div>
 
+          {gridDraft && selectedTransform ? (
+            <div className={`rounded-2xl border p-4 ${isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.05] bg-white/80"}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className={`text-sm font-bold ${isDark ? "text-white" : "text-slate-950"}`}>
+                    {t("校准拼图格子", "Adjust Grid Cell")}
+                  </p>
+                  <p className={`mt-1 text-xs ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                    {t("点击右侧预览图选择格子，拖动图片位置。", "Click a cell in the preview, then drag to position it.")}
+                  </p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isDark ? "bg-cyan-500/10 text-cyan-300" : "bg-cyan-50 text-cyan-700"}`}>
+                  {selectedCellIndex + 1} / {totalCells}
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-4 gap-2 sm:grid-cols-6">
+                {Array.from({ length: totalCells }, (_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => setSelectedCellIndex(index)}
+                    disabled={running}
+                    className={`h-9 rounded-lg border text-xs font-bold transition disabled:opacity-50 ${
+                      selectedCellIndex === index
+                        ? `border-transparent bg-gradient-to-r ${colors.gradient} text-white`
+                        : isDark
+                          ? "border-white/[0.08] bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                          : "border-black/[0.06] bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {index + 1}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <label className={`block text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                  <span className="flex items-center justify-between gap-3">
+                    <span>{t("缩放", "Scale")}</span>
+                    <span>{selectedTransform.scale.toFixed(2)}x</span>
+                  </span>
+                  <input
+                    type="range"
+                    min="0.05"
+                    max="3"
+                    step="0.01"
+                    value={selectedTransform.scale}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSelectedTransform((transform) => ({
+                        ...transform,
+                        scale: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full accent-cyan-400"
+                  />
+                </label>
+
+                <label className={`block text-xs font-semibold ${isDark ? "text-slate-300" : "text-slate-700"}`}>
+                  <span className="flex items-center justify-between gap-3">
+                    <span>{t("旋转", "Rotate")}</span>
+                    <span>{Math.round(selectedTransform.rotation)}°</span>
+                  </span>
+                  <input
+                    type="range"
+                    min="-180"
+                    max="180"
+                    step="1"
+                    value={selectedTransform.rotation}
+                    disabled={running}
+                    onChange={(event) =>
+                      updateSelectedTransform((transform) => ({
+                        ...transform,
+                        rotation: Number(event.target.value),
+                      }))
+                    }
+                    className="mt-2 w-full accent-cyan-400"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button
+                  type="button"
+                  onClick={() => fitSelectedCell("cover")}
+                  disabled={running}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {t("铺满", "Fill")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fitSelectedCell("contain")}
+                  disabled={running}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {t("适应", "Fit")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSelectedTransform((transform) => ({
+                      ...transform,
+                      x: 0,
+                      y: 0,
+                    }))
+                  }
+                  disabled={running}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {t("居中", "Center")}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetSelectedCell}
+                  disabled={running}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition disabled:opacity-50 ${isDark ? "border-white/[0.08] text-slate-300 hover:bg-white/[0.05]" : "border-black/[0.06] text-slate-700 hover:bg-slate-50"}`}
+                >
+                  {t("重置", "Reset")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {message ? <p className={`text-sm ${isDark ? "text-slate-400" : "text-slate-600"}`}>{message}</p> : null}
           {error ? <p className="text-sm text-red-500">{error}</p> : null}
         </div>
@@ -821,10 +1283,20 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
               </span>
             </div>
             <div className={`flex min-h-[320px] items-center justify-center rounded-2xl border p-3 ${isDark ? "border-white/[0.08] bg-slate-950/30" : "border-black/[0.05] bg-slate-50"}`}>
-              {gridPreviewUrl ? (
+              {gridDraft ? (
+                <canvas
+                  ref={gridCanvasRef}
+                  aria-label={`${gridLabel} adjustable grid preview`}
+                  onPointerDown={handleCanvasPointerDown}
+                  onPointerMove={handleCanvasPointerMove}
+                  onPointerUp={handleCanvasPointerUp}
+                  onPointerCancel={handleCanvasPointerUp}
+                  className={`max-h-[440px] w-full rounded-xl object-contain shadow-lg touch-none ${running ? "cursor-not-allowed" : "cursor-move"}`}
+                />
+              ) : gridPreviewUrl ? (
                 <img src={gridPreviewUrl} alt={`${gridLabel} grid preview`} className="max-h-[360px] rounded-xl object-contain shadow-lg" />
               ) : (
-                <p className="text-sm text-slate-500">{t(`点击“拼图并生成”后会先看到 ${gridLabel} 参考图。`, `Click Build Grid and Generate to preview the ${gridLabel} reference image first.`)}</p>
+                <p className="text-sm text-slate-500">{t(`点击“生成可调拼图”后会先看到 ${gridLabel} 参考图。`, `Click Build Adjustable Grid to preview the ${gridLabel} reference image first.`)}</p>
               )}
             </div>
             {uploadUrl ? (
