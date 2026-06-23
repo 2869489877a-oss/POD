@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
 import {
+  addCollectorItemsToRiskLibrary,
   deleteCollectorItems,
   listCollectorItems,
   parseCollectorRelativePaths,
@@ -133,7 +134,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unable to read request body", results: [] }, { status: 400 });
   }
 
-  if (body.action !== "promote") {
+  if (body.action !== "promote" && body.action !== "add_to_risk_library") {
     return NextResponse.json({ error: "Unsupported collector action", results: [] }, { status: 400 });
   }
 
@@ -143,14 +144,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Please select images to import", results: [] }, { status: 400 });
   }
 
-  const results = await promoteCollectorItems(relativePaths, request);
+  const isRiskLibraryAction = body.action === "add_to_risk_library";
+  const results = isRiskLibraryAction
+    ? await addCollectorItemsToRiskLibrary(relativePaths, request)
+    : await promoteCollectorItems(relativePaths, request);
   const successCount = results.filter((result) => result.success).length;
   const failedCount = results.length - successCount;
 
   await logActivity({
-    action: "collector_library.promote",
+    action: isRiskLibraryAction ? "collector_library.add_to_risk_library" : "collector_library.promote",
     durationMs: elapsedMs(startedAt),
-    entityType: "collector_library",
+    entityType: isRiskLibraryAction ? "infringement_reference_library" : "collector_library",
     metadata: {
       failed_count: failedCount,
       file_count: relativePaths.length,

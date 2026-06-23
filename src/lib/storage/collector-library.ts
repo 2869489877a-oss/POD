@@ -6,6 +6,7 @@ import path from "node:path";
 
 import sharp from "sharp";
 
+import { computeAverageHash } from "@/lib/infringement/image-hash";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import { resolveLocalDataPath } from "@/lib/storage/local-data";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -39,9 +40,12 @@ export type CollectorOperationResult = {
   asset_id?: string;
   error?: string;
   filename?: string;
+  image_hash?: string;
   original_url?: string;
   public_url?: string;
+  reference_id?: string;
   relative_path: string;
+  status?: "added" | "deleted" | "promoted" | "skipped";
   success: boolean;
 };
 
@@ -442,6 +446,123 @@ export async function promoteCollectorItems(relativePaths: string[], request?: R
         await deleteLocalAssetByPublicUrl(originalUrl);
       }
 
+      results.push({
+        error: getErrorMessage(error),
+        relative_path: relativePath,
+        success: false,
+      });
+    }
+  }
+
+  return results;
+}
+
+function stringMetadataValue(metadata: Record<string, unknown>, key: string) {
+  const value = metadata[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function referenceTitleForItem(item: CollectorLibraryItem | null, metadata: Record<string, unknown>, relativePath: string) {
+  const label = stringMetadataValue(metadata, "label");
+  const filename = item?.filename || path.basename(relativePath);
+  const title = label ? label + " / " + filename : filename;
+  return title.slice(0, 180);
+}
+
+function referenceTermsForItem(metadata: Record<string, unknown>) {
+  const terms = [
+    stringMetadataValue(metadata, "label"),
+    stringMetadataValue(metadata, "brand"),
+    stringMetadataValue(metadata, "keyword"),
+  ].filter((term) => term.length >= 2 && term.length <= 80);
+
+  return Array.from(new Set(terms));
+}
+
+export async function addCollectorItemsToRiskLibrary(
+  relativePaths: string[],
+  request?: Request,
+): Promise<CollectorOperationResult[]> {
+  const supabase = createSupabaseServiceRoleClient();
+  const results: CollectorOperationResult[] = [];
+
+  for (const relativePath of relativePaths) {
+    try {
+      const diskPath = resolveCollectorLibraryPath(relativePath);
+      const buffer = await readFile(diskPath);
+      const metadata = await sharp(buffer).metadata();
+
+      if (!metadata.width || !metadata.height || !metadata.format) {
+        throw new Error("Unable to read image dimensions or format");
+      }
+
+      if (!ALLOWED_FORMATS.has(metadata.format)) {
+        throw new Error("Unsupported image format: " + metadata.format);
+      }
+
+      const item = await itemFromRelativePath(relativePath, request);
+      const storedMetadata = (await readMetadata(relativePath)) as Record<string, unknown>;
+      const storedHash = stringMetadataValue(storedMetadata, "imageHash");
+      const imageHash = /^[a-f0-9]{16}$/i.test(storedHash) ? storedHash.toLowerCase() : await computeAverageHash(buffer);
+      const publicUrl = item?.publicUrl || buildCollectorLibraryPublicUrl(relativePath, request);
+
+      const { data: existing, error: existingError } = await supabase
+        .from("infringement_reference_items")
+        .select("id")
+        .eq("image_hash", imageHash)
+        .limit(1);
+
+      if (existingError) {
+        throw new Error(existingError.message);
+      }
+
+      if (existing && existing.length > 0) {
+        results.push({
+          filename: item?.filename || path.basename(relativePath),
+          image_hash: imageHash,
+          public_url: publicUrl,
+          reference_id: existing[0].id,
+          relative_path: relativePath,
+          status: "skipped",
+          success: true,
+        });
+        continue;
+      }
+
+      const { data, error } = await supabase
+        .from("infringement_reference_items")
+        .insert({
+          category: "visual_review",
+          description: "Collector library image marked as a high-risk visual reference.",
+          image_hash: imageHash,
+          image_url: publicUrl,
+          is_active: true,
+          library_type: "high_risk",
+          notes: "auto:collector-risk-library path=" + relativePath,
+          risk_level: "high",
+          severity: "high",
+          source_label: stringMetadataValue(storedMetadata, "dataset") || item?.siteType || "collector-library",
+          source_url: item?.sourceUrl || item?.pageUrl || stringMetadataValue(storedMetadata, "sourceUrl") || publicUrl,
+          terms: referenceTermsForItem(storedMetadata),
+          title: referenceTitleForItem(item, storedMetadata, relativePath),
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      results.push({
+        filename: item?.filename || path.basename(relativePath),
+        image_hash: imageHash,
+        public_url: publicUrl,
+        reference_id: data.id,
+        relative_path: relativePath,
+        status: "added",
+        success: true,
+      });
+    } catch (error) {
       results.push({
         error: getErrorMessage(error),
         relative_path: relativePath,

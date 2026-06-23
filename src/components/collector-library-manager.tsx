@@ -38,6 +38,8 @@ type CollectorResponse = {
   total?: number;
 };
 
+type CollectorMutationMode = "delete" | "promote" | "risk-library";
+
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
 }
@@ -129,7 +131,7 @@ export function CollectorLibraryManager() {
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [pendingMutationPaths, setPendingMutationPaths] = useState<Set<string>>(new Set());
-  const [pendingMutationMode, setPendingMutationMode] = useState<"delete" | "promote" | null>(null);
+  const [pendingMutationMode, setPendingMutationMode] = useState<CollectorMutationMode | null>(null);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
@@ -193,6 +195,15 @@ export function CollectorLibraryManager() {
   const neutralButtonClass = isDark
     ? buttonClass + " border-white/[0.10] text-zinc-200 hover:bg-white/[0.06]"
     : buttonClass + " border-zinc-300 text-zinc-800 hover:bg-zinc-100";
+  const riskButtonClass = isDark
+    ? "rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm font-medium text-amber-200 transition hover:-translate-y-0.5 hover:bg-amber-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+    : "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 transition hover:-translate-y-0.5 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50";
+
+  function mutationLabel(mode: CollectorMutationMode | null) {
+    if (mode === "promote") return t("正在入素材库", "Importing to assets");
+    if (mode === "risk-library") return t("正在入风险库", "Adding to risk library");
+    return t("正在删除", "Deleting");
+  }
 
   async function loadItems() {
     setIsLoading(true);
@@ -341,7 +352,7 @@ export function CollectorLibraryManager() {
     }
   }
 
-  async function mutateSelected(paths: string[], mode: "delete" | "promote") {
+  async function mutateSelected(paths: string[], mode: CollectorMutationMode) {
     if (paths.length === 0) {
       setError(t("请先选择图片", "Please select images first"));
       return;
@@ -358,10 +369,14 @@ export function CollectorLibraryManager() {
     setMessage(null);
 
     try {
+      const body =
+        mode === "delete"
+          ? { relative_paths: paths }
+          : { action: mode === "risk-library" ? "add_to_risk_library" : "promote", relative_paths: paths };
       const response = await fetch("/api/collector-library", {
-        body: JSON.stringify(mode === "promote" ? { action: "promote", relative_paths: paths } : { relative_paths: paths }),
+        body: JSON.stringify(body),
         headers: { "Content-Type": "application/json" },
-        method: mode === "promote" ? "POST" : "DELETE",
+        method: mode === "delete" ? "DELETE" : "POST",
       });
       const data = (await response.json()) as CollectorResponse;
       const results = data.results || [];
@@ -373,12 +388,16 @@ export function CollectorLibraryManager() {
         throw new Error(data.error || t("操作失败", "Operation failed"));
       }
 
-      setItems((current) => current.filter((item) => !successPaths.has(item.relativePath)));
+      if (mode !== "risk-library") {
+        setItems((current) => current.filter((item) => !successPaths.has(item.relativePath)));
+      }
       setSelected((current) => new Set(Array.from(current).filter((path) => !successPaths.has(path))));
       setMessage(
         mode === "promote"
-          ? t("入库成功 " + (data.success_count || 0) + " 张，失败 " + (data.failed_count || 0) + " 张", (data.success_count || 0) + " imported, " + (data.failed_count || 0) + " failed")
-          : t("删除成功 " + (data.success_count || 0) + " 张，失败 " + (data.failed_count || 0) + " 张", (data.success_count || 0) + " deleted, " + (data.failed_count || 0) + " failed"),
+          ? t("入素材库成功 " + (data.success_count || 0) + " 张，失败 " + (data.failed_count || 0) + " 张", (data.success_count || 0) + " imported to assets, " + (data.failed_count || 0) + " failed")
+          : mode === "risk-library"
+            ? t("入风险库完成 " + (data.success_count || 0) + " 张，失败 " + (data.failed_count || 0) + " 张", (data.success_count || 0) + " added to risk library, " + (data.failed_count || 0) + " failed")
+            : t("删除成功 " + (data.success_count || 0) + " 张，失败 " + (data.failed_count || 0) + " 张", (data.success_count || 0) + " deleted, " + (data.failed_count || 0) + " failed"),
       );
 
       const failed = results.filter((result) => !result.success);
@@ -659,6 +678,14 @@ export function CollectorLibraryManager() {
           </button>
           <button
             type="button"
+            onClick={() => void mutateSelected(Array.from(selected), "risk-library")}
+            disabled={selectedCount === 0 || isMutating}
+            className={riskButtonClass}
+          >
+            {isMutating ? t("处理中", "Working") : t("选中入风险库", "Add to Risk Library")}
+          </button>
+          <button
+            type="button"
             onClick={() => void mutateSelected(Array.from(selected), "delete")}
             disabled={selectedCount === 0 || isMutating}
             className="rounded-md border border-red-400 px-3 py-2 text-sm font-medium text-red-500 transition hover:-translate-y-0.5 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50"
@@ -722,7 +749,7 @@ export function CollectorLibraryManager() {
                   {isItemMutating ? (
                     <div className="ui-task-overlay z-20">
                       <span className="ui-activity" aria-hidden="true" />
-                      <span className="ui-task-label">{pendingMode === "promote" ? t("正在入库", "Importing") : t("正在删除", "Deleting")}</span>
+                      <span className="ui-task-label">{mutationLabel(pendingMode)}</span>
                     </div>
                   ) : null}
                 </div>
@@ -742,7 +769,7 @@ export function CollectorLibraryManager() {
                   <p className={"truncate text-xs " + mutedClass} title={item.sourceUrl || item.pageUrl || ""}>
                     {item.sourceUrl || item.pageUrl || t("无来源链接", "No source URL")}
                   </p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={(event) => {
@@ -762,7 +789,18 @@ export function CollectorLibraryManager() {
                       disabled={isMutating}
                       className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {pendingMode === "promote" ? t("入库中", "Importing") : t("入库", "Import")}
+                      {pendingMode === "promote" ? t("入素材库中", "Importing") : t("入素材库", "Assets")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void mutateSelected([item.relativePath], "risk-library");
+                      }}
+                      disabled={isMutating}
+                      className={riskButtonClass}
+                    >
+                      {pendingMode === "risk-library" ? t("入风险库中", "Adding") : t("入风险库", "Risk")}
                     </button>
                     <button
                       type="button"
@@ -876,7 +914,15 @@ export function CollectorLibraryManager() {
                     disabled={isMutating}
                     className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {previewPendingMode === "promote" ? t("正在入库", "Importing") : t("入素材库", "Import to Assets")}
+                    {previewPendingMode === "promote" ? t("正在入素材库", "Importing to assets") : t("入素材库", "Import to Assets")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void mutateSelected([previewItem.relativePath], "risk-library")}
+                    disabled={isMutating}
+                    className={riskButtonClass}
+                  >
+                    {previewPendingMode === "risk-library" ? t("正在入风险库", "Adding to risk library") : t("入风险库", "Add to Risk Library")}
                   </button>
                   <button
                     type="button"
