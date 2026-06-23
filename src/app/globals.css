@@ -156,6 +156,44 @@ a {
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes ui-enter-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ui-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes ui-status-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(3px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes ui-progress-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(220%); }
+}
+
 @keyframes toast-in {
   0% { opacity: 0; transform: translateX(20px); }
   100% { opacity: 1; transform: translateX(0); }
@@ -173,6 +211,83 @@ a {
 .animate-fade-in { animation: fade-in 0.3s ease-out both; }
 .animate-scale-in { animation: scale-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both; }
 .animate-toast-in { animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.ui-enter {
+  animation: ui-enter-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-pop-in {
+  animation: ui-pop-in 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-modal-overlay {
+  animation: fade-in 0.18s ease-out both;
+}
+
+.ui-modal-panel {
+  animation: ui-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-status-pop {
+  animation: ui-status-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.ui-lift {
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    background-color 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.ui-lift:hover {
+  transform: translateY(-2px);
+}
+
+.ui-press {
+  transition:
+    transform 0.12s ease,
+    opacity 0.16s ease,
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.ui-press:active {
+  transform: translateY(1px) scale(0.99);
+}
+
+.ui-progress-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ui-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  animation: ui-progress-sweep 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .ui-lift:hover,
+  .ui-press:active {
+    transform: none !important;
+  }
+}
 
 .gradient-text {
   background-clip: text;

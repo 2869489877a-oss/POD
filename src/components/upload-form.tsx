@@ -459,7 +459,7 @@ export function UploadForm({
           ) : null}
 
           {unsupportedFiles.length > 0 ? (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+            <div className="ui-enter mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
               {t(
                 `有 ${unsupportedFiles.length} 个文件格式可能不受支持，提交后会返回失败原因。`,
                 `${unsupportedFiles.length} file${unsupportedFiles.length === 1 ? "" : "s"} may be unsupported. The server will return the reason after submission.`,
@@ -468,7 +468,7 @@ export function UploadForm({
           ) : null}
 
           {message ? (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="ui-enter mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {message}
             </div>
           ) : null}
@@ -481,7 +481,7 @@ export function UploadForm({
               </div>
               <div className={["mt-2 h-2 w-full overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-black/[0.08]"].join(" ")}>
                 <div
-                  className="h-full rounded-full transition-all duration-200"
+                  className="ui-progress-fill h-full rounded-full"
                   style={{ width: `${(doneCount / files.length) * 100}%`, backgroundColor: colors.primary }}
                 />
               </div>
@@ -492,7 +492,7 @@ export function UploadForm({
             <button
               type="submit"
               disabled={isUploading || files.length === 0}
-              className="rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+              className="ui-press rounded-md px-4 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
               style={{ backgroundColor: colors.primary }}
             >
               {isUploading ? t("上传中...", "Uploading...") : t("开始上传", "Start Upload")}
@@ -505,7 +505,7 @@ export function UploadForm({
       </form>
 
       {results.length > 0 ? (
-        <section className={["overflow-hidden rounded-[10px] border", isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-white"].join(" ")}>
+        <section className={["ui-enter overflow-hidden rounded-[10px] border", isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-black/[0.08] bg-white"].join(" ")}>
           <div className={["border-b px-6 py-4", isDark ? "border-white/[0.08]" : "border-black/[0.08]"].join(" ")}>
             <h3 className={["text-sm font-semibold", isDark ? "text-white" : "text-zinc-900"].join(" ")}>
               {t("上传结果", "Upload Results")}
@@ -519,7 +519,7 @@ export function UploadForm({
                 onClick={() => void runInfringementCheckForUploads()}
                 disabled={isCheckingInfringement || uploadedAssetIds.length === 0}
                 className={[
-                  "rounded-md px-3.5 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
+                  "ui-press rounded-md px-3.5 py-2 text-[13px] font-medium text-white transition-opacity duration-150 hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40",
                 ].join(" ")}
                 style={{ backgroundColor: colors.primary }}
               >
@@ -532,7 +532,7 @@ export function UploadForm({
               <Link
                 href="/infringement-check"
                 className={[
-                  "rounded-md border px-3.5 py-2 text-[13px] font-medium transition-colors duration-150",
+                  "ui-press rounded-md border px-3.5 py-2 text-[13px] font-medium transition-colors duration-150",
                   isDark
                     ? "border-white/[0.12] bg-white/[0.04] text-zinc-200 hover:border-white/[0.24] hover:bg-white/[0.08]"
                     : "border-black/[0.12] bg-white text-zinc-700 hover:border-black/[0.24] hover:bg-black/[0.03]",
@@ -560,7 +560,7 @@ export function UploadForm({
                   aria-valuenow={infringementProgressPercent}
                 >
                   <div
-                    className="h-full rounded-full transition-all duration-200"
+                    className="ui-progress-fill h-full rounded-full"
                     style={{ width: `${infringementProgressPercent}%`, backgroundColor: colors.primary }}
                   />
                 </div>
@@ -573,12 +573,12 @@ export function UploadForm({
               </div>
             ) : null}
             {infringementMessage ? (
-              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-700">
+              <div className="ui-enter mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-[13px] text-emerald-700">
                 {infringementMessage}
               </div>
             ) : null}
             {infringementError ? (
-              <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
+              <div className="ui-enter mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-[13px] text-red-700">
                 {infringementError}
               </div>
             ) : null}
@@ -587,7 +587,7 @@ export function UploadForm({
             {results.map((result) => (
               <div
                 key={`${result.filename}-${result.asset_id ?? result.error}`}
-                className="grid gap-3 px-6 py-4 md:grid-cols-[1fr_120px_160px]"
+                className="ui-enter grid gap-3 px-6 py-4 md:grid-cols-[1fr_120px_160px]"
               >
                 <div className="min-w-0">
                   <p className={["truncate text-[13px] font-medium", isDark ? "text-zinc-200" : "text-zinc-900"].join(" ")}>
@@ -604,7 +604,7 @@ export function UploadForm({
                 <div>
                   <span
                     className={[
-                      "inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium",
+                      "ui-status-pop inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium",
                       result.success
                         ? "bg-emerald-500/10 text-emerald-500"
                         : "bg-red-500/10 text-red-500",

@@ -101,7 +101,7 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={isActive ? "page" : undefined}
                         className={[
-                          "group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors duration-150",
+                          "ui-press group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-[background-color,color,transform] duration-150 hover:translate-x-0.5",
                           isActive
                             ? isDark
                               ? "bg-white/[0.08] font-medium text-white"
@@ -184,7 +184,7 @@ export function Sidebar() {
               type="button"
               onClick={() => void signOut()}
               title={t("退出登录", "Sign out")}
-              className={`shrink-0 rounded-md p-1.5 transition-colors ${
+              className={`ui-press shrink-0 rounded-md p-1.5 transition-colors ${
                 isDark
                   ? "text-zinc-500 hover:bg-white/[0.06] hover:text-zinc-200"
                   : "text-zinc-400 hover:bg-black/[0.04] hover:text-zinc-700"

@@ -856,7 +856,7 @@ export function InfringementChecksManager({
             type="button"
             onClick={toggleVisible}
             disabled={visibleItems.length === 0}
-            className="self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="ui-press self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {visibleItems.length > 0 && visibleItems.every((item) => selectedIds.has(item.asset.id))
               ? t("取消全选", "Deselect All")
@@ -867,7 +867,7 @@ export function InfringementChecksManager({
             type="button"
             onClick={() => void refreshDashboard()}
             disabled={isRefreshing || isRunning}
-            className="self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="ui-press self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新", "Refresh")}
           </button>
@@ -884,7 +884,7 @@ export function InfringementChecksManager({
             type="button"
             onClick={() => void runChecks(Array.from(selectedIds))}
             disabled={selectedCount === 0 || isRunning}
-            className="rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            className="ui-press rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
             {isRunning ? t("检测中...", "Checking...") : t("检测所选素材", "Check Selected")}
           </button>
@@ -892,11 +892,23 @@ export function InfringementChecksManager({
             type="button"
             onClick={() => void runChecks(visibleItems.filter((item) => getLatestStatus(item) === "unchecked").map((item) => item.asset.id))}
             disabled={isRunning || visibleItems.every((item) => getLatestStatus(item) !== "unchecked")}
-            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+            className="ui-press rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {t("检测当前未检测", "Check Visible Unchecked")}
           </button>
         </div>
+
+        {isRunning ? (
+          <div className="ui-enter mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
+            <div className="flex items-center justify-between gap-3">
+              <span>{t("规则引擎正在扫描素材...", "Rule engine is scanning assets...")}</span>
+              <span>{t("运行中", "Running")}</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-cyan-100">
+              <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-md border border-zinc-200 bg-white p-5">
@@ -1332,13 +1344,13 @@ export function InfringementChecksManager({
       </section>
 
       {message ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+        <div className="ui-enter rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
           {message}
         </div>
       ) : null}
 
       {error ? (
-        <div className="whitespace-pre-line rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="ui-enter whitespace-pre-line rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
       ) : null}
@@ -1366,7 +1378,7 @@ export function InfringementChecksManager({
             <article
               key={item.asset.id}
               className={[
-                "overflow-hidden rounded-md border bg-white transition",
+                "ui-enter ui-lift overflow-hidden rounded-md border bg-white transition",
                 isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
               ].join(" ")}
             >
@@ -1399,10 +1411,10 @@ export function InfringementChecksManager({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <span className={["rounded-md px-2.5 py-1 text-xs font-medium", checkStatusStyles[checkStatus]].join(" ")}>
+                      <span className={["ui-status-pop rounded-md px-2.5 py-1 text-xs font-medium", checkStatusStyles[checkStatus]].join(" ")}>
                         {status === "unchecked" ? t("未检测", "Unchecked") : t(checkStatusLabels[checkStatus].zh, checkStatusLabels[checkStatus].en)}
                       </span>
-                      <span className={["rounded-md px-2.5 py-1 text-xs font-medium", copyrightStyles[copyrightStatus]].join(" ")}>
+                      <span className={["ui-status-pop rounded-md px-2.5 py-1 text-xs font-medium", copyrightStyles[copyrightStatus]].join(" ")}>
                         {t(copyrightLabels[copyrightStatus].zh, copyrightLabels[copyrightStatus].en)}
                       </span>
                     </div>
@@ -1416,7 +1428,7 @@ export function InfringementChecksManager({
                     <div>
                       <p className="text-zinc-500">{t("证据强度", "Evidence")}</p>
                       <p className="mt-1">
-                        <span className={["rounded-md px-2 py-1 font-medium", evidenceQualityStyles[evidenceQuality]].join(" ")}>
+                        <span className={["ui-status-pop rounded-md px-2 py-1 font-medium", evidenceQualityStyles[evidenceQuality]].join(" ")}>
                           {t(evidenceQualityLabels[evidenceQuality].zh, evidenceQualityLabels[evidenceQuality].en)}
                         </span>
                       </p>
@@ -1460,7 +1472,7 @@ export function InfringementChecksManager({
                       type="button"
                       onClick={() => void runChecks([item.asset.id])}
                       disabled={isRunning}
-                      className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+                      className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
                       {t("重新检测", "Re-check")}
                     </button>
@@ -1468,7 +1480,7 @@ export function InfringementChecksManager({
                       type="button"
                       onClick={() => openReview(item)}
                       disabled={!item.latest_check}
-                      className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                      className="ui-press rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
                     >
                       {t("人工复核", "Review")}
                     </button>
@@ -1476,7 +1488,7 @@ export function InfringementChecksManager({
                       href={item.asset.original_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                      className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                     >
                       {t("打开原图", "Open Image")}
                     </a>
@@ -1500,8 +1512,8 @@ export function InfringementChecksManager({
       ) : null}
 
       {selectedItem ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6" role="dialog" aria-modal="true">
-          <div className="max-h-full w-full max-w-4xl overflow-y-auto rounded-md bg-white shadow-xl">
+        <div className="ui-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6" role="dialog" aria-modal="true">
+          <div className="ui-modal-panel max-h-full w-full max-w-4xl overflow-y-auto rounded-md bg-white shadow-xl">
             <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
               <div>
                 <h3 className="text-base font-semibold text-zinc-950">{t("人工复核", "Manual Review")}</h3>

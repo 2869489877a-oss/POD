@@ -186,7 +186,7 @@ export function CollectorLibraryManager() {
     ? "border-white/[0.10] bg-zinc-950/70 text-white"
     : "border-zinc-300 bg-white text-zinc-900";
   const buttonClass =
-    "rounded-md border px-3 py-2 text-sm font-medium transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50";
+    "ui-press rounded-md border px-3 py-2 text-sm font-medium transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50";
   const neutralButtonClass = isDark
     ? buttonClass + " border-white/[0.10] text-zinc-200 hover:bg-white/[0.06]"
     : buttonClass + " border-zinc-300 text-zinc-800 hover:bg-zinc-100";
@@ -661,8 +661,8 @@ export function CollectorLibraryManager() {
         </div>
       </div>
 
-      {message ? <p className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600">{message}</p> : null}
-      {error ? <pre className="whitespace-pre-wrap rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</pre> : null}
+      {message ? <p className="ui-enter rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600">{message}</p> : null}
+      {error ? <pre className="ui-enter whitespace-pre-wrap rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</pre> : null}
 
       {filteredItems.length === 0 ? (
         <section className={"rounded-md border p-8 text-center " + panelClass}>
@@ -681,7 +681,7 @@ export function CollectorLibraryManager() {
                 key={item.relativePath}
                 onClick={() => toggleItem(item.relativePath)}
                 className={[
-                  "group overflow-hidden rounded-md border transition-[border-color,box-shadow,transform] duration-150 ease-out hover:-translate-y-0.5",
+                  "ui-enter ui-lift group overflow-hidden rounded-md border transition-[border-color,box-shadow,transform] duration-150 ease-out",
                   isDark ? "bg-white/[0.03]" : "bg-white",
                   isSelected ? "border-emerald-500 ring-2 ring-emerald-500/20" : isDark ? "border-white/[0.08]" : "border-zinc-200",
                 ].join(" ")}
@@ -762,7 +762,7 @@ export function CollectorLibraryManager() {
 
       {previewItem && isMounted ? createPortal((
         <div
-          className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/70 px-3 py-4 sm:px-6 sm:py-6"
+          className="ui-modal-overlay fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/70 px-3 py-4 sm:px-6 sm:py-6"
           role="dialog"
           aria-modal="true"
           onMouseDown={(event) => {
@@ -773,7 +773,7 @@ export function CollectorLibraryManager() {
         >
           <div
             className={[
-              "relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-md border shadow-2xl sm:max-h-[calc(100vh-3rem)]",
+              "ui-modal-panel relative flex max-h-[calc(100vh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-md border shadow-2xl sm:max-h-[calc(100vh-3rem)]",
               isDark ? "border-white/[0.10] bg-zinc-950 text-white" : "border-zinc-200 bg-white text-zinc-950",
             ].join(" ")}
             onMouseDown={(event) => event.stopPropagation()}

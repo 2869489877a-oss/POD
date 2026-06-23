@@ -816,7 +816,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               <article
                 key={asset.id}
                 className={[
-                  "group overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow,transform] duration-150 ease-out [contain-intrinsic-size:360px] [content-visibility:auto] hover:-translate-y-0.5 hover:shadow-sm",
+                  "ui-enter ui-lift group overflow-hidden rounded-md border bg-white transition-[border-color,box-shadow,transform] duration-150 ease-out [contain-intrinsic-size:360px] [content-visibility:auto] hover:shadow-sm",
                   isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
                 ].join(" ")}
               >
@@ -850,7 +850,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   </label>
                   <span
                     className={[
-                      "absolute right-3 top-3 rounded-md px-2.5 py-1 text-xs font-medium",
+                      "ui-status-pop absolute right-3 top-3 rounded-md px-2.5 py-1 text-xs font-medium",
                       statusStyles[asset.status],
                     ].join(" ")}
                   >
@@ -896,14 +896,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     <button
                       type="button"
                       onClick={() => openAssetDetail(asset.id)}
-                      className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                      className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
                     >
                       {t("查看图片", "Preview")}
                     </button>
                     <button
                       type="button"
                       onClick={() => void downloadAsset(asset)}
-                      className="rounded-md border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
+                      className="ui-press rounded-md border border-emerald-300 px-3 py-2 text-sm font-medium text-emerald-700 transition hover:bg-emerald-50"
                     >
                       {t("下载到本地", "Download")}
                     </button>
@@ -912,7 +912,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                     type="button"
                     onClick={() => void deleteAssetIds([asset.id])}
                     disabled={isDeleting || isResizeRunning}
-                    className="w-full rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
+                    className="ui-press w-full rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
                   >
                     {t("删除素材", "Delete Asset")}
                   </button>
@@ -937,12 +937,12 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       {isResizeDialogOpen ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6"
+          className="ui-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6"
           role="dialog"
           aria-modal="true"
           aria-labelledby="resize-dialog-title"
         >
-          <div className="w-full max-w-2xl rounded-md bg-white shadow-xl">
+          <div className="ui-modal-panel w-full max-w-2xl rounded-md bg-white shadow-xl">
             <div className="border-b border-zinc-200 px-6 py-4">
               <h3 id="resize-dialog-title" className="text-base font-semibold text-zinc-950">
                 {t("批量改尺寸", "Batch Resize")}
