@@ -4,9 +4,11 @@ export type AiGenerateImageClientResult = {
   error_message?: string | null;
   job_id?: string;
   model?: string | null;
+  progress_percent?: number | null;
   provider?: string | null;
   queued?: boolean;
   result_url?: string | null;
+  stage?: string | null;
   status?: string;
 };
 
@@ -15,8 +17,10 @@ type AiGenerateImageJob = {
   error_message?: string | null;
   id: string;
   model_id?: string | null;
+  progress_percent?: number | null;
   provider_type?: string | null;
   result_url?: string | null;
+  stage?: string | null;
   status?: string | null;
 };
 
@@ -27,6 +31,7 @@ type AiGenerateImageJobResponse = {
 
 type WaitForAiGenerateImageOptions = {
   intervalMs?: number;
+  onProgress?: (progress: { jobId: string; progressPercent: number | null; stage: string | null; status: string | null }) => void;
   onQueued?: (jobId: string) => void;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -40,15 +45,19 @@ export type AiApplyPatternClientResult = {
   job_id?: string;
   model?: string | null;
   pattern_url?: string | null;
+  progress_percent?: number | null;
   provider?: string | null;
   queued?: boolean;
+  stage?: string | null;
   status?: string;
 };
 
 type AiApplyPatternJob = {
   error_message?: string | null;
   id: string;
+  progress_percent?: number | null;
   result?: AiApplyPatternClientResult | null;
+  stage?: string | null;
   status?: string | null;
 };
 
@@ -116,6 +125,13 @@ export async function waitForAiGenerateImageJob(
       throw new Error("AI generation job was not found");
     }
 
+    options.onProgress?.({
+      jobId: job.id,
+      progressPercent: typeof job.progress_percent === "number" ? job.progress_percent : null,
+      stage: job.stage ?? null,
+      status: job.status ?? null,
+    });
+
     if (job.status === "completed") {
       if (!job.result_url) {
         throw new Error("AI generation completed without an image URL");
@@ -125,8 +141,10 @@ export async function waitForAiGenerateImageJob(
         asset_id: job.asset_id ?? undefined,
         job_id: job.id,
         model: job.model_id ?? undefined,
+        progress_percent: 100,
         provider: job.provider_type ?? undefined,
         result_url: job.result_url,
+        stage: "completed",
         status: "completed",
       };
     }
@@ -203,6 +221,13 @@ export async function waitForAiApplyPatternJob(
       throw new Error("AI apply-pattern job was not found");
     }
 
+    options.onProgress?.({
+      jobId: job.id,
+      progressPercent: typeof job.progress_percent === "number" ? job.progress_percent : null,
+      stage: job.stage ?? null,
+      status: job.status ?? null,
+    });
+
     if (job.status === "completed") {
       if (!job.result?.pattern_url || !job.result?.composite_url) {
         throw new Error("AI apply-pattern job completed without image URLs");
@@ -211,6 +236,8 @@ export async function waitForAiApplyPatternJob(
       return {
         ...job.result,
         job_id: job.id,
+        progress_percent: 100,
+        stage: "completed",
         status: "completed",
       };
     }

@@ -28,8 +28,10 @@ type BatchItem = {
   jobId?: string;
   model?: string;
   previewUrl: string;
+  progressPercent?: number;
   provider?: string;
   resultUrl?: string;
+  stage?: string | null;
   status: BatchStatus;
   uploadUrl?: string;
 };
@@ -110,6 +112,21 @@ const statusLabel: Record<BatchStatus, { en: string; zh: string }> = {
   failed: { en: "Failed", zh: "失败" },
   generating: { en: "Generating", zh: "生成中" },
   queued: { en: "Queued", zh: "待处理" },
+  uploading: { en: "Uploading", zh: "上传中" },
+};
+
+const aiStageLabel: Record<string, { en: string; zh: string }> = {
+  calling_ai: { en: "Calling AI model", zh: "调用 AI 模型" },
+  claimed: { en: "Worker claimed", zh: "worker 已领取" },
+  completed: { en: "Completed", zh: "已完成" },
+  failed: { en: "Failed", zh: "失败" },
+  postprocessing: { en: "Post-processing", zh: "后处理" },
+  preparing: { en: "Preparing", zh: "准备中" },
+  preparing_reference: { en: "Preparing reference", zh: "准备参考图" },
+  removing_background: { en: "Removing background", zh: "处理透明背景" },
+  saving_asset: { en: "Saving asset", zh: "保存素材" },
+  submitting: { en: "Submitting", zh: "提交任务" },
+  updating_product: { en: "Updating product", zh: "更新商品" },
   uploading: { en: "Uploading", zh: "上传中" },
 };
 
@@ -334,8 +351,10 @@ export function AiBatchPrintGenerator() {
       jobId: undefined,
       model: undefined,
       previewUrl: URL.createObjectURL(croppedFile),
+      progressPercent: undefined,
       provider: undefined,
       resultUrl: undefined,
+      stage: undefined,
       status: "queued",
       uploadUrl: undefined,
     });
@@ -413,14 +432,16 @@ export function AiBatchPrintGenerator() {
       jobId: undefined,
       model: undefined,
       provider: undefined,
+      progressPercent: item.uploadUrl ? 10 : 0,
       resultUrl: undefined,
+      stage: item.uploadUrl ? "generating" : "uploading",
       status: item.uploadUrl ? "generating" : "uploading",
     });
 
     try {
       const imageUrl = item.uploadUrl ?? await uploadSourceImage(item.file, controller.signal);
       if (!item.uploadUrl) {
-        updateItem(id, { status: "generating", uploadUrl: imageUrl });
+        updateItem(id, { progressPercent: 10, stage: "submitting", status: "generating", uploadUrl: imageUrl });
       }
 
       const response = await fetch("/api/ai/generate-image", {
@@ -440,6 +461,10 @@ export function AiBatchPrintGenerator() {
       });
       const data = await readAiGenerateImageResult(response, {
         onQueued: (jobId) => updateItem(id, { jobId }),
+        onProgress: (progress) => updateItem(id, {
+          progressPercent: progress.progressPercent ?? undefined,
+          stage: progress.stage,
+        }),
         signal: controller.signal,
       });
 
@@ -453,13 +478,16 @@ export function AiBatchPrintGenerator() {
         jobId: data.job_id,
         model: data.model ?? undefined,
         provider: data.provider ?? undefined,
+        progressPercent: 100,
         resultUrl: data.result_url ?? undefined,
+        stage: "completed",
         status: "completed",
       });
     } catch (error) {
       if (controller.signal.aborted) {
         updateItem(id, {
           error: t("已取消", "Cancelled"),
+          stage: "cancelled",
           status: "cancelled",
         });
         return;
@@ -467,6 +495,7 @@ export function AiBatchPrintGenerator() {
 
       updateItem(id, {
         error: error instanceof Error ? error.message : t("生成失败", "Generation failed"),
+        stage: "failed",
         status: "failed",
       });
     } finally {
@@ -926,6 +955,23 @@ export function AiBatchPrintGenerator() {
                         {selectedItem.model ? ` / ${selectedItem.model}` : ""}
                         {selectedItem.attempts > 0 ? ` / ${t(`已尝试 ${selectedItem.attempts} 次`, `${selectedItem.attempts} attempt(s)`)}` : ""}
                       </p>
+                      {selectedItem.status === "uploading" || selectedItem.status === "generating" ? (
+                        <div className="mt-3 w-full max-w-sm">
+                          <div className={`mb-1 flex justify-between text-[11px] ${isDark ? "text-slate-500" : "text-slate-500"}`}>
+                            <span>{selectedItem.stage && aiStageLabel[selectedItem.stage] ? t(aiStageLabel[selectedItem.stage].zh, aiStageLabel[selectedItem.stage].en) : t("处理中", "Processing")}</span>
+                            <span>{Math.max(1, Math.min(99, selectedItem.progressPercent ?? (selectedItem.status === "uploading" ? 5 : 12)))}%</span>
+                          </div>
+                          <div className={`h-2 overflow-hidden rounded-full ${isDark ? "bg-white/[0.08]" : "bg-slate-200"}`}>
+                            <div
+                              className="ui-progress-fill h-full rounded-full"
+                              style={{
+                                backgroundColor: colors.primary,
+                                width: `${Math.max(1, Math.min(99, selectedItem.progressPercent ?? (selectedItem.status === "uploading" ? 5 : 12)))}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {selectedItem.status !== "uploading" && selectedItem.status !== "generating" ? (

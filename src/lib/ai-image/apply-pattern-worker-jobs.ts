@@ -85,7 +85,10 @@ function inputFromRow(row: AiApplyPatternJobRow): AiApplyPatternJobInput {
   };
 }
 
-export async function executeApplyPattern(input: AiApplyPatternJobInput): Promise<AiApplyPatternResult> {
+export async function executeApplyPattern(
+  input: AiApplyPatternJobInput,
+  onProgress?: (patch: { progress_percent: number; stage: string }) => Promise<void> | void,
+): Promise<AiApplyPatternResult> {
   const garmentBuffer = await readImageBuffer(input.garmentUrl, {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
@@ -103,6 +106,7 @@ export async function executeApplyPattern(input: AiApplyPatternJobInput): Promis
     "The pattern should be on a transparent or white background, suitable for printing on fabric. Clean edges, high quality. Square format.",
   ].filter(Boolean).join(" ");
 
+  await onProgress?.({ progress_percent: 25, stage: "calling_ai" });
   const generation = await generateImageWithFallback(input.providerId, {
     height: patternHeight,
     prompt,
@@ -113,6 +117,7 @@ export async function executeApplyPattern(input: AiApplyPatternJobInput): Promis
   const resolved = generation.resolved;
   const patternBuffer = Buffer.from(result.imageBase64, "base64");
 
+  await onProgress?.({ progress_percent: 70, stage: "compositing" });
   const patternResized = await sharp(patternBuffer)
     .resize(patternWidth, patternHeight, { fit: "contain", background: { alpha: 0, b: 0, g: 0, r: 0 } })
     .ensureAlpha()
@@ -150,6 +155,7 @@ export async function executeApplyPattern(input: AiApplyPatternJobInput): Promis
   const patternPath = `derivatives/${datePath}/${id}-ai-pattern.png`;
   const compositePath = `derivatives/${datePath}/${id}-applied.png`;
 
+  await onProgress?.({ progress_percent: 88, stage: "saving_results" });
   const [patternSaved, compositeSaved] = await Promise.all([
     saveLocalAssetAtPath({ buffer: patternBuffer, relativePath: patternPath }),
     saveLocalAssetAtPath({ buffer: composited, relativePath: compositePath }),
@@ -227,7 +233,7 @@ export async function createAiApplyPatternJob(
 export async function getAiApplyPatternJob(supabase: SupabaseServiceClient, jobId: string) {
   const { data, error } = await supabase
     .from("ai_apply_pattern_jobs")
-    .select("id,garment_url,reference_url,asset_id,style_description,provider_id,position,opacity,blend_mode,status,result,error_message,created_at,updated_at")
+    .select("id,garment_url,reference_url,asset_id,style_description,provider_id,position,opacity,blend_mode,status,result,error_message,stage,progress_percent,started_at,finished_at,created_at,updated_at")
     .eq("id", jobId)
     .single();
 
@@ -236,6 +242,27 @@ export async function getAiApplyPatternJob(supabase: SupabaseServiceClient, jobI
   }
 
   return data;
+}
+
+async function updateAiApplyPatternProgress(
+  supabase: SupabaseServiceClient,
+  jobId: string,
+  patch: {
+    finished_at?: string | null;
+    progress_percent?: number;
+    stage?: string;
+    started_at?: string | null;
+    status?: string;
+  },
+) {
+  const { error } = await supabase
+    .from("ai_apply_pattern_jobs")
+    .update(patch)
+    .eq("id", jobId);
+
+  if (error) {
+    throw new Error(`贴图任务进度回写失败：${error.message}`);
+  }
 }
 
 export async function claimAiApplyPatternJob(supabase: SupabaseServiceClient) {
@@ -253,7 +280,14 @@ export async function claimAiApplyPatternJob(supabase: SupabaseServiceClient) {
   for (const row of (data ?? []) as Array<{ id: string; style_description: string }>) {
     const { data: claimed } = await supabase
       .from("ai_apply_pattern_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 5,
+        stage: "claimed",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", row.id)
       .eq("status", "pending")
       .select("id,style_description")
@@ -282,16 +316,26 @@ export async function executeAiApplyPatternJob(
   try {
     await supabase
       .from("ai_apply_pattern_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 10,
+        stage: "loading_garment",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", jobId);
 
-    const result = await executeApplyPattern(input);
+    const result = await executeApplyPattern(input, (patch) => updateAiApplyPatternProgress(supabase, jobId, patch));
     const resultWithJob = { ...result, job_id: jobId };
     const { error } = await supabase
       .from("ai_apply_pattern_jobs")
       .update({
         error_message: null,
+        finished_at: new Date().toISOString(),
+        progress_percent: 100,
         result: resultWithJob,
+        stage: "completed",
         status: "completed",
       })
       .eq("id", jobId);
@@ -305,7 +349,13 @@ export async function executeAiApplyPatternJob(
     const errorMessage = error instanceof Error ? error.message : "贴图任务失败";
     await supabase
       .from("ai_apply_pattern_jobs")
-      .update({ error_message: errorMessage, status: "failed" })
+      .update({
+        error_message: errorMessage,
+        finished_at: new Date().toISOString(),
+        progress_percent: 100,
+        stage: "failed",
+        status: "failed",
+      })
       .eq("id", jobId);
     throw new Error(errorMessage);
   }
@@ -320,6 +370,9 @@ export async function failAiApplyPatternJob(
     .from("ai_apply_pattern_jobs")
     .update({
       error_message: errorMessage,
+      finished_at: new Date().toISOString(),
+      progress_percent: 100,
+      stage: "failed",
       status: "failed",
     })
     .eq("id", jobId)

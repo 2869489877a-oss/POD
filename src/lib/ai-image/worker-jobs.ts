@@ -113,6 +113,27 @@ async function getAiImageJob(supabase: SupabaseServiceClient, jobId: string) {
   return data as unknown as AiImageJobRow;
 }
 
+async function updateAiImageProgress(
+  supabase: SupabaseServiceClient,
+  jobId: string,
+  patch: {
+    finished_at?: string | null;
+    progress_percent?: number;
+    stage?: string;
+    started_at?: string | null;
+    status?: string;
+  },
+) {
+  const { error } = await supabase
+    .from("ai_image_jobs")
+    .update(patch)
+    .eq("id", jobId);
+
+  if (error) {
+    throw new Error(`AI 任务进度回写失败: ${error.message}`);
+  }
+}
+
 export async function createAiGenerateImageJob(
   supabase: SupabaseServiceClient,
   input: AiGenerateImageJobInput,
@@ -167,7 +188,14 @@ export async function claimAiGenerateImageJob(supabase: SupabaseServiceClient) {
   for (const row of (data ?? []) as Array<{ id: string; prompt: string }>) {
     const { data: claimed } = await supabase
       .from("ai_image_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 5,
+        stage: "claimed",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", row.id)
       .eq("status", "pending")
       .select("id,prompt")
@@ -196,13 +224,24 @@ export async function executeAiGenerateImageJob(
   try {
     await supabase
       .from("ai_image_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 10,
+        stage: "preparing",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", jobId);
 
     const fastFallback = input.routingProfile === "grid_3x3_fast_fallback";
+    if (input.referenceUrl && fastFallback) {
+      await updateAiImageProgress(supabase, jobId, { progress_percent: 16, stage: "preparing_reference" });
+    }
     const referenceDataUrl = input.referenceUrl && fastFallback
       ? await resolveReferenceImageDataUrl(input.referenceUrl)
       : undefined;
+    await updateAiImageProgress(supabase, jobId, { progress_percent: 25, stage: "calling_ai" });
     const generation = await generateImageWithFallback(input.providerId, {
       height: input.height,
       prompt: input.prompt,
@@ -219,7 +258,10 @@ export async function executeAiGenerateImageJob(
     let outputBuffer: Buffer = Buffer.from(result.imageBase64, "base64");
     let outputMimeType = result.mimeType;
 
+    await updateAiImageProgress(supabase, jobId, { progress_percent: 68, stage: "postprocessing" });
+
     if (input.transparentBackground) {
+      await updateAiImageProgress(supabase, jobId, { progress_percent: 76, stage: "removing_background" });
       outputBuffer = await makeBackgroundTransparent(outputBuffer, {
         feather: input.backgroundFeather,
         tolerance: input.backgroundTolerance,
@@ -229,6 +271,7 @@ export async function executeAiGenerateImageJob(
     }
 
     if (input.saveToAssets) {
+      await updateAiImageProgress(supabase, jobId, { progress_percent: 86, stage: "saving_asset" });
       const ext = outputMimeType === "image/png" ? "png" : "jpg";
       const metadata = await sharp(outputBuffer).metadata();
       const outputWidth = metadata.width ?? input.width;
@@ -266,6 +309,7 @@ export async function executeAiGenerateImageJob(
     }
 
     if (input.productDraftId && assetId) {
+      await updateAiImageProgress(supabase, jobId, { progress_percent: 94, stage: "updating_product" });
       const { data: draft, error: draftError } = await supabase
         .from("product_drafts")
         .select("images")
@@ -296,10 +340,13 @@ export async function executeAiGenerateImageJob(
         asset_id: assetId,
         attempts: generation.attempts,
         error_message: null,
+        finished_at: new Date().toISOString(),
         model_id: finalProvider.modelId,
+        progress_percent: 100,
         provider_id: finalProvider.id,
         provider_type: finalProvider.providerType,
         result_url: resultUrl,
+        stage: "completed",
         status: "completed",
       })
       .eq("id", jobId);
@@ -323,7 +370,13 @@ export async function executeAiGenerateImageJob(
     const errorMessage = normalizeAiImageError(error);
     await supabase
       .from("ai_image_jobs")
-      .update({ error_message: errorMessage, status: "failed" })
+      .update({
+        error_message: errorMessage,
+        finished_at: new Date().toISOString(),
+        progress_percent: 100,
+        stage: "failed",
+        status: "failed",
+      })
       .eq("id", jobId);
     throw new Error(errorMessage);
   }
@@ -338,6 +391,9 @@ export async function failAiGenerateImageJob(
     .from("ai_image_jobs")
     .update({
       error_message: errorMessage,
+      finished_at: new Date().toISOString(),
+      progress_percent: 100,
+      stage: "failed",
       status: "failed",
     })
     .eq("id", jobId)

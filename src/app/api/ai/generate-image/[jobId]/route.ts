@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const supabase = createSupabaseServiceRoleClient();
   const { data, error } = await supabase
     .from("ai_image_jobs")
-    .select("id,provider_type,model_id,prompt,width,height,status,result_url,asset_id,error_message,attempts,created_at,updated_at")
+    .select("id,provider_type,model_id,prompt,width,height,status,result_url,asset_id,error_message,attempts,stage,progress_percent,started_at,finished_at,created_at,updated_at")
     .eq("id", jobId)
     .single();
 

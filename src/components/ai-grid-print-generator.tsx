@@ -43,8 +43,10 @@ type AiImageJobPollResult = {
     error_message?: string | null;
     id: string;
     model_id?: string | null;
+    progress_percent?: number | null;
     provider_type?: string | null;
     result_url?: string | null;
+    stage?: string | null;
     status: "pending" | "processing" | "completed" | "failed";
   };
 };
@@ -76,7 +78,9 @@ type SplitGridJobPollResult = {
   job?: {
     error_message?: string | null;
     id: string;
+    progress_percent?: number | null;
     result?: SplitGridResult | null;
+    stage?: string | null;
     status: "pending" | "processing" | "completed" | "failed";
   };
 };
@@ -942,7 +946,11 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         throw new Error(data.job.error_message || t("AI 生成失败", "AI generation failed"));
       }
 
-      setProgressPercent((current) => Math.min(86, Math.max(current + 1, current)));
+      const workerProgress = typeof data.job.progress_percent === "number" ? data.job.progress_percent : null;
+      setProgressPercent((current) => {
+        const mapped = workerProgress === null ? current + 1 : 30 + Math.round(workerProgress * 0.56);
+        return Math.min(86, Math.max(current, mapped));
+      });
     }
 
     throw new Error(t("AI 生成等待超时，请稍后在生图记录里查看结果", "AI generation timed out. Check generation history later."));
@@ -972,7 +980,11 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         throw new Error(data.job.error_message || t(`拆分${gridNameZh}结果失败`, `Failed to split ${gridLabel} result`));
       }
 
-      setProgressPercent((current) => Math.min(98, Math.max(current + 1, current)));
+      const workerProgress = typeof data.job.progress_percent === "number" ? data.job.progress_percent : null;
+      setProgressPercent((current) => {
+        const mapped = workerProgress === null ? current + 1 : 88 + Math.round(workerProgress * 0.1);
+        return Math.min(98, Math.max(current, mapped));
+      });
     }
 
     throw new Error(t("拆图等待超时，请稍后在素材库查看结果", "Split task timed out. Check Assets later."));

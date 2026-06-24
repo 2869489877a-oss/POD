@@ -416,7 +416,7 @@ export async function createAiSplitGridJob(
 export async function getAiSplitGridJob(supabase: SupabaseServiceClient, jobId: string) {
   const { data, error } = await supabase
     .from("ai_split_grid_jobs")
-    .select("id,image_url,rows,columns,save_to_assets,source_names,split_mode,transparent_background,status,result,error_message,created_at,updated_at")
+    .select("id,image_url,rows,columns,save_to_assets,source_names,split_mode,transparent_background,status,result,error_message,stage,progress_percent,started_at,finished_at,created_at,updated_at")
     .eq("id", jobId)
     .single();
 
@@ -425,6 +425,27 @@ export async function getAiSplitGridJob(supabase: SupabaseServiceClient, jobId: 
   }
 
   return data;
+}
+
+async function updateAiSplitGridProgress(
+  supabase: SupabaseServiceClient,
+  jobId: string,
+  patch: {
+    finished_at?: string | null;
+    progress_percent?: number;
+    stage?: string;
+    started_at?: string | null;
+    status?: string;
+  },
+) {
+  const { error } = await supabase
+    .from("ai_split_grid_jobs")
+    .update(patch)
+    .eq("id", jobId);
+
+  if (error) {
+    throw new Error(`拆图任务进度回写失败：${error.message}`);
+  }
 }
 
 export async function claimAiSplitGridJob(supabase: SupabaseServiceClient) {
@@ -442,7 +463,14 @@ export async function claimAiSplitGridJob(supabase: SupabaseServiceClient) {
   for (const row of (data ?? []) as Array<{ id: string; image_url: string }>) {
     const { data: claimed } = await supabase
       .from("ai_split_grid_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 5,
+        stage: "claimed",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", row.id)
       .eq("status", "pending")
       .select("id,image_url")
@@ -471,15 +499,27 @@ export async function executeAiSplitGridJob(
   try {
     await supabase
       .from("ai_split_grid_jobs")
-      .update({ error_message: null, status: "processing" })
+      .update({
+        error_message: null,
+        finished_at: null,
+        progress_percent: 10,
+        stage: "loading_source",
+        started_at: new Date().toISOString(),
+        status: "processing",
+      })
       .eq("id", jobId);
 
+    await updateAiSplitGridProgress(supabase, jobId, { progress_percent: 30, stage: "splitting_grid" });
     const result = await executeSplitGrid(input);
+    await updateAiSplitGridProgress(supabase, jobId, { progress_percent: 92, stage: "saving_results" });
     const { error } = await supabase
       .from("ai_split_grid_jobs")
       .update({
         error_message: null,
+        finished_at: new Date().toISOString(),
+        progress_percent: 100,
         result,
+        stage: "completed",
         status: "completed",
       })
       .eq("id", jobId);
@@ -493,7 +533,13 @@ export async function executeAiSplitGridJob(
     const errorMessage = error instanceof Error ? error.message : "拆图任务失败";
     await supabase
       .from("ai_split_grid_jobs")
-      .update({ error_message: errorMessage, status: "failed" })
+      .update({
+        error_message: errorMessage,
+        finished_at: new Date().toISOString(),
+        progress_percent: 100,
+        stage: "failed",
+        status: "failed",
+      })
       .eq("id", jobId);
     throw new Error(errorMessage);
   }
@@ -508,6 +554,9 @@ export async function failAiSplitGridJob(
     .from("ai_split_grid_jobs")
     .update({
       error_message: errorMessage,
+      finished_at: new Date().toISOString(),
+      progress_percent: 100,
+      stage: "failed",
       status: "failed",
     })
     .eq("id", jobId)
