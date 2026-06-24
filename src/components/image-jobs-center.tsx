@@ -46,7 +46,7 @@ type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
 };
 
-type WorkerJobType = Exclude<ImageJob["job_type"], "enhance"> | "export_images_zip" | "ai_generate_image";
+type WorkerJobType = Exclude<ImageJob["job_type"], "enhance"> | "export_images_zip" | "ai_generate_image" | "ai_split_grid" | "ai_apply_pattern";
 
 type WorkerSlot = {
   asset_filename?: string | null;
@@ -104,7 +104,9 @@ const jobTypeLabels: Record<ImageJob["job_type"], { zh: string; en: string }> = 
 };
 
 const workerJobTypeLabels: Record<WorkerJobType, { zh: string; en: string }> = {
+  ai_apply_pattern: { zh: "AI 贴图", en: "AI Apply Pattern" },
   ai_generate_image: { zh: "AI 生图", en: "AI Image" },
+  ai_split_grid: { zh: "AI 拆图", en: "AI Split Grid" },
   cutout: jobTypeLabels.cutout,
   export_images_zip: { zh: "图片 ZIP 导出", en: "Image ZIP Export" },
   infringement_check: jobTypeLabels.infringement_check,

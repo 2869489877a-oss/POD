@@ -7,7 +7,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
-const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "export_images_zip", "ai_generate_image"] as const;
+const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
 
@@ -33,6 +33,14 @@ type ExportQueueRow = {
 };
 
 type AiImageQueueRow = {
+  status?: string | null;
+};
+
+type AiSplitGridQueueRow = {
+  status?: string | null;
+};
+
+type AiApplyPatternQueueRow = {
   status?: string | null;
 };
 
@@ -145,11 +153,31 @@ async function readQueueState() {
     throw new Error(aiError.message);
   }
 
+  const { data: splitRows, error: splitError } = await supabase
+    .from("ai_split_grid_jobs")
+    .select("status")
+    .in("status", ["pending", "processing"]);
+
+  if (splitError) {
+    throw new Error(splitError.message);
+  }
+
+  const { data: applyRows, error: applyError } = await supabase
+    .from("ai_apply_pattern_jobs")
+    .select("status")
+    .in("status", ["pending", "processing"]);
+
+  if (applyError) {
+    throw new Error(applyError.message);
+  }
+
   const queue = {
     active_jobs:
       (activeJobRows?.length ?? 0) +
       ((exportRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((aiRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length),
+      ((aiRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
+      ((splitRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
+      ((applyRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length),
     failed: 0,
     pending: 0,
     processing: 0,
@@ -191,6 +219,28 @@ async function readQueueState() {
     if (row.status === "processing") {
       queue.processing += 1;
       queueByType.ai_generate_image.processing += 1;
+    }
+  }
+
+  for (const row of (splitRows ?? []) as AiSplitGridQueueRow[]) {
+    if (row.status === "pending") {
+      queue.pending += 1;
+      queueByType.ai_split_grid.pending += 1;
+    }
+    if (row.status === "processing") {
+      queue.processing += 1;
+      queueByType.ai_split_grid.processing += 1;
+    }
+  }
+
+  for (const row of (applyRows ?? []) as AiApplyPatternQueueRow[]) {
+    if (row.status === "pending") {
+      queue.pending += 1;
+      queueByType.ai_apply_pattern.pending += 1;
+    }
+    if (row.status === "processing") {
+      queue.processing += 1;
+      queueByType.ai_apply_pattern.processing += 1;
     }
   }
 

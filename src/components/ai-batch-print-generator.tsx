@@ -6,6 +6,7 @@ import Link from "next/link";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageCropDialog } from "@/components/image-crop-dialog";
+import { readAiGenerateImageResult, type AiGenerateImageClientResult } from "@/lib/ai-image/client-jobs";
 import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -33,14 +34,7 @@ type BatchItem = {
   uploadUrl?: string;
 };
 
-type GenerateResult = {
-  asset_id?: string;
-  error?: string;
-  job_id?: string;
-  model?: string;
-  provider?: string;
-  result_url?: string;
-};
+type GenerateResult = AiGenerateImageClientResult;
 
 type GenerationJob = {
   asset_id?: string | null;
@@ -434,15 +428,20 @@ export function AiBatchPrintGenerator() {
           height: 1024,
           prompt: options.prompt,
           provider_id: options.providerId,
+          queue: true,
           reference_url: imageUrl,
           save_to_assets: true,
+          wait: false,
           width: 1024,
         }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
         signal: controller.signal,
       });
-      const data = await readJsonResponse<GenerateResult>(response);
+      const data = await readAiGenerateImageResult(response, {
+        onQueued: (jobId) => updateItem(id, { jobId }),
+        signal: controller.signal,
+      });
 
       if (!response.ok || !data.result_url) {
         if (data.job_id) updateItem(id, { jobId: data.job_id });
@@ -450,11 +449,11 @@ export function AiBatchPrintGenerator() {
       }
 
       updateItem(id, {
-        assetId: data.asset_id,
+        assetId: data.asset_id ?? undefined,
         jobId: data.job_id,
-        model: data.model,
-        provider: data.provider,
-        resultUrl: data.result_url,
+        model: data.model ?? undefined,
+        provider: data.provider ?? undefined,
+        resultUrl: data.result_url ?? undefined,
         status: "completed",
       });
     } catch (error) {

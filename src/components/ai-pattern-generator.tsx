@@ -5,6 +5,7 @@
 import { type FormEvent, useState } from "react";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { DropZone } from "@/components/drop-zone";
+import { readAiApplyPatternResult, readAiGenerateImageResult } from "@/lib/ai-image/client-jobs";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
 export function AiPatternGenerator() {
@@ -64,20 +65,46 @@ export function AiPatternGenerator() {
         const res = await fetch("/api/ai/generate-and-apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ garment_url: finalGarmentUrl, style_description: styleDescription.trim(), reference_url: finalRefUrl, opacity: 90, blend_mode: "multiply" }),
+          body: JSON.stringify({
+            blend_mode: "multiply",
+            garment_url: finalGarmentUrl,
+            opacity: 90,
+            queue: true,
+            reference_url: finalRefUrl,
+            style_description: styleDescription.trim(),
+            wait: false,
+          }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setApplyResult(data);
+        const data = await readAiApplyPatternResult(res);
+        setApplyResult({
+          composite_url: data.composite_url ?? undefined,
+          pattern_url: data.pattern_url ?? undefined,
+        });
       } else {
-        const res = await fetch("/api/ai/generate-pattern", {
+        const patternPrompt = [
+          `Generate a seamless print pattern design for clothing/apparel: ${styleDescription.trim()}.`,
+          "The pattern should have a transparent or solid color background, suitable for printing on fabric.",
+          "High quality, clean edges, vector-like quality.",
+          finalRefUrl ? "Use the reference image as visual style guidance." : "",
+        ].filter(Boolean).join(" ");
+        const res = await fetch("/api/ai/generate-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reference_url: finalRefUrl, style_description: styleDescription.trim() }),
+          body: JSON.stringify({
+            height: 1024,
+            prompt: patternPrompt,
+            queue: true,
+            reference_url: finalRefUrl,
+            save_to_assets: true,
+            wait: false,
+            width: 1024,
+          }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        setResult(data);
+        const data = await readAiGenerateImageResult(res);
+        setResult({
+          asset_id: data.asset_id ?? undefined,
+          pattern_url: data.result_url ?? undefined,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("生成失败", "Generation failed"));

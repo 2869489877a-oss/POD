@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { DropZone } from "@/components/drop-zone";
 import { ImageCropDialog } from "@/components/image-crop-dialog";
+import { readAiGenerateImageResult, type AiGenerateImageClientResult } from "@/lib/ai-image/client-jobs";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -14,12 +15,7 @@ type ProviderOption = {
   display_name: string;
 };
 
-type GenerateResult = {
-  error?: string;
-  result_url?: string;
-  provider?: string;
-  model?: string;
-};
+type GenerateResult = AiGenerateImageClientResult;
 
 type GenerationStatus = "idle" | "uploading" | "generating" | "success" | "failed" | "cancelled";
 type GenerationStage = "uploading" | "generating";
@@ -327,12 +323,13 @@ export function AiBackgroundGenerator() {
           prompt: finalPrompt,
           reference_url: imageUrl,
           provider_id: selectedProvider || undefined,
+          queue: true,
           save_to_assets: true,
           transparent_background: wantsTransparent,
+          wait: false,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("生成失败", "Generation failed"));
+      const data = await readAiGenerateImageResult(res, { signal: controller.signal });
       setResult(data);
       setGenerationStatus("success");
     } catch (err) {

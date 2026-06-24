@@ -23,12 +23,14 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip,ai_generate_image")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
 const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
+const AI_SPLIT_GRID_JOB_TYPE = "ai_split_grid";
+const AI_APPLY_PATTERN_JOB_TYPE = "ai_apply_pattern";
 const AI_GENERATE_IMAGE_JOB_TYPE = "ai_generate_image";
 const LOCAL_ASSETS_DIR = path.resolve(
   process.env.LOCAL_ASSETS_DIR ||
@@ -52,6 +54,8 @@ const workerSlots = new Map();
 let stateWriteQueue = Promise.resolve();
 let infringementDetector = null;
 let aiImageWorker = null;
+let aiSplitGridWorker = null;
+let aiApplyPatternWorker = null;
 
 process.on("SIGINT", () => {
   stopping = true;
@@ -319,6 +323,48 @@ function getAiImageWorker() {
     executeAiGenerateImageJob: aiJobs.executeAiGenerateImageJob,
   };
   return aiImageWorker;
+}
+
+function getAiSplitGridWorker() {
+  if (aiSplitGridWorker) {
+    return aiSplitGridWorker;
+  }
+
+  const jiti = createJiti(import.meta.url, {
+    alias: {
+      "@": path.resolve("src"),
+      "server-only": path.resolve("tools", "worker-server-only-stub.mjs"),
+    },
+    interopDefault: true,
+  });
+  const splitGridJobs = jiti("../src/lib/ai-image/split-grid-worker-jobs.ts");
+  const supabaseServer = jiti("../src/lib/supabase/server.ts");
+  aiSplitGridWorker = {
+    createSupabaseServiceRoleClient: supabaseServer.createSupabaseServiceRoleClient,
+    executeAiSplitGridJob: splitGridJobs.executeAiSplitGridJob,
+  };
+  return aiSplitGridWorker;
+}
+
+function getAiApplyPatternWorker() {
+  if (aiApplyPatternWorker) {
+    return aiApplyPatternWorker;
+  }
+
+  const jiti = createJiti(import.meta.url, {
+    alias: {
+      "@": path.resolve("src"),
+      "server-only": path.resolve("tools", "worker-server-only-stub.mjs"),
+    },
+    interopDefault: true,
+  });
+  const applyPatternJobs = jiti("../src/lib/ai-image/apply-pattern-worker-jobs.ts");
+  const supabaseServer = jiti("../src/lib/supabase/server.ts");
+  aiApplyPatternWorker = {
+    createSupabaseServiceRoleClient: supabaseServer.createSupabaseServiceRoleClient,
+    executeAiApplyPatternJob: applyPatternJobs.executeAiApplyPatternJob,
+  };
+  return aiApplyPatternWorker;
 }
 
 async function computeAverageHash(buffer) {
@@ -1306,6 +1352,36 @@ async function processAiGenerateImage(job) {
   };
 }
 
+async function processAiSplitGrid(job) {
+  const jobId = job.job_id || job.item_id;
+  if (!jobId) {
+    throw new Error("ai_split_grid job is missing job_id");
+  }
+
+  const worker = getAiSplitGridWorker();
+  const supabase = worker.createSupabaseServiceRoleClient();
+  const result = await worker.executeAiSplitGridJob(supabase, jobId);
+
+  return {
+    ai_split_grid: result,
+  };
+}
+
+async function processAiApplyPattern(job) {
+  const jobId = job.job_id || job.item_id;
+  if (!jobId) {
+    throw new Error("ai_apply_pattern job is missing job_id");
+  }
+
+  const worker = getAiApplyPatternWorker();
+  const supabase = worker.createSupabaseServiceRoleClient();
+  const result = await worker.executeAiApplyPatternJob(supabase, jobId);
+
+  return {
+    ai_apply_pattern: result,
+  };
+}
+
 function appendFile(form, name, file) {
   if (!file) return;
   form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
@@ -1358,6 +1434,26 @@ async function claimJob() {
     }
   }
 
+  if (JOB_TYPES.includes(AI_SPLIT_GRID_JOB_TYPE)) {
+    const splitData = await apiFetch("/api/local-worker/ai-split-grid/claim", {
+      method: "POST",
+    });
+
+    if (splitData.job) {
+      return splitData.job;
+    }
+  }
+
+  if (JOB_TYPES.includes(AI_APPLY_PATTERN_JOB_TYPE)) {
+    const applyData = await apiFetch("/api/local-worker/ai-apply-pattern/claim", {
+      method: "POST",
+    });
+
+    if (applyData.job) {
+      return applyData.job;
+    }
+  }
+
   if (!JOB_TYPES.includes(AI_GENERATE_IMAGE_JOB_TYPE)) {
     return null;
   }
@@ -1370,6 +1466,14 @@ async function claimJob() {
 }
 
 async function completeJob(job, result) {
+  if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
+    return result.ai_split_grid;
+  }
+
+  if (job.job_type === AI_APPLY_PATTERN_JOB_TYPE) {
+    return result.ai_apply_pattern;
+  }
+
   if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
     return result.ai_image;
   }
@@ -1425,6 +1529,24 @@ async function completeJob(job, result) {
 }
 
 async function failJob(job, error) {
+  if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/ai-split-grid/${encodeURIComponent(jobId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
+  if (job.job_type === AI_APPLY_PATTERN_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/ai-apply-pattern/${encodeURIComponent(jobId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
     const jobId = job.job_id || job.item_id;
     return apiFetch(`/api/local-worker/ai-images/${encodeURIComponent(jobId)}/fail`, {
@@ -1451,6 +1573,14 @@ async function failJob(job, error) {
 }
 
 async function processJob(job) {
+  if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
+    return processAiSplitGrid(job);
+  }
+
+  if (job.job_type === AI_APPLY_PATTERN_JOB_TYPE) {
+    return processAiApplyPattern(job);
+  }
+
   if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
     return processAiGenerateImage(job);
   }

@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- Dynamic AI previews can use arbitrary asset URLs. */
 
 import { type ChangeEvent, type FormEvent, useEffect, useState } from "react";
+import { readAiGenerateImageResult, type AiGenerateImageClientResult } from "@/lib/ai-image/client-jobs";
 import { useSettings, ACCENT_COLORS } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -13,14 +14,7 @@ type ProviderOption = {
   model_id: string;
 };
 
-type GenerateResult = {
-  job_id?: string;
-  asset_id?: string;
-  result_url?: string;
-  provider?: string;
-  model?: string;
-  error?: string;
-};
+type GenerateResult = AiGenerateImageClientResult;
 
 type GenerationStatus = "idle" | "submitting" | "generating" | "success" | "failed";
 type GenerationStage = "submitting" | "generating";
@@ -170,11 +164,12 @@ export function AiImageGenerator() {
           style: style.trim() || undefined,
           provider_id: selectedProvider || undefined,
           reference_url: referenceUrl,
+          queue: true,
           save_to_assets: true,
+          wait: false,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || t("生成失败", "Generation failed"));
+      const data = await readAiGenerateImageResult(res);
       setResult(data);
       setGenerationStatus("success");
     } catch (err) {

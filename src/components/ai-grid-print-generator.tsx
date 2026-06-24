@@ -63,9 +63,22 @@ type SplitGridResult = {
   columns?: number;
   error?: string;
   height?: number;
+  job_id?: string;
   pieces?: SplitGridPiece[];
+  queued?: boolean;
   rows?: number;
+  status?: string;
   width?: number;
+};
+
+type SplitGridJobPollResult = {
+  error?: string;
+  job?: {
+    error_message?: string | null;
+    id: string;
+    result?: SplitGridResult | null;
+    status: "pending" | "processing" | "completed" | "failed";
+  };
 };
 
 type UploadGridResult = {
@@ -935,6 +948,36 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     throw new Error(t("AI 生成等待超时，请稍后在生图记录里查看结果", "AI generation timed out. Check generation history later."));
   }
 
+  async function waitForSplitGrid(jobId: string, signal?: AbortSignal) {
+    const deadline = Date.now() + 5 * 60 * 1000;
+
+    while (Date.now() < deadline) {
+      await delay(1500, signal);
+
+      const response = await fetch(`/api/ai/split-grid/${encodeURIComponent(jobId)}`, {
+        cache: "no-store",
+        signal,
+      });
+      const data = await readJsonResponse<SplitGridJobPollResult>(response);
+
+      if (!response.ok || !data.job) {
+        throw new Error(data.error || t("读取拆图状态失败", "Failed to read split status"));
+      }
+
+      if (data.job.status === "completed" && data.job.result?.pieces?.length) {
+        return data.job.result;
+      }
+
+      if (data.job.status === "failed") {
+        throw new Error(data.job.error_message || t(`拆分${gridNameZh}结果失败`, `Failed to split ${gridLabel} result`));
+      }
+
+      setProgressPercent((current) => Math.min(98, Math.max(current + 1, current)));
+    }
+
+    throw new Error(t("拆图等待超时，请稍后在素材库查看结果", "Split task timed out. Check Assets later."));
+  }
+
   async function generateFromReference(input: {
     height: number;
     prompt: string;
@@ -984,28 +1027,33 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       body: JSON.stringify({
         columns: gridSize,
         image_url: resultUrl,
+        queue: true,
         rows: gridSize,
         save_to_assets: true,
         source_names: sourceNames,
         split_mode: "grid",
         transparent_background: selectedBackgroundColor === "transparent",
+        wait: false,
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
       signal,
     });
     const data = await readJsonResponse<SplitGridResult>(response);
+    const result = data.queued && data.job_id
+      ? await waitForSplitGrid(data.job_id, signal)
+      : data;
 
-    if (!response.ok || !data.pieces?.length) {
+    if ((!response.ok && !data.queued) || !result.pieces?.length) {
       throw new Error(data.error || t(`拆分${gridNameZh}结果失败`, `Failed to split ${gridLabel} result`));
     }
 
-    if (data.pieces.length !== totalCells) {
-      throw new Error(t(`拆分结果数量不对：应为 ${totalCells} 张，实际 ${data.pieces.length} 张`, `Split count mismatch: expected ${totalCells}, got ${data.pieces.length}`));
+    if (result.pieces.length !== totalCells) {
+      throw new Error(t(`拆分结果数量不对：应为 ${totalCells} 张，实际 ${result.pieces.length} 张`, `Split count mismatch: expected ${totalCells}, got ${result.pieces.length}`));
     }
 
-    setSplitPieces(data.pieces);
-    return data.pieces;
+    setSplitPieces(result.pieces);
+    return result.pieces;
   }
 
   async function runGridExtraction() {
