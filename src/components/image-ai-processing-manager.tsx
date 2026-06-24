@@ -271,8 +271,14 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
         setSummary(null);
         setMessage(
           t(
-            `已提交到本地 worker 队列：共 ${data.total ?? assetIds.length} 张。请启动本地 worker，任务 ID：${data.job_id ?? "未知"}`,
-            `Submitted to the local worker queue: ${data.total ?? assetIds.length} image(s). Start the local worker. Job ID: ${data.job_id ?? "unknown"}`
+            `已提交到后台 worker：共 ${data.total ?? assetIds.length} 张，正在自动处理。任务 ID：${data.job_id ?? "未知"}，稍后刷新即可查看结果。`,
+            `Submitted to the background worker: ${data.total ?? assetIds.length} image(s). Job ID: ${data.job_id ?? "unknown"}. Refresh shortly to see results.`
+          ),
+        );
+        setMessage(
+          t(
+            `已提交到后台 worker：共 ${data.total ?? assetIds.length} 张，正在自动处理。任务 ID：${data.job_id ?? "未知"}，稍后刷新即可查看结果。`,
+            `Submitted to the background worker: ${data.total ?? assetIds.length} image(s). Job ID: ${data.job_id ?? "unknown"}. Refresh shortly to see results.`
           ),
         );
         await refreshAssets();
