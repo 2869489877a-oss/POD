@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { createAssetDeleteJob } from "@/lib/assets/delete-jobs";
 import {
   deleteAssets,
   getAssetUsageSummary,
@@ -96,10 +97,10 @@ export async function GET(request: Request) {
 
 export async function DELETE(request: Request) {
   const startedAt = performance.now();
-  let body: { asset_ids?: unknown; dry_run?: unknown; force?: unknown };
+  let body: { asset_ids?: unknown; dry_run?: unknown; force?: unknown; sync?: unknown };
 
   try {
-    body = (await request.json()) as { asset_ids?: unknown; dry_run?: unknown; force?: unknown };
+    body = (await request.json()) as { asset_ids?: unknown; dry_run?: unknown; force?: unknown; sync?: unknown };
   } catch {
     return NextResponse.json({ error: "无法读取删除参数", results: [] }, { status: 400 });
   }
@@ -120,6 +121,54 @@ export async function DELETE(request: Request) {
           usage,
         },
         { status: 200 },
+      );
+    }
+
+    if (requiresConfirmation && body.force !== true) {
+      return NextResponse.json(
+        {
+          message: "Asset is used by jobs, mockups, or product drafts. Confirm force delete to continue.",
+          requires_confirmation: true,
+          results: [],
+          usage,
+        },
+        { status: 409 },
+      );
+    }
+
+    if (body.sync !== true) {
+      const supabase = createSupabaseServiceRoleClient();
+      const job = await createAssetDeleteJob(supabase, assetIds, {
+        force: body.force === true,
+      });
+
+      await logActivity({
+        action: "assets.delete.queued",
+        durationMs: elapsedMs(startedAt),
+        entityType: "assets",
+        metadata: {
+          asset_count: assetIds.length,
+          forced: body.force === true,
+          job_id: job.id,
+        },
+        request,
+        status: "success",
+      });
+
+      return NextResponse.json(
+        {
+          failed_count: 0,
+          job,
+          job_id: job.id,
+          queued: true,
+          results: assetIds.map((assetId) => ({
+            asset_id: assetId,
+            success: true,
+          })),
+          success_count: assetIds.length,
+          usage,
+        },
+        { status: 202 },
       );
     }
 

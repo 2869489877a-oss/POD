@@ -7,7 +7,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 export const runtime = "nodejs";
 
 const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
-const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
+const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "asset_delete", "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
 
@@ -29,6 +29,10 @@ type QueueRow = {
 };
 
 type ExportQueueRow = {
+  status?: string | null;
+};
+
+type AssetDeleteQueueRow = {
   status?: string | null;
 };
 
@@ -101,6 +105,14 @@ function numberOrNull(value: unknown) {
   return Number.isFinite(numberValue) ? numberValue : null;
 }
 
+function isMissingRelationError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown };
+  const code = typeof record.code === "string" ? record.code : "";
+  const message = typeof record.message === "string" ? record.message : "";
+  return code === "42P01" || code === "PGRST205" || /does not exist|schema cache/i.test(message);
+}
+
 async function readWorkerState() {
   try {
     const content = await readFile(/* turbopackIgnore: true */ getWorkerStateFile(), "utf8");
@@ -133,6 +145,16 @@ async function readQueueState() {
   if (activeJobError) {
     throw new Error(activeJobError.message);
   }
+
+  const { data: rawAssetDeleteRows, error: assetDeleteError } = await supabase
+    .from("asset_delete_jobs")
+    .select("status")
+    .in("status", ["pending", "processing"]);
+
+  if (assetDeleteError && !isMissingRelationError(assetDeleteError)) {
+    throw new Error(assetDeleteError.message);
+  }
+  const assetDeleteRows = assetDeleteError ? [] : rawAssetDeleteRows;
 
   const { data: exportRows, error: exportError } = await supabase
     .from("export_records")
@@ -174,6 +196,7 @@ async function readQueueState() {
   const queue = {
     active_jobs:
       (activeJobRows?.length ?? 0) +
+      ((assetDeleteRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
       ((exportRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
       ((aiRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
       ((splitRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
@@ -197,6 +220,17 @@ async function readQueueState() {
       if (row.status === "pending") queueByType[jobType as LocalWorkerJobType].pending += 1;
       if (row.status === "processing") queueByType[jobType as LocalWorkerJobType].processing += 1;
       if (row.status === "failed") queueByType[jobType as LocalWorkerJobType].failed += 1;
+    }
+  }
+
+  for (const row of (assetDeleteRows ?? []) as AssetDeleteQueueRow[]) {
+    if (row.status === "pending") {
+      queue.pending += 1;
+      queueByType.asset_delete.pending += 1;
+    }
+    if (row.status === "processing") {
+      queue.processing += 1;
+      queueByType.asset_delete.processing += 1;
     }
   }
 

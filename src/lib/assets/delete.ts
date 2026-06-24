@@ -4,6 +4,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { deleteLocalAssetByPublicUrl } from "@/lib/storage/local-assets";
 
 const ASSETS_BUCKET = "assets";
+const DELETE_CHUNK_SIZE = 100;
 
 export type DeleteAssetResult = {
   asset_id: string;
@@ -82,6 +83,14 @@ function deleteErrorMessage(message: string) {
   }
 
   return message;
+}
+
+function chunkArray<T>(items: T[], chunkSize = DELETE_CHUNK_SIZE) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 export function parseDeleteAssetIds(value: unknown) {
@@ -319,28 +328,104 @@ export async function deleteAssets(assetIds: string[], options: { force?: boolea
   const assets = (data ?? []) as unknown as AssetForDelete[];
   const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
   const results: DeleteAssetResult[] = [];
+  const existingAssets = assetIds
+    .map((assetId) => assetsById.get(assetId))
+    .filter((asset): asset is AssetForDelete => Boolean(asset));
 
   for (const assetId of assetIds) {
-    const asset = assetsById.get(assetId);
-
-    if (!asset) {
+    if (!assetsById.has(assetId)) {
       results.push({
         asset_id: assetId,
         error: "素材不存在",
         success: false,
       });
+    }
+  }
+
+  if (existingAssets.length === 0) {
+    return {
+      requiresConfirmation: false,
+      results,
+      usage,
+    };
+  }
+
+  const deletedAssetIds = new Set<string>();
+  for (const chunk of chunkArray(existingAssets.map((asset) => asset.id))) {
+    const { data: deletedRows, error: deleteError } = await supabase
+      .from("assets")
+      .delete()
+      .in("id", chunk)
+      .select("id");
+
+    if (deleteError) {
+      for (const assetId of chunk) {
+        const asset = assetsById.get(assetId);
+        results.push({
+          asset_id: assetId,
+          error: deleteErrorMessage(deleteError.message),
+          filename: asset?.filename,
+          success: false,
+        });
+      }
+    } else {
+      for (const row of (deletedRows ?? []) as Array<{ id: string }>) {
+        deletedAssetIds.add(row.id);
+      }
+    }
+  }
+
+  const deletedAssets = existingAssets.filter((asset) => deletedAssetIds.has(asset.id));
+  const allFileUrls = Array.from(
+    new Set(
+      deletedAssets.flatMap((asset) => [
+        asset.original_url,
+        asset.processed_url,
+        asset.print_extract_url,
+        asset.cutout_url,
+        asset.preferred_design_url,
+      ]).filter((url): url is string => Boolean(url)),
+    ),
+  );
+  const localDeleteResults = await Promise.all(allFileUrls.map((url) => deleteLocalAssetByPublicUrl(url)));
+  const localDeleteErrors = localDeleteResults.filter((result) => result.error);
+  const storagePaths = Array.from(
+    new Set(
+      allFileUrls
+        .map((url) => storagePathFromPublicUrl(url))
+        .filter((path): path is string => Boolean(path)),
+    ),
+  );
+  let storageDeleteErrorMessage: string | null = null;
+
+  for (const chunk of chunkArray(storagePaths)) {
+    const { error: storageDeleteError } = await supabase.storage.from(ASSETS_BUCKET).remove(chunk);
+    if (storageDeleteError) {
+      storageDeleteErrorMessage = storageDeleteError.message;
+      break;
+    }
+  }
+
+  const cleanupWarnings = [
+    localDeleteErrors.length > 0 ? `Local file cleanup warnings: ${localDeleteErrors.length}` : null,
+    storageDeleteErrorMessage ? `Storage cleanup warning: ${storageDeleteErrorMessage}` : null,
+  ].filter(Boolean).join("; ");
+
+  for (const asset of deletedAssets) {
+    results.push({
+      asset_id: asset.id,
+      error: cleanupWarnings || undefined,
+      filename: asset.filename,
+      success: true,
+    });
+  }
+
+  for (const asset of existingAssets) {
+    if (deletedAssetIds.has(asset.id)) {
       continue;
     }
 
-    const { error: deleteError } = await supabase.from("assets").delete().eq("id", asset.id);
-
-    if (deleteError) {
-      results.push({
-        asset_id: asset.id,
-        error: deleteErrorMessage(deleteError.message),
-        filename: asset.filename,
-        success: false,
-      });
+    if (results.some((result) => result.asset_id === asset.id)) {
       continue;
     }
 
@@ -356,47 +441,11 @@ export async function deleteAssets(assetIds: string[], options: { force?: boolea
       ),
     );
 
-    const localDeleteResults = await Promise.all(fileUrls.map((url) => deleteLocalAssetByPublicUrl(url)));
-    const localDeleteError = localDeleteResults.find((result) => result.error);
-
-    if (localDeleteError) {
-      results.push({
-        asset_id: asset.id,
-        error: `Local file delete failed: ${localDeleteError.error}`,
-        filename: asset.filename,
-        success: false,
-      });
-      continue;
-    }
-
-    const storagePaths = Array.from(
-      new Set(
-        fileUrls
-          .map((url) => storagePathFromPublicUrl(url))
-          .filter((path): path is string => Boolean(path)),
-      ),
-    );
-
-    if (storagePaths.length > 0) {
-      const { error: storageDeleteError } = await supabase.storage
-        .from(ASSETS_BUCKET)
-        .remove(storagePaths);
-
-      if (storageDeleteError) {
-        results.push({
-          asset_id: asset.id,
-          error: `Storage 删除失败：${storageDeleteError.message}`,
-          filename: asset.filename,
-          success: false,
-        });
-        continue;
-      }
-    }
-
     results.push({
       asset_id: asset.id,
+      error: fileUrls.length > 0 ? "素材记录未删除，请刷新后重试" : "素材记录未删除",
       filename: asset.filename,
-      success: true,
+      success: false,
     });
   }
 

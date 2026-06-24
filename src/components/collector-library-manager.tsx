@@ -31,15 +31,20 @@ type CollectorMutationResult = {
 };
 
 type CollectorResponse = {
+  dateBuckets?: Array<{ count: number; date: string }>;
   error?: string;
   failed_count?: number;
   items?: CollectorLibraryItem[];
+  limit?: number;
+  offset?: number;
   results?: CollectorMutationResult[];
   success_count?: number;
   total?: number;
 };
 
 type CollectorMutationMode = "delete" | "promote" | "risk-library";
+
+const COLLECTOR_PAGE_SIZE = 120;
 
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -115,6 +120,11 @@ function monthTitle(monthKey: string) {
   return year + "年" + Number(month) + "月";
 }
 
+function calendarMonthTitle(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  return `${year}年 ${Number(month)}月`;
+}
+
 export function CollectorLibraryManager() {
   const { isDark, t } = useSettings();
   const [items, setItems] = useState<CollectorLibraryItem[]>([]);
@@ -126,9 +136,12 @@ export function CollectorLibraryManager() {
   const [siteFilter, setSiteFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [serverDateBuckets, setServerDateBuckets] = useState<Array<{ count: number; date: string }>>([]);
+  const [total, setTotal] = useState(0);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
   const [pendingMutationPaths, setPendingMutationPaths] = useState<Set<string>>(new Set());
@@ -136,7 +149,7 @@ export function CollectorLibraryManager() {
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
-  const dateBuckets = useMemo(() => {
+  const loadedDateBuckets = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items) {
       const uploadDate = getUploadDate(item);
@@ -147,6 +160,7 @@ export function CollectorLibraryManager() {
       .map(([date, count]) => ({ count, date }))
       .sort((a, b) => b.date.localeCompare(a.date));
   }, [items]);
+  const dateBuckets = serverDateBuckets.length > 0 ? serverDateBuckets : loadedDateBuckets;
   const maxDateCount = Math.max(1, ...dateBuckets.map((bucket) => bucket.count));
   const latestUploadDate = dateBuckets[0]?.date || formatUploadDateKey(new Date().toISOString());
   const activeStartDate = startDate && endDate && startDate > endDate ? endDate : startDate;
@@ -184,6 +198,7 @@ export function CollectorLibraryManager() {
 
   const selectedCount = selected.size;
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
+  const hasMoreItems = items.length < total;
   const previewPendingMode = previewItem && pendingMutationPaths.has(previewItem.relativePath) ? pendingMutationMode : null;
   const panelClass = isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-white";
   const mutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
@@ -206,12 +221,25 @@ export function CollectorLibraryManager() {
     return t("正在删除", "Deleting");
   }
 
-  async function loadItems() {
-    setIsLoading(true);
+  async function loadItems(options: { append?: boolean } = {}) {
+    const append = options.append === true;
+    const offset = append ? items.length : 0;
+    if (append) {
+      setIsLoadingMore(true);
+    } else {
+      setIsLoading(true);
+    }
     setError(null);
 
     try {
-      const response = await fetch("/api/collector-library?limit=5000", { cache: "no-store" });
+      const params = new URLSearchParams({
+        limit: String(COLLECTOR_PAGE_SIZE),
+        offset: String(offset),
+      });
+      if (activeStartDate) params.set("start_date", activeStartDate);
+      if (activeEndDate) params.set("end_date", activeEndDate);
+
+      const response = await fetch(`/api/collector-library?${params.toString()}`, { cache: "no-store" });
       const data = (await response.json()) as CollectorResponse;
 
       if (!response.ok) {
@@ -219,21 +247,31 @@ export function CollectorLibraryManager() {
       }
 
       const nextItems = data.items || [];
-      setItems(nextItems);
+      const mergedItems = append
+        ? Array.from(new Map([...items, ...nextItems].map((item) => [item.relativePath, item])).values())
+        : nextItems;
+
+      setServerDateBuckets(data.dateBuckets || []);
+      setTotal(data.total ?? mergedItems.length);
+      setItems(mergedItems);
       setSelected((current) => {
-        const knownPaths = new Set(nextItems.map((item) => item.relativePath));
+        const knownPaths = new Set(mergedItems.map((item) => item.relativePath));
         return new Set(Array.from(current).filter((path) => knownPaths.has(path)));
       });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("读取采集库失败", "Failed to load collector library"));
     } finally {
-      setIsLoading(false);
+      if (append) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
   }
 
   useEffect(() => {
     void loadItems();
-  }, []);
+  }, [activeEndDate, activeStartDate]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -391,6 +429,7 @@ export function CollectorLibraryManager() {
 
       if (mode !== "risk-library") {
         setItems((current) => current.filter((item) => !successPaths.has(item.relativePath)));
+        setTotal((current) => Math.max(0, current - successPaths.size));
       }
       setSelected((current) => new Set(Array.from(current).filter((path) => !successPaths.has(path))));
       setMessage(
@@ -510,7 +549,7 @@ export function CollectorLibraryManager() {
                 </button>
               </div>
 
-              <div className={"mt-3 text-center text-sm font-semibold " + textClass}>{monthTitle(calendarMonth)}</div>
+              <div className={"mt-3 text-center text-sm font-semibold " + textClass}>{calendarMonthTitle(calendarMonth)}</div>
               <div className={"mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold " + mutedClass}>
                 {["日", "一", "二", "三", "四", "五", "六"].map((day) => (
                   <span key={day}>{day}</span>
@@ -532,7 +571,9 @@ export function CollectorLibraryManager() {
                       className={[
                         "relative h-12 rounded-md border text-xs font-semibold transition hover:-translate-y-0.5",
                         isSelected
-                          ? "border-cyan-400 bg-cyan-500/20 text-cyan-100"
+                          ? isDark
+                            ? "border-cyan-400 bg-cyan-500/20 text-cyan-100"
+                            : "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm"
                           : day.inMonth
                             ? isDark
                               ? "border-white/[0.08] bg-white/[0.03] text-zinc-200 hover:bg-white/[0.08]"
@@ -664,6 +705,12 @@ export function CollectorLibraryManager() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className={"text-sm " + mutedClass}>
           {t("共 " + filteredItems.length + " 张，已选 " + selectedCount + " 张", filteredItems.length + " total, " + selectedCount + " selected")}
+        </div>
+        <div className={"text-sm " + mutedClass}>
+          {t(
+            `已加载 ${items.length}/${total || items.length} 张，当前筛选显示 ${filteredItems.length} 张`,
+            `${items.length}/${total || items.length} loaded, ${filteredItems.length} visible after filters`,
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={toggleFiltered} disabled={filteredItems.length === 0 || isMutating} className={neutralButtonClass}>
@@ -822,6 +869,21 @@ export function CollectorLibraryManager() {
           })}
         </section>
       )}
+
+      {hasMoreItems ? (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => void loadItems({ append: true })}
+            disabled={isLoadingMore || isLoading || isMutating}
+            className={neutralButtonClass}
+          >
+            {isLoadingMore
+              ? t("加载中...", "Loading...")
+              : t(`加载更多（${items.length}/${total}）`, `Load more (${items.length}/${total})`)}
+          </button>
+        </div>
+      ) : null}
 
       {previewItem && isMounted ? createPortal((
         <div

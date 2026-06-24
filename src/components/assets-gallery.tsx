@@ -48,7 +48,9 @@ export type Asset = {
 type DeleteAssetsResponse = {
   error?: string;
   failed_count?: number;
+  job_id?: string;
   message?: string;
+  queued?: boolean;
   requires_confirmation?: boolean;
   results?: Array<{
     asset_id: string;
@@ -64,6 +66,14 @@ type DeleteAssetsResponse = {
     product_draft_count: number;
     used: boolean;
   }>;
+};
+
+type WorkerStatusResponse = {
+  blocked_job_types?: string[];
+  error?: string;
+  missing_job_types?: string[];
+  online?: boolean;
+  ready?: boolean;
 };
 
 type ResizeJobStatus = "pending" | "processing" | "completed" | "failed" | "partial_failed";
@@ -373,52 +383,53 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       return;
     }
 
+    const confirmed = window.confirm(t(`确认删除 ${assetIds.length} 张素材？`, `Delete ${assetIds.length} asset(s)?`));
+    if (!confirmed) {
+      return;
+    }
+
     setIsDeleting(true);
     setDeletingAssetIds(new Set(assetIds));
-    setDeletePhase("checking");
+    setDeletePhase("deleting");
     setError(null);
     setDeleteMessage(null);
 
     try {
-      const checkResponse = await fetch("/api/assets", {
+      let response = await fetch("/api/assets", {
         body: JSON.stringify({
           asset_ids: assetIds,
-          dry_run: true,
         }),
         headers: {
           "Content-Type": "application/json",
         },
         method: "DELETE",
       });
-      const checkData = (await checkResponse.json()) as DeleteAssetsResponse;
+      let data = (await response.json()) as DeleteAssetsResponse;
 
-      if (!checkResponse.ok) {
-        throw new Error(checkData.error ?? t("删除检查失败", "Delete check failed"));
+      if (response.status === 409 && data.requires_confirmation) {
+        const forceConfirmed = window.confirm(
+          t("该素材已被任务、套图或商品草稿引用，删除会同时清理关联记录。是否继续？", "Some assets are used by jobs, mockups, or product drafts. Deleting will also clean related records. Continue?"),
+        );
+
+        if (!forceConfirmed) {
+          return;
+        }
+
+        response = await fetch("/api/assets", {
+          body: JSON.stringify({
+            asset_ids: assetIds,
+            force: true,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "DELETE",
+        });
+        data = (await response.json()) as DeleteAssetsResponse;
       }
 
-      const confirmed = window.confirm(
-        checkData.requires_confirmation
-          ? t("该素材已被使用，删除可能影响商品草稿，是否继续？", "This asset is already used. Deleting it may affect product drafts. Continue?")
-          : t(`确认删除 ${assetIds.length} 张素材？`, `Delete ${assetIds.length} asset(s)?`),
-      );
-
-      if (!confirmed) {
-        return;
-      }
-
-      setDeletePhase("deleting");
-      const response = await fetch("/api/assets", {
-        body: JSON.stringify({
-          asset_ids: assetIds,
-          force: checkData.requires_confirmation === true,
-        }),
-        headers: {
-          "Content-Type": "application/json",
-        },
-        method: "DELETE",
-      });
-      const data = (await response.json()) as DeleteAssetsResponse;
       const failedResults = (data.results ?? []).filter((result) => !result.success);
+      const successfulIds = new Set((data.results ?? []).filter((result) => result.success).map((result) => result.asset_id));
 
       if (!response.ok && (data.results ?? []).length === 0) {
         throw new Error(data.error ?? t("删除素材失败", "Failed to delete assets"));
@@ -426,20 +437,35 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
       setDeleteMessage(t(`删除成功 ${data.success_count ?? 0} 张，失败 ${data.failed_count ?? 0} 张`, `${data.success_count ?? 0} deleted, ${data.failed_count ?? 0} failed`));
 
+      if (data.queued) {
+        setDeleteMessage(
+          t(
+            `已加入后台删除队列：${data.success_count ?? assetIds.length} 张，任务 ${data.job_id ?? ""}`,
+            `Queued ${data.success_count ?? assetIds.length} asset(s) for background deletion. Job ${data.job_id ?? ""}`,
+          ),
+        );
+      }
+
       if (failedResults.length > 0) {
         setError(failedResults.map((result) => `${result.filename ?? result.asset_id}: ${result.error ?? t("删除失败", "Delete failed")}`).join("\n"));
       }
 
+      if (successfulIds.size > 0) {
+        setAssets((current) => current.filter((asset) => !successfulIds.has(asset.id)));
+        setTotal((current) => Math.max(0, current - successfulIds.size));
+      }
+
       setSelectedIds((current) => {
-        const deletedIds = new Set((data.results ?? []).filter((result) => result.success).map((result) => result.asset_id));
-        return new Set(Array.from(current).filter((id) => !deletedIds.has(id)));
+        return new Set(Array.from(current).filter((id) => !successfulIds.has(id)));
       });
 
-      if (selectedAssetId && assetIds.includes(selectedAssetId)) {
+      if (selectedAssetId && successfulIds.has(selectedAssetId)) {
         setSelectedAssetId(null);
       }
 
-      await fetchAssets(status, copyrightStatus, assetSource);
+      if (!data.queued) {
+        await fetchAssets(status, copyrightStatus, assetSource);
+      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("删除素材失败", "Failed to delete assets"));
     } finally {
@@ -530,6 +556,36 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     return data.job;
   }
 
+  async function ensureResizeWorkerReady() {
+    try {
+      const response = await fetch("/api/local-worker/status", { cache: "no-store" });
+      const data = (await response.json()) as WorkerStatusResponse;
+
+      if (!response.ok) {
+        return t("无法读取 worker 状态，任务仍会进入队列。", "Could not read worker status. The job will still be queued.");
+      }
+
+      if (data.online === false) {
+        throw new Error(t("本地 worker 未在线，请先启动 pod-ai-worker。", "Local worker is offline. Start pod-ai-worker first."));
+      }
+
+      if (data.missing_job_types?.includes("resize") || data.blocked_job_types?.includes("resize")) {
+        throw new Error(t("本地 worker 当前没有启用 resize 任务类型，请检查 LOCAL_IMAGE_WORKER_JOB_TYPES。", "Local worker does not have resize enabled. Check LOCAL_IMAGE_WORKER_JOB_TYPES."));
+      }
+    } catch (workerError) {
+      if (
+        workerError instanceof Error
+        && (workerError.message.includes("pod-ai-worker") || workerError.message.includes("LOCAL_IMAGE_WORKER_JOB_TYPES"))
+      ) {
+        throw workerError;
+      }
+
+      return t("暂时无法读取 worker 状态，任务仍会进入队列。", "Could not read worker status. The job will still be queued.");
+    }
+
+    return null;
+  }
+
   async function startResizeJob() {
     const assetIds = Array.from(selectedIds);
 
@@ -544,6 +600,11 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     setResizeJob(null);
 
     try {
+      const workerWarning = await ensureResizeWorkerReady();
+      if (workerWarning) {
+        setResizeMessage(workerWarning);
+      }
+
       const createResponse = await fetch("/api/image-jobs/resize", {
         body: JSON.stringify({
           asset_ids: assetIds,
@@ -565,7 +626,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         ...createData.job,
         items: [],
       });
-      setResizeMessage(t("任务已创建，等待本地 worker 处理图片...", "Job created. Waiting for the local worker..."));
+      setResizeMessage(t(`任务已创建：${jobId}，等待本地 worker 处理图片...`, `Job created: ${jobId}. Waiting for the local worker...`));
       setIsResizeDialogOpen(false);
 
       for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
@@ -573,13 +634,19 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
         const job = await fetchResizeJob(jobId);
         const completedCount = job.success_count + job.failed_count;
+        const processingCount = job.items.filter((item) => item.status === "processing").length;
+        const pendingCount = job.items.filter((item) => item.status === "pending").length;
         const percent = job.total_count > 0 ? Math.min(100, Math.round((completedCount / job.total_count) * 100)) : 0;
 
         setResizeJob(job);
         setResizeMessage(
           TERMINAL_RESIZE_STATUSES.has(job.status)
             ? t(`批量改尺寸任务处理完成：${completedCount}/${job.total_count}`, `Batch resize job complete: ${completedCount}/${job.total_count}`)
-            : t(`本地 worker 处理中：${completedCount}/${job.total_count}，${percent}%`, `Local worker processing: ${completedCount}/${job.total_count}, ${percent}%`),
+            : processingCount > 0
+              ? t(`本地 worker 处理中：完成 ${completedCount}/${job.total_count}，运行中 ${processingCount}，${percent}%`, `Local worker processing: done ${completedCount}/${job.total_count}, running ${processingCount}, ${percent}%`)
+              : attempt >= 15 && completedCount === 0
+                ? t(`任务已排队但 worker 暂未领取：待处理 ${pendingCount}/${job.total_count}。请检查 pod-ai-worker 日志。`, `Job is queued but worker has not claimed it yet: pending ${pendingCount}/${job.total_count}. Check pod-ai-worker logs.`)
+                : t(`任务已排队：待处理 ${pendingCount}/${job.total_count}，等待 worker 领取...`, `Job queued: pending ${pendingCount}/${job.total_count}, waiting for worker...`),
         );
 
         if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
@@ -722,7 +789,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         <section className="rounded-md border border-zinc-200 bg-white p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-semibold text-zinc-950">{t("���量改尺寸进度", "Batch Resize Progress")}</h3>
+              <h3 className="text-base font-semibold text-zinc-950">{t("批量改尺寸进度", "Batch Resize Progress")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
                 {resizeMessage ?? t("等待任务结果", "Waiting for job result")}
               </p>
@@ -739,7 +806,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
                 <div
                   className="h-full rounded-full bg-emerald-600 transition-all"
-                  style={{ width: `${resizeProgressPercent}%` }}
+                  style={{ width: `${resizeJob.status === "pending" || resizeJob.status === "processing" ? Math.max(2, resizeProgressPercent) : resizeProgressPercent}%` }}
                 />
               </div>
               <div className="grid gap-3 text-sm text-zinc-600 sm:grid-cols-4">

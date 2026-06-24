@@ -7,6 +7,7 @@ import sharp from "sharp";
 import { generateImageWithFallback, resolveProvider } from "@/lib/ai-image/router";
 import { resolveReferenceImageDataUrl } from "@/lib/ai-image/reference-image";
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
+import { recoverStaleProcessingRows } from "@/lib/local-worker/stale-queue";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 
@@ -174,6 +175,20 @@ export async function createAiGenerateImageJob(
 }
 
 export async function claimAiGenerateImageJob(supabase: SupabaseServiceClient) {
+  await recoverStaleProcessingRows(supabase, {
+    defaultMinutes: 60,
+    envName: "LOCAL_WORKER_STALE_AI_MINUTES",
+    table: "ai_image_jobs",
+    update: {
+      error_message: null,
+      finished_at: null,
+      progress_percent: 0,
+      stage: "requeued",
+      started_at: null,
+      status: "pending",
+    },
+  });
+
   const { data, error } = await supabase
     .from("ai_image_jobs")
     .select("id,prompt")

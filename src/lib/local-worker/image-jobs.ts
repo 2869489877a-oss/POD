@@ -63,6 +63,10 @@ type JoinedWorkerItemRow = {
   job_id: string;
 };
 
+type StaleWorkerItemRow = {
+  id: string;
+};
+
 type WorkerFileInput = {
   buffer: Buffer;
   contentType: string;
@@ -125,6 +129,12 @@ function outputExtension(options: unknown, file: WorkerFileInput): "jpg" | "png"
   }
 
   return file.contentType === "image/jpeg" ? "jpg" : "png";
+}
+
+function staleWorkerItemCutoff() {
+  const minutes = Number(process.env.LOCAL_WORKER_STALE_ITEM_MINUTES ?? 45);
+  const normalizedMinutes = Number.isFinite(minutes) ? Math.max(10, Math.min(24 * 60, minutes)) : 45;
+  return new Date(Date.now() - normalizedMinutes * 60 * 1000).toISOString();
 }
 
 function stringOption(options: unknown, key: string) {
@@ -359,6 +369,8 @@ export async function claimLocalWorkerItem(
   supabase: SupabaseServiceClient,
   jobTypes: LocalWorkerJobType[],
 ) {
+  await recoverStaleWorkerItems(supabase, jobTypes);
+
   const { data, error } = await supabase
     .from("image_job_items")
     .select(
@@ -421,6 +433,37 @@ export async function claimLocalWorkerItem(
   }
 
   return null;
+}
+
+async function recoverStaleWorkerItems(
+  supabase: SupabaseServiceClient,
+  jobTypes: LocalWorkerJobType[],
+) {
+  if (jobTypes.length === 0) return;
+
+  const { data, error } = await supabase
+    .from("image_job_items")
+    .select("id,image_jobs!inner(job_type,status)")
+    .eq("status", "processing")
+    .lt("updated_at", staleWorkerItemCutoff())
+    .in("image_jobs.job_type", jobTypes)
+    .in("image_jobs.status", ["pending", "processing"])
+    .limit(25);
+
+  if (error) {
+    return;
+  }
+
+  const staleIds = ((data ?? []) as unknown as StaleWorkerItemRow[]).map((item) => item.id);
+  if (staleIds.length === 0) return;
+
+  await supabase
+    .from("image_job_items")
+    .update({
+      error_message: null,
+      status: "pending",
+    })
+    .in("id", staleIds);
 }
 
 export async function completeLocalWorkerItem(

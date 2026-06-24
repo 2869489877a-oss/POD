@@ -18,6 +18,7 @@ const DEFAULT_PUBLIC_PATH = "/uploads/collector";
 const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
+const COLLECTOR_MUTATION_CONCURRENCY = 5;
 const RISK_LIBRARY_BATCH_SIZE = 100;
 const RISK_LIBRARY_PREPARE_CONCURRENCY = 8;
 
@@ -64,6 +65,7 @@ type SaveCollectorFileInput = {
 type ListCollectorItemsInput = {
   endDate?: string;
   limit?: number;
+  offset?: number;
   request?: Request;
   startDate?: string;
 };
@@ -167,6 +169,10 @@ function beijingDatePath(date = new Date()) {
 function normalizeDateKey(value: string | null | undefined) {
   const trimmed = String(value || "").trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : "";
+}
+
+function uploadDateFromRelativePath(relativePath: string) {
+  return relativePath.split("/").find((part) => /^\d{4}-\d{2}-\d{2}$/.test(part)) || "";
 }
 
 export function getCollectorLibraryRoot() {
@@ -275,14 +281,39 @@ async function walkCollectorFiles(directory: string, prefix = "", output: string
   return output;
 }
 
-export async function listCollectorItems({ endDate, limit = 2000, request, startDate }: ListCollectorItemsInput = {}) {
+export async function listCollectorItemsPage({
+  endDate,
+  limit = 120,
+  offset = 0,
+  request,
+  startDate,
+}: ListCollectorItemsInput = {}) {
   const root = getCollectorLibraryRoot();
   const relativePaths = await walkCollectorFiles(root);
-  const items: CollectorLibraryItem[] = [];
   const normalizedStartDate = normalizeDateKey(startDate);
   const normalizedEndDate = normalizeDateKey(endDate);
+  const dateCounts = new Map<string, number>();
+  const filteredPaths = relativePaths.filter((relativePath) => {
+    const uploadDate = uploadDateFromRelativePath(relativePath);
 
-  for (const relativePath of relativePaths) {
+    if (uploadDate) {
+      dateCounts.set(uploadDate, (dateCounts.get(uploadDate) || 0) + 1);
+    }
+
+    if (normalizedStartDate && uploadDate && uploadDate < normalizedStartDate) return false;
+    if (normalizedEndDate && uploadDate && uploadDate > normalizedEndDate) return false;
+    return true;
+  });
+  const sortedPaths = filteredPaths.sort((a, b) => {
+    const dateCompare = uploadDateFromRelativePath(b).localeCompare(uploadDateFromRelativePath(a));
+    return dateCompare !== 0 ? dateCompare : b.localeCompare(a);
+  });
+  const safeLimit = Math.max(1, Math.min(limit, 240));
+  const safeOffset = Math.max(0, offset);
+  const pagePaths = sortedPaths.slice(safeOffset, safeOffset + safeLimit);
+  const items: CollectorLibraryItem[] = [];
+
+  for (const relativePath of pagePaths) {
     const item = await itemFromRelativePath(relativePath, request);
     if (!item) continue;
     if (normalizedStartDate && item.uploadDate < normalizedStartDate) continue;
@@ -290,9 +321,20 @@ export async function listCollectorItems({ endDate, limit = 2000, request, start
     if (item) items.push(item);
   }
 
-  return items
-    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-    .slice(0, Math.max(1, Math.min(limit, 5000)));
+  return {
+    dateBuckets: Array.from(dateCounts.entries())
+      .map(([date, count]) => ({ count, date }))
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    items: items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+    limit: safeLimit,
+    offset: safeOffset,
+    total: filteredPaths.length,
+  };
+}
+
+export async function listCollectorItems(input: ListCollectorItemsInput = {}) {
+  const page = await listCollectorItemsPage(input);
+  return page.items;
 }
 
 export async function saveCollectorFile({
@@ -375,36 +417,31 @@ export function parseCollectorRelativePaths(value: unknown) {
 }
 
 export async function deleteCollectorItems(relativePaths: string[]): Promise<CollectorOperationResult[]> {
-  const results: CollectorOperationResult[] = [];
-
-  for (const relativePath of relativePaths) {
+  return mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
     try {
       const diskPath = resolveCollectorLibraryPath(relativePath);
       const item = await itemFromRelativePath(relativePath);
       await rm(diskPath, { force: true });
       await rm(metadataPathForDiskPath(diskPath), { force: true });
-      results.push({
+      return {
         filename: item?.filename || path.basename(relativePath),
         relative_path: relativePath,
         success: true,
-      });
+      };
     } catch (error) {
-      results.push({
+      return {
         error: getErrorMessage(error),
         relative_path: relativePath,
         success: false,
-      });
+      };
     }
-  }
-
-  return results;
+  });
 }
 
 export async function promoteCollectorItems(relativePaths: string[], request?: Request): Promise<CollectorOperationResult[]> {
   const supabase = createSupabaseServiceRoleClient();
-  const results: CollectorOperationResult[] = [];
 
-  for (const relativePath of relativePaths) {
+  return mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
     let originalUrl: string | null = null;
 
     try {
@@ -455,27 +492,25 @@ export async function promoteCollectorItems(relativePaths: string[], request?: R
       await rm(diskPath, { force: true });
       await rm(metadataPathForDiskPath(diskPath), { force: true });
 
-      results.push({
+      return {
         asset_id: data.id,
         filename,
         original_url: originalUrl,
         relative_path: relativePath,
         success: true,
-      });
+      };
     } catch (error) {
       if (originalUrl) {
         await deleteLocalAssetByPublicUrl(originalUrl);
       }
 
-      results.push({
+      return {
         error: getErrorMessage(error),
         relative_path: relativePath,
         success: false,
-      });
+      };
     }
-  }
-
-  return results;
+  });
 }
 
 function stringMetadataValue(metadata: Record<string, unknown>, key: string) {

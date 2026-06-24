@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import sharp from "sharp";
 
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
+import { recoverStaleProcessingRows } from "@/lib/local-worker/stale-queue";
 import { readImageBuffer } from "@/lib/network/image-buffer";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
@@ -449,6 +450,20 @@ async function updateAiSplitGridProgress(
 }
 
 export async function claimAiSplitGridJob(supabase: SupabaseServiceClient) {
+  await recoverStaleProcessingRows(supabase, {
+    defaultMinutes: 60,
+    envName: "LOCAL_WORKER_STALE_AI_MINUTES",
+    table: "ai_split_grid_jobs",
+    update: {
+      error_message: null,
+      finished_at: null,
+      progress_percent: 0,
+      stage: "requeued",
+      started_at: null,
+      status: "pending",
+    },
+  });
+
   const { data, error } = await supabase
     .from("ai_split_grid_jobs")
     .select("id,image_url")

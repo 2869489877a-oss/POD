@@ -4,7 +4,7 @@ import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
 import {
   addCollectorItemsToRiskLibrary,
   deleteCollectorItems,
-  listCollectorItems,
+  listCollectorItemsPage,
   parseCollectorRelativePaths,
   promoteCollectorItems,
   saveCollectorFile,
@@ -105,11 +105,12 @@ async function handleUpload(request: Request) {
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const limit = Number(url.searchParams.get("limit") || 2000);
+    const limit = Number(url.searchParams.get("limit") || 120);
+    const offset = Number(url.searchParams.get("offset") || 0);
     const endDate = url.searchParams.get("end_date") || undefined;
     const startDate = url.searchParams.get("start_date") || undefined;
-    const items = await listCollectorItems({ endDate, limit, request, startDate });
-    return NextResponse.json({ items, total: items.length });
+    const page = await listCollectorItemsPage({ endDate, limit, offset, request, startDate });
+    return NextResponse.json(page);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to read collector library", items: [] },

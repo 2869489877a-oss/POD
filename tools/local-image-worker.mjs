@@ -23,11 +23,12 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
+const ASSET_DELETE_JOB_TYPE = "asset_delete";
 const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
 const AI_SPLIT_GRID_JOB_TYPE = "ai_split_grid";
 const AI_APPLY_PATTERN_JOB_TYPE = "ai_apply_pattern";
@@ -1424,6 +1425,16 @@ async function claimJob() {
     }
   }
 
+  if (JOB_TYPES.includes(ASSET_DELETE_JOB_TYPE)) {
+    const deleteData = await apiFetch("/api/local-worker/asset-delete/claim", {
+      method: "POST",
+    });
+
+    if (deleteData.job) {
+      return deleteData.job;
+    }
+  }
+
   if (JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
     const exportData = await apiFetch("/api/local-worker/exports/claim", {
       method: "POST",
@@ -1466,6 +1477,13 @@ async function claimJob() {
 }
 
 async function completeJob(job, result) {
+  if (job.job_type === ASSET_DELETE_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/asset-delete/${encodeURIComponent(jobId)}/complete`, {
+      method: "POST",
+    });
+  }
+
   if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
     return result.ai_split_grid;
   }
@@ -1529,6 +1547,15 @@ async function completeJob(job, result) {
 }
 
 async function failJob(job, error) {
+  if (job.job_type === ASSET_DELETE_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/asset-delete/${encodeURIComponent(jobId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
     const jobId = job.job_id || job.item_id;
     return apiFetch(`/api/local-worker/ai-split-grid/${encodeURIComponent(jobId)}/fail`, {
@@ -1573,6 +1600,14 @@ async function failJob(job, error) {
 }
 
 async function processJob(job) {
+  if (job.job_type === ASSET_DELETE_JOB_TYPE) {
+    return {
+      asset_delete: {
+        job_id: job.job_id || job.item_id,
+      },
+    };
+  }
+
   if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
     return processAiSplitGrid(job);
   }

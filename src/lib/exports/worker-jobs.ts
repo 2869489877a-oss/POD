@@ -8,6 +8,7 @@ import {
   getExportProductsByIds,
   getProductImageUrls,
 } from "@/lib/exports/products";
+import { recoverStaleProcessingRows } from "@/lib/local-worker/stale-queue";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
@@ -26,6 +27,17 @@ export type ExportZipFileInput = {
 };
 
 export async function claimExportImagesZipJob(supabase: SupabaseServiceClient) {
+  await recoverStaleProcessingRows(supabase, {
+    defaultMinutes: 45,
+    envName: "LOCAL_WORKER_STALE_EXPORT_MINUTES",
+    exportType: "images_zip",
+    table: "export_records",
+    update: {
+      error_message: null,
+      status: "pending",
+    },
+  });
+
   const { data, error } = await supabase
     .from("export_records")
     .select("id,product_ids,product_count,status")
