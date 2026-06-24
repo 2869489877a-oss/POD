@@ -31,7 +31,22 @@ type GenerateResult = {
   mime_type?: string;
   model?: string;
   provider?: string;
+  queued?: boolean;
   result_url?: string;
+  status?: string;
+};
+
+type AiImageJobPollResult = {
+  error?: string;
+  job?: {
+    asset_id?: string | null;
+    error_message?: string | null;
+    id: string;
+    model_id?: string | null;
+    provider_type?: string | null;
+    result_url?: string | null;
+    status: "pending" | "processing" | "completed" | "failed";
+  };
 };
 
 type SplitGridPiece = {
@@ -441,6 +456,25 @@ async function readJsonResponse<T extends { error?: string }>(response: Response
   } catch {
     return { error: text.slice(0, 500) } as T;
   }
+}
+
+function delay(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+
+    const timer = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 }
 
 function imageExtension(url: string, contentType: string | null) {
@@ -871,6 +905,36 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     return imageUrl;
   }
 
+  async function waitForGeneratedImage(jobId: string, signal: AbortSignal) {
+    const deadline = Date.now() + 10 * 60 * 1000;
+
+    while (Date.now() < deadline) {
+      await delay(2000, signal);
+
+      const response = await fetch(`/api/ai/generate-image/${encodeURIComponent(jobId)}`, {
+        cache: "no-store",
+        signal,
+      });
+      const data = await readJsonResponse<AiImageJobPollResult>(response);
+
+      if (!response.ok || !data.job) {
+        throw new Error(data.error || t("读取 AI 生成状态失败", "Failed to read AI generation status"));
+      }
+
+      if (data.job.status === "completed" && data.job.result_url) {
+        return data.job.result_url;
+      }
+
+      if (data.job.status === "failed") {
+        throw new Error(data.job.error_message || t("AI 生成失败", "AI generation failed"));
+      }
+
+      setProgressPercent((current) => Math.min(86, Math.max(current + 1, current)));
+    }
+
+    throw new Error(t("AI 生成等待超时，请稍后在生图记录里查看结果", "AI generation timed out. Check generation history later."));
+  }
+
   async function generateFromReference(input: {
     height: number;
     prompt: string;
@@ -884,12 +948,14 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         height: input.height,
         prompt: input.prompt,
         provider_id: selectedProvider || undefined,
+        queue: true,
         reference_url: input.referenceUrl,
         routing_profile: gridSize === 3 ? "grid_3x3_fast_fallback" : undefined,
         save_to_assets: input.saveToAssets,
         transparent_background: selectedBackgroundColor === "transparent",
         background_tolerance: 52,
         background_feather: 16,
+        wait: false,
         width: input.width,
       }),
       headers: { "Content-Type": "application/json" },
@@ -901,6 +967,10 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       ? `data:${data.mime_type || "image/png"};base64,${data.image_base64}`
       : null;
     const resultUrl = data.result_url || inlineResultUrl;
+
+    if (data.queued && data.job_id) {
+      return waitForGeneratedImage(data.job_id, input.signal);
+    }
 
     if (!response.ok || !resultUrl) {
       throw new Error(data.error || t("AI 生成失败", "AI generation failed"));

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
@@ -8,6 +9,9 @@ import path from "node:path";
 import { createJiti } from "jiti";
 import JSZip from "jszip";
 import sharp from "sharp";
+
+loadWorkerEnvFile(".env.local");
+loadWorkerEnvFile(".env");
 
 const BASE_URL = stripTrailingSlash(
   process.env.LOCAL_WORKER_BASE_URL ||
@@ -19,12 +23,13 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip,ai_generate_image")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
 const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
+const AI_GENERATE_IMAGE_JOB_TYPE = "ai_generate_image";
 const LOCAL_ASSETS_DIR = path.resolve(
   process.env.LOCAL_ASSETS_DIR ||
     (process.platform === "win32"
@@ -46,6 +51,7 @@ const STARTED_AT = new Date().toISOString();
 const workerSlots = new Map();
 let stateWriteQueue = Promise.resolve();
 let infringementDetector = null;
+let aiImageWorker = null;
 
 process.on("SIGINT", () => {
   stopping = true;
@@ -55,6 +61,34 @@ process.on("SIGTERM", () => {
   stopping = true;
   queueWorkerStateWrite("sigterm");
 });
+
+function loadWorkerEnvFile(filename) {
+  const filePath = path.resolve(process.cwd(), filename);
+  if (!existsSync(filePath)) return;
+
+  const content = readFileSync(filePath, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const normalized = trimmed.startsWith("export ") ? trimmed.slice(7).trim() : trimmed;
+    const equalsIndex = normalized.indexOf("=");
+    if (equalsIndex <= 0) continue;
+
+    const key = normalized.slice(0, equalsIndex).trim();
+    if (!key || process.env[key] !== undefined) continue;
+
+    let value = normalized.slice(equalsIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    process.env[key] = value;
+  }
+}
 
 function stripTrailingSlash(value) {
   return value.replace(/\/+$/, "");
@@ -264,6 +298,27 @@ function getInfringementDetector() {
   });
   infringementDetector = jiti("../src/lib/infringement/detector.ts");
   return infringementDetector;
+}
+
+function getAiImageWorker() {
+  if (aiImageWorker) {
+    return aiImageWorker;
+  }
+
+  const jiti = createJiti(import.meta.url, {
+    alias: {
+      "@": path.resolve("src"),
+      "server-only": path.resolve("tools", "worker-server-only-stub.mjs"),
+    },
+    interopDefault: true,
+  });
+  const aiJobs = jiti("../src/lib/ai-image/worker-jobs.ts");
+  const supabaseServer = jiti("../src/lib/supabase/server.ts");
+  aiImageWorker = {
+    createSupabaseServiceRoleClient: supabaseServer.createSupabaseServiceRoleClient,
+    executeAiGenerateImageJob: aiJobs.executeAiGenerateImageJob,
+  };
+  return aiImageWorker;
 }
 
 async function computeAverageHash(buffer) {
@@ -1236,6 +1291,21 @@ async function processExportImagesZip(job) {
   };
 }
 
+async function processAiGenerateImage(job) {
+  const jobId = job.job_id || job.item_id;
+  if (!jobId) {
+    throw new Error("ai_generate_image job is missing job_id");
+  }
+
+  const worker = getAiImageWorker();
+  const supabase = worker.createSupabaseServiceRoleClient();
+  const result = await worker.executeAiGenerateImageJob(supabase, jobId);
+
+  return {
+    ai_image: result,
+  };
+}
+
 function appendFile(form, name, file) {
   if (!file) return;
   form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
@@ -1278,18 +1348,32 @@ async function claimJob() {
     }
   }
 
-  if (!JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
+  if (JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
+    const exportData = await apiFetch("/api/local-worker/exports/claim", {
+      method: "POST",
+    });
+
+    if (exportData.job) {
+      return exportData.job;
+    }
+  }
+
+  if (!JOB_TYPES.includes(AI_GENERATE_IMAGE_JOB_TYPE)) {
     return null;
   }
 
-  const exportData = await apiFetch("/api/local-worker/exports/claim", {
+  const aiData = await apiFetch("/api/local-worker/ai-images/claim", {
     method: "POST",
   });
 
-  return exportData.job || null;
+  return aiData.job || null;
 }
 
 async function completeJob(job, result) {
+  if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
+    return result.ai_image;
+  }
+
   if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
     const recordId = getExportRecordId(job);
     const form = new FormData();
@@ -1341,6 +1425,15 @@ async function completeJob(job, result) {
 }
 
 async function failJob(job, error) {
+  if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/ai-images/${encodeURIComponent(jobId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
     const recordId = getExportRecordId(job);
     return apiFetch(`/api/local-worker/exports/${encodeURIComponent(recordId)}/fail`, {
@@ -1358,6 +1451,10 @@ async function failJob(job, error) {
 }
 
 async function processJob(job) {
+  if (job.job_type === AI_GENERATE_IMAGE_JOB_TYPE) {
+    return processAiGenerateImage(job);
+  }
+
   if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
     return processExportImagesZip(job);
   }
