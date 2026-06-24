@@ -310,8 +310,13 @@ export async function completeInfringementWorkerItem(
     .insert({
       asset_id: asset.id,
       confidence: result.confidence,
-      detection_source: "worker_rule_engine",
-      evidence: result.evidence,
+      detection_source: "rule_engine",
+      evidence: {
+        ...result.evidence,
+        execution: "local_worker",
+        worker_job_id: item.job_id,
+        worker_job_item_id: item.id,
+      },
       matched_rules: result.matched_rules,
       recommendation: result.recommendation,
       risk_level: result.risk_level,
