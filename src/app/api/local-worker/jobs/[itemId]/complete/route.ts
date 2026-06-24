@@ -50,7 +50,7 @@ async function readFile(form: FormData, fieldName: string) {
 }
 
 async function readFiles(form: FormData, fieldName: string) {
-  const files = [];
+  const files: Array<{ buffer: Buffer; contentType: string }> = [];
 
   for (const value of form.getAll(fieldName)) {
     if (!value || typeof value === "string") {

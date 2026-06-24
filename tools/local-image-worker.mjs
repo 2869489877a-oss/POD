@@ -16,7 +16,7 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
@@ -819,6 +819,65 @@ async function processPrintExtraction(job) {
   };
 }
 
+function getResizeConfig(job) {
+  const options = asRecord(job.options);
+  const width = Math.round(Number(options.width));
+  const height = Math.round(Number(options.height));
+  const outputFormat = options.output_format === "jpg" || options.output_format === "jpeg" ? "jpg" : "png";
+  const background = options.background === "transparent" ? "transparent" : "white";
+
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+    throw new Error("resize task requires a valid width and height");
+  }
+
+  return {
+    background,
+    contentType: outputFormat === "jpg" ? "image/jpeg" : "image/png",
+    extension: outputFormat,
+    height,
+    width,
+  };
+}
+
+async function processResize(job) {
+  const source = await readImageBuffer(job.input_url);
+  const config = getResizeConfig(job);
+  const image = sharp(source)
+    .rotate()
+    .resize(config.width, config.height, {
+      background:
+        config.background === "transparent"
+          ? { alpha: 0, b: 0, g: 0, r: 0 }
+          : { alpha: 1, b: 255, g: 255, r: 255 },
+      fit: "contain",
+      position: "center",
+      withoutEnlargement: false,
+    });
+  const output =
+    config.extension === "jpg"
+      ? await image.flatten({ background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer()
+      : await image.png().toBuffer();
+
+  return {
+    bbox: { height: config.height, width: config.width, x: 0, y: 0 },
+    files: {
+      output: {
+        buffer: output,
+        contentType: config.contentType,
+        filename: `resize.${config.extension}`,
+      },
+    },
+    height: config.height,
+    metrics: {
+      background: config.background,
+      output_format: config.extension,
+      preset_key: job.options?.preset_key || null,
+      source: "local-image-worker",
+    },
+    width: config.width,
+  };
+}
+
 function validateMockupScenes(value) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error("mockup task requires scenes");
@@ -994,6 +1053,9 @@ async function failJob(job, error) {
 }
 
 async function processJob(job) {
+  if (job.job_type === "resize") {
+    return processResize(job);
+  }
   if (job.job_type === "cutout") {
     return processCutout(job);
   }

@@ -183,6 +183,14 @@ const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }>
   processing: { zh: "处理中", en: "Processing" },
 };
 
+const RESIZE_POLL_INTERVAL_MS = 1000;
+const RESIZE_MAX_POLLS = 600;
+const TERMINAL_RESIZE_STATUSES = new Set<ResizeJobStatus>(["completed", "failed", "partial_failed"]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function formatFileSize(size: number) {
   if (size < 1024 * 1024) {
     return `${(size / 1024).toFixed(1)} KB`;
@@ -524,7 +532,6 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
   async function startResizeJob() {
     const assetIds = Array.from(selectedIds);
-    let pollTimer: number | undefined;
 
     if (assetIds.length === 0) {
       setResizeError(t("请先选择要处理的图片", "Please select images to process"));
@@ -558,35 +565,34 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         ...createData.job,
         items: [],
       });
-      setResizeMessage(t("任务已创建，正在同步处理图片...", "Job created. Processing images synchronously..."));
+      setResizeMessage(t("任务已创建，等待本地 worker 处理图片...", "Job created. Waiting for the local worker..."));
       setIsResizeDialogOpen(false);
 
-      pollTimer = window.setInterval(() => {
-        void fetchResizeJob(jobId)
-          .then((job) => setResizeJob(job))
-          .catch(() => undefined);
-      }, 1000);
+      for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
+        await sleep(RESIZE_POLL_INTERVAL_MS);
 
-      const processResponse = await fetch(`/api/image-jobs/${jobId}`, {
-        method: "POST",
-      });
-      const processData = (await processResponse.json()) as ResizeJobResponse;
+        const job = await fetchResizeJob(jobId);
+        const completedCount = job.success_count + job.failed_count;
+        const percent = job.total_count > 0 ? Math.min(100, Math.round((completedCount / job.total_count) * 100)) : 0;
 
-      if (!processResponse.ok || !processData.job) {
-        throw new Error(processData.error ?? t("任务处理失败", "Job processing failed"));
+        setResizeJob(job);
+        setResizeMessage(
+          TERMINAL_RESIZE_STATUSES.has(job.status)
+            ? t(`批量改尺寸任务处理完成：${completedCount}/${job.total_count}`, `Batch resize job complete: ${completedCount}/${job.total_count}`)
+            : t(`本地 worker 处理中：${completedCount}/${job.total_count}，${percent}%`, `Local worker processing: ${completedCount}/${job.total_count}, ${percent}%`),
+        );
+
+        if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
+          await fetchAssets(status, copyrightStatus, assetSource);
+          return;
+        }
       }
 
-      setResizeJob(processData.job);
-      setResizeMessage(t("批量改尺寸任务处理完成", "Batch resize job complete"));
-      await fetchAssets(status, copyrightStatus, assetSource);
+      setResizeMessage(t("批量改尺寸仍在后台处理，可稍后到图片任务页查看。", "Batch resize is still running. Check Image Jobs later."));
     } catch (requestError) {
       setResizeError(requestError instanceof Error ? requestError.message : t("任务处理失败", "Job processing failed"));
       setResizeMessage(null);
     } finally {
-      if (pollTimer) {
-        window.clearInterval(pollTimer);
-      }
-
       setIsResizeRunning(false);
     }
   }

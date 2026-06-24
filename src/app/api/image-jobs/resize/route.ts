@@ -116,8 +116,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: itemError.message }, { status: 500 });
   }
 
+  const { error: assetUpdateError } = await supabase
+    .from("assets")
+    .update({ status: "processing" })
+    .in("id", assetIds);
+
+  if (assetUpdateError) {
+    await supabase
+      .from("image_jobs")
+      .update({
+        error_message: assetUpdateError.message,
+        failed_count: assets.length,
+        status: "failed",
+      })
+      .eq("id", job.id);
+
+    return NextResponse.json({ error: assetUpdateError.message }, { status: 500 });
+  }
+
   return NextResponse.json({
     job,
-    message: "批量改尺寸任务已创建",
+    message: "批量改尺寸任务已创建，等待本地 worker 处理",
   });
 }

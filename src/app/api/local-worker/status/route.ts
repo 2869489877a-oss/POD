@@ -8,7 +8,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const LOCAL_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup"];
+const LOCAL_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize"];
 
 type WorkerState = {
   concurrency?: number;

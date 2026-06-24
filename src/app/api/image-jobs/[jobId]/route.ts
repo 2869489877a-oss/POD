@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { processResizeJob } from "@/lib/image-processing/resize-job";
+import { getResizeJobProgress } from "@/lib/image-processing/resize-job";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -50,11 +50,6 @@ type MockupOutputDetailRow = {
   template_id: string | null;
 };
 
-type ImageJobItemStatusRow = {
-  id: string;
-  status: string;
-};
-
 function getStringOption(options: unknown, key: string) {
   if (!options || typeof options !== "object" || !(key in options)) {
     return null;
@@ -77,46 +72,6 @@ function getPrimaryDerivativeType(jobType: string) {
 function getJobId(request: Request) {
   const pathname = new URL(request.url).pathname;
   return decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) ?? "");
-}
-
-async function markJobFailed(jobId: string, errorMessage: string) {
-  const supabase = createSupabaseServiceRoleClient();
-  const { data } = await supabase
-    .from("image_job_items")
-    .select("id,status")
-    .eq("job_id", jobId);
-
-  const items = (data ?? []) as unknown as ImageJobItemStatusRow[];
-  const unfinishedItems = items.filter(
-    (item) => item.status === "pending" || item.status === "processing",
-  );
-
-  if (unfinishedItems.length > 0) {
-    await supabase
-      .from("image_job_items")
-      .update({
-        error_message: errorMessage,
-        status: "failed",
-      })
-      .in(
-        "id",
-        unfinishedItems.map((item) => item.id),
-      );
-  }
-
-  const successCount = items.filter((item) => item.status === "completed").length;
-  const failedCount = items.filter((item) => item.status === "failed").length + unfinishedItems.length;
-
-  await supabase
-    .from("image_jobs")
-    .update({
-      error_message: errorMessage,
-      failed_count: failedCount,
-      status: "failed",
-      success_count: successCount,
-      total_count: items.length,
-    })
-    .eq("id", jobId);
 }
 
 export async function GET(request: Request) {
@@ -273,11 +228,14 @@ export async function POST(request: Request) {
   const supabase = createSupabaseServiceRoleClient();
 
   try {
-    const job = await processResizeJob(supabase, jobId);
-    return NextResponse.json({ job });
+    const job = await getResizeJobProgress(supabase, jobId);
+    return NextResponse.json({
+      job,
+      message: "任务已进入本地 worker 队列，请轮询 GET 接口查看进度",
+      queued: true,
+    });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "任务处理失败";
-    await markJobFailed(jobId, errorMessage);
 
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }

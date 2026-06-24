@@ -10,7 +10,7 @@ import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
-export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup";
+export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup" | "resize";
 type ImageJobStatus = "pending" | "processing" | "completed" | "failed" | "partial_failed";
 
 type AssetForWorker = {
@@ -106,6 +106,25 @@ function buildMockupOutputPath(jobId: string, itemId: string, filename: string, 
   const paddedIndex = String(index + 1).padStart(2, "0");
 
   return `mockup-outputs/${datePath}/${jobId}/${itemId}/${randomUUID()}-${safeName}-${paddedIndex}.png`;
+}
+
+function buildResizeOutputPath(jobId: string, itemId: string, filename: string, extension: "jpg" | "png") {
+  const datePath = new Date().toISOString().slice(0, 10);
+  const safeName = sanitizeFilename(filename).replace(/\.[^.]+$/, "");
+
+  return `processed/resize/${datePath}/${jobId}/${itemId}-${randomUUID()}-${safeName}.${extension}`;
+}
+
+function outputExtension(options: unknown, file: WorkerFileInput): "jpg" | "png" {
+  const option = stringOption(options, "output_format");
+  if (option === "jpg" || option === "jpeg") {
+    return "jpg";
+  }
+  if (option === "png") {
+    return "png";
+  }
+
+  return file.contentType === "image/jpeg" ? "jpg" : "png";
 }
 
 function stringOption(options: unknown, key: string) {
@@ -412,6 +431,49 @@ export async function completeLocalWorkerItem(
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
   const options = job.options ?? {};
 
+  if (job.job_type === "resize") {
+    const outputUrl = await uploadFile(
+      supabase,
+      buildResizeOutputPath(item.job_id, item.id, asset.filename, outputExtension(options, input.output)),
+      input.output,
+    );
+
+    const { error: assetUpdateError } = await supabase
+      .from("assets")
+      .update({
+        processed_url: outputUrl,
+        status: "processed",
+      })
+      .eq("id", asset.id);
+
+    if (assetUpdateError) {
+      throw new Error(`resize asset update failed: ${assetUpdateError.message}`);
+    }
+
+    const { error: itemUpdateError } = await supabase
+      .from("image_job_items")
+      .update({
+        error_message: null,
+        output_url: outputUrl,
+        status: "completed",
+      })
+      .eq("id", item.id);
+
+    if (itemUpdateError) {
+      throw new Error(`resize item update failed: ${itemUpdateError.message}`);
+    }
+
+    const jobCounts = await updateJobCounts(supabase, item.job_id);
+    if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+      await archiveOldImageJobItems(supabase);
+    }
+
+    return {
+      job: jobCounts,
+      output_url: outputUrl,
+    };
+  }
+
   if (job.job_type === "mockup") {
     const templateId = stringOption(options, "template_id");
     const mockupOutputs = input.mockupOutputs?.length ? input.mockupOutputs : [input.output];
@@ -602,6 +664,28 @@ export async function failLocalWorkerItem(
   errorMessage: string,
 ) {
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
+
+  if (job.job_type === "resize") {
+    const { error: itemUpdateError } = await supabase
+      .from("image_job_items")
+      .update({
+        error_message: errorMessage,
+        status: "failed",
+      })
+      .eq("id", item.id);
+
+    if (itemUpdateError) {
+      throw new Error(`resize item fail update failed: ${itemUpdateError.message}`);
+    }
+
+    await supabase.from("assets").update({ status: "failed" }).eq("id", asset.id);
+
+    const jobCounts = await updateJobCounts(supabase, item.job_id);
+    if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+      await archiveOldImageJobItems(supabase);
+    }
+    return jobCounts;
+  }
 
   if (job.job_type === "mockup") {
     const templateId = stringOption(job.options ?? {}, "template_id");

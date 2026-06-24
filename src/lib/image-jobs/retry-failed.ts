@@ -1,15 +1,5 @@
 import "server-only";
 
-import { randomUUID } from "crypto";
-
-import { resizeImageBuffer } from "@/lib/image-processing/resize-image";
-import {
-  getResizePreset,
-  type ResizePreset,
-  type ResizePresetKey,
-} from "@/lib/image-processing/resize-presets";
-import { readImageBuffer } from "@/lib/network/image-buffer";
-import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
@@ -26,16 +16,6 @@ type ImageJobItemForRetry = {
   input_url: string;
   output_url: string | null;
   status: "pending" | "processing" | "completed" | "failed";
-};
-
-type AssetForRetry = {
-  cutout_url: string | null;
-  filename: string;
-  id: string;
-  original_url: string;
-  preferred_design_url: string | null;
-  print_extract_url: string | null;
-  processed_url: string | null;
 };
 
 type JobCounts = {
@@ -58,24 +38,6 @@ export type RetryFailedItemsResult = JobCounts & {
   retried_count: number;
 };
 
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "未知错误";
-}
-
-function sanitizeFilename(filename: string) {
-  const normalized = filename.trim().replaceAll("\\", "-").replaceAll("/", "-");
-  return normalized.replace(/[^a-zA-Z0-9._-]/g, "-") || "image";
-}
-
-function getResizePresetKey(options: unknown): ResizePresetKey | null {
-  if (!options || typeof options !== "object" || !("preset_key" in options)) {
-    return null;
-  }
-
-  const presetKey = (options as { preset_key?: unknown }).preset_key;
-  return presetKey === "tshirt-print" || presetKey === "square-product" ? presetKey : null;
-}
-
 function getRetryItemIds(value: unknown) {
   if (!Array.isArray(value)) {
     return null;
@@ -84,19 +46,6 @@ function getRetryItemIds(value: unknown) {
   return Array.from(
     new Set(value.filter((item): item is string => typeof item === "string" && item.length > 0)),
   );
-}
-
-async function downloadImage(url: string) {
-  return readImageBuffer(url, {
-    maxBytes: 25 * 1024 * 1024,
-    timeoutMs: 30_000,
-  });
-}
-
-function buildResizeOutputPath(jobId: string, itemId: string, asset: AssetForRetry, preset: ResizePreset) {
-  const datePath = new Date().toISOString().slice(0, 10);
-  const filename = sanitizeFilename(asset.filename).replace(/\.[^.]+$/, "");
-  return `processed/resize-retry/${datePath}/${jobId}/${itemId}-${randomUUID()}-${filename}.${preset.extension}`;
 }
 
 async function calculateAndUpdateJobCounts(
@@ -179,51 +128,6 @@ async function getRetryItems(
   return items;
 }
 
-async function getAssetsById(supabase: SupabaseServiceClient, assetIds: string[]) {
-  const { data, error } = await supabase
-    .from("assets")
-    .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url")
-    .in("id", assetIds);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return new Map(
-    ((data ?? []) as unknown as AssetForRetry[]).map((asset) => [asset.id, asset]),
-  );
-}
-
-async function retryResizeItem(
-  supabase: SupabaseServiceClient,
-  jobId: string,
-  item: ImageJobItemForRetry,
-  asset: AssetForRetry,
-  preset: ResizePreset,
-) {
-  const inputBuffer = await downloadImage(item.input_url);
-  const outputBuffer = await resizeImageBuffer(inputBuffer, preset);
-  const outputPath = buildResizeOutputPath(jobId, item.id, asset, preset);
-
-  const outputUrl = (await saveLocalAssetAtPath({
-    buffer: outputBuffer,
-    relativePath: outputPath,
-  })).publicUrl;
-  const { error: assetUpdateError } = await supabase
-    .from("assets")
-    .update({
-      processed_url: outputUrl,
-      status: "processed",
-    })
-    .eq("id", asset.id);
-
-  if (assetUpdateError) {
-    throw new Error(`素材更新失败：${assetUpdateError.message}`);
-  }
-
-  return outputUrl;
-}
-
 async function getRetryResult(
   supabase: SupabaseServiceClient,
   jobId: string,
@@ -277,52 +181,7 @@ export async function retryFailedImageJobItems(
 
   const items = await getRetryItems(supabase, jobId, requestedItemIds);
 
-  if (job.job_type === "cutout" || job.job_type === "print_extraction" || job.job_type === "mockup") {
-    const { error: itemUpdateError } = await supabase
-      .from("image_job_items")
-      .update({
-        error_message: null,
-        output_url: null,
-        status: "pending",
-      })
-      .in(
-        "id",
-        items.map((item) => item.id),
-      );
-
-    if (itemUpdateError) {
-      throw new Error(itemUpdateError.message);
-    }
-
-    const { error: assetUpdateError } = await supabase
-      .from("assets")
-      .update({ status: "processing" })
-      .in(
-        "id",
-        Array.from(new Set(items.map((item) => item.asset_id))),
-      );
-
-    if (assetUpdateError) {
-      throw new Error(assetUpdateError.message);
-    }
-
-    await calculateAndUpdateJobCounts(supabase, jobId);
-
-    return getRetryResult(supabase, jobId, items.length);
-  }
-
-  const assetsById = await getAssetsById(
-    supabase,
-    Array.from(new Set(items.map((item) => item.asset_id))),
-  );
-
-  const preset = getResizePreset(getResizePresetKey(job.options));
-
-  if (job.job_type === "resize" && !preset) {
-    throw new Error("原任务缺少有效的尺寸预设，无法重新执行");
-  }
-
-  await supabase
+  const { error: itemUpdateError } = await supabase
     .from("image_job_items")
     .update({
       error_message: null,
@@ -333,58 +192,24 @@ export async function retryFailedImageJobItems(
       "id",
       items.map((item) => item.id),
     );
-  await calculateAndUpdateJobCounts(supabase, jobId);
 
-  for (const item of items) {
-    const asset = assetsById.get(item.asset_id);
-
-    if (!asset) {
-      await supabase
-        .from("image_job_items")
-        .update({
-          error_message: "素材记录不存在",
-          status: "failed",
-        })
-        .eq("id", item.id);
-      await calculateAndUpdateJobCounts(supabase, jobId);
-      continue;
-    }
-
-    try {
-      await supabase
-        .from("image_job_items")
-        .update({ error_message: null, status: "processing" })
-        .eq("id", item.id);
-      await calculateAndUpdateJobCounts(supabase, jobId);
-
-      const outputUrl = await retryResizeItem(supabase, jobId, item, asset, preset as ResizePreset);
-
-      await supabase
-        .from("image_job_items")
-        .update({
-          error_message: null,
-          output_url: outputUrl,
-          status: "completed",
-        })
-        .eq("id", item.id);
-    } catch (error) {
-      const errorMessage = getErrorMessage(error);
-
-      await supabase
-        .from("image_job_items")
-        .update({
-          error_message: errorMessage,
-          status: "failed",
-        })
-        .eq("id", item.id);
-
-      if (job.job_type === "resize") {
-        await supabase.from("assets").update({ status: "failed" }).eq("id", item.asset_id);
-      }
-    }
-
-    await calculateAndUpdateJobCounts(supabase, jobId);
+  if (itemUpdateError) {
+    throw new Error(itemUpdateError.message);
   }
+
+  const { error: assetUpdateError } = await supabase
+    .from("assets")
+    .update({ status: "processing" })
+    .in(
+      "id",
+      Array.from(new Set(items.map((item) => item.asset_id))),
+    );
+
+  if (assetUpdateError) {
+    throw new Error(assetUpdateError.message);
+  }
+
+  await calculateAndUpdateJobCounts(supabase, jobId);
 
   return getRetryResult(supabase, jobId, items.length);
 }
