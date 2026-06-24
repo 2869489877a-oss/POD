@@ -29,10 +29,26 @@ type ImageJobItemDetailRow = {
   updated_at: string;
 };
 
+type ImageDerivativeDetailRow = {
+  created_at: string;
+  derivative_type: string;
+  id: string;
+  job_item_id: string | null;
+  output_url: string | null;
+  preview_url: string | null;
+  status: string;
+};
+
 type ImageJobItemStatusRow = {
   id: string;
   status: string;
 };
+
+function getPrimaryDerivativeType(jobType: string) {
+  if (jobType === "cutout") return "cutout";
+  if (jobType === "print_extraction") return "print_extract_final";
+  return null;
+}
 
 function getJobId(request: Request) {
   const pathname = new URL(request.url).pathname;
@@ -132,9 +148,46 @@ export async function GET(request: Request) {
       throw new Error(itemError.message);
     }
 
+    const jobRow = jobData as unknown as ImageJobDetailRow;
+    const items = (itemData ?? []) as unknown as ImageJobItemDetailRow[];
+    const primaryDerivativeType = getPrimaryDerivativeType(jobRow.job_type);
+    const derivativeByItemId = new Map<string, ImageDerivativeDetailRow>();
+
+    if (primaryDerivativeType && items.length > 0) {
+      const { data: derivativeData, error: derivativeError } = await supabase
+        .from("image_derivatives")
+        .select("id,job_item_id,derivative_type,output_url,preview_url,status,created_at")
+        .eq("job_id", jobId)
+        .eq("derivative_type", primaryDerivativeType)
+        .in(
+          "job_item_id",
+          items.map((item) => item.id),
+        )
+        .order("created_at", { ascending: false });
+
+      if (derivativeError) {
+        throw new Error(derivativeError.message);
+      }
+
+      for (const derivative of (derivativeData ?? []) as unknown as ImageDerivativeDetailRow[]) {
+        if (derivative.job_item_id && !derivativeByItemId.has(derivative.job_item_id)) {
+          derivativeByItemId.set(derivative.job_item_id, derivative);
+        }
+      }
+    }
+
     const job = {
-      ...(jobData as unknown as ImageJobDetailRow),
-      items: (itemData ?? []) as unknown as ImageJobItemDetailRow[],
+      ...jobRow,
+      items: items.map((item) => {
+        const derivative = derivativeByItemId.get(item.id);
+
+        return {
+          ...item,
+          derivative_id: derivative?.id ?? null,
+          output_url: item.output_url ?? derivative?.output_url ?? null,
+          preview_url: derivative?.preview_url ?? item.output_url ?? null,
+        };
+      }),
     };
 
     return NextResponse.json({ job });

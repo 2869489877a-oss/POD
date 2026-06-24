@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
@@ -43,6 +44,7 @@ type ApiResultItem = {
 
 type ProcessingResultItem = {
   asset_id: string;
+  derivative_id: string | null;
   error_message: string | null;
   filename: string;
   input_url: string;
@@ -72,10 +74,12 @@ type ProcessingResponse = {
 
 type QueuedJobItem = {
   asset_id: string;
+  derivative_id?: string | null;
   error_message: string | null;
   id: string;
   input_url: string;
   output_url: string | null;
+  preview_url?: string | null;
   status: string;
 };
 
@@ -116,6 +120,8 @@ const printModes = [
 const QUEUED_JOB_POLL_INTERVAL_MS = 2000;
 const QUEUED_JOB_MAX_POLLS = 300;
 const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "partial_failed"]);
+const TRANSPARENT_CHECKERBOARD =
+  "linear-gradient(45deg, #f3f4f6 25%, transparent 25%), linear-gradient(-45deg, #f3f4f6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f3f4f6 75%), linear-gradient(-45deg, transparent 75%, #f3f4f6 75%)";
 
 function getPreviewUrl(asset: Asset): string {
   return asset.preferred_design_url ?? asset.print_extract_url ?? asset.cutout_url ?? asset.processed_url ?? asset.original_url;
@@ -137,6 +143,7 @@ function buildSummaryFromResponse(
 
     return {
       asset_id: result.asset_id,
+      derivative_id: result.derivative_id ?? null,
       error_message: result.error_message ?? null,
       filename: result.filename ?? asset?.filename ?? result.asset_id,
       input_url: result.input_url ?? asset?.original_url ?? "",
@@ -162,12 +169,13 @@ function buildSummaryFromQueuedJob(job: QueuedJob, assetMap: Map<string, Asset>)
 
     return {
       asset_id: item.asset_id,
+      derivative_id: item.derivative_id ?? null,
       error_message: item.error_message ?? null,
       filename: asset?.filename ?? item.asset_id,
       input_url: item.input_url || asset?.original_url || "",
       item_id: item.id,
       output_url: item.output_url,
-      preview_url: item.output_url,
+      preview_url: item.preview_url ?? item.output_url,
       status: isCompleted ? "completed" : "failed",
     };
   });
@@ -186,6 +194,15 @@ function wait(ms: number) {
   });
 }
 
+function getTransparentPreviewStyle(url: string): CSSProperties {
+  return {
+    backgroundImage: `${TRANSPARENT_CHECKERBOARD}, url("${getDisplayImageSrc(url)}")`,
+    backgroundPosition: "0 0, 8px 8px, 8px -8px, 0 0, center",
+    backgroundRepeat: "repeat, repeat, repeat, repeat, no-repeat",
+    backgroundSize: "16px 16px, 16px 16px, 16px 16px, 16px 16px, contain",
+  };
+}
+
 export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiProcessingManagerProps) {
   const { t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -195,12 +212,14 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
   const [padding, setPadding] = useState(40);
   const [minComponentArea, setMinComponentArea] = useState(80);
   const [cropToContent, setCropToContent] = useState(true);
-  const [setPreferred, setSetPreferred] = useState(true);
+  const [setPreferred, setSetPreferred] = useState(false);
   const [summary, setSummary] = useState<ProcessingSummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
   const [isLoadingAssets, setIsLoadingAssets] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [preferredResultIds, setPreferredResultIds] = useState<Set<string>>(new Set());
+  const [preferredItemId, setPreferredItemId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const selectedCount = selectedIds.size;
   const resultLabel = kind === "cutout" ? t("抠图结果", "cutout result") : t("印花提取结果", "print extraction result");
@@ -274,6 +293,39 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
     return null;
   }
 
+  async function setResultAsPreferred(item: ProcessingResultItem) {
+    if (!item.derivative_id) {
+      setError(t("缺少派生图记录，无法设为素材优先图。请刷新后重试。", "Missing derivative record. Refresh and try again."));
+      return;
+    }
+
+    setPreferredItemId(item.item_id);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/image-derivatives/${encodeURIComponent(item.derivative_id)}/set-preferred`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error ?? t("设为素材优先图失败", "Failed to set preferred image"));
+      }
+
+      setPreferredResultIds((current) => {
+        const next = new Set(current);
+        next.add(item.item_id);
+        return next;
+      });
+      setMessage(t(`已将 ${item.filename} 设为素材优先图`, `${item.filename} is now the preferred asset image`));
+      await refreshAssets();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("设为素材优先图失败", "Failed to set preferred image"));
+    } finally {
+      setPreferredItemId(null);
+    }
+  }
+
   function toggleAsset(assetId: string) {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -310,6 +362,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
     setError(null);
     setMessage(kind === "cutout" ? t("正在执行抠图...", "Running cutout...") : t("正在提取印花图...", "Extracting print artwork..."));
     setSummary(null);
+    setPreferredResultIds(new Set());
 
     try {
       const endpoint = kind === "cutout" ? "/api/cutout/jobs" : "/api/print-extraction/jobs";
@@ -596,7 +649,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   disabled={isProcessing}
                   className="h-4 w-4 rounded border-zinc-300"
                 />
-                {t("处理成功后设为套图优先图", "Set successful result as mockup preferred image")}
+                {t("处理成功后自动设为套图优先图", "Automatically set successful result as mockup preferred image")}
               </label>
 
               <button
@@ -655,35 +708,41 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
                   </span>
                 </div>
 
-                <div className="mt-4 grid grid-cols-2 gap-3">
-                  {item.preview_url ? (
-                    <a
-                      href={item.preview_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-cover bg-center"
-                      style={{ backgroundImage: `url("${item.preview_url}")` }}
-                      aria-label={t("打开预览图", "Open preview image")}
-                    />
-                  ) : (
-                    <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
-                      {t("无预览图", "No preview")}
-                    </div>
-                  )}
-                  {item.output_url ? (
-                    <a
-                      href={item.output_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-contain bg-center bg-no-repeat"
-                      style={{ backgroundImage: `url("${item.output_url}")` }}
-                      aria-label={kind === "cutout" ? t("打开结果图", "Open result image") : t("打开最终图", "Open final image")}
-                    />
-                  ) : (
-                    <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
-                      {t("无结果图", "No result image")}
-                    </div>
-                  )}
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-zinc-500">{t("原图", "Original")}</p>
+                    {item.input_url ? (
+                      <a
+                        href={item.input_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block aspect-square rounded-md border border-zinc-200 bg-zinc-100 bg-contain bg-center bg-no-repeat"
+                        style={{ backgroundImage: `url("${getDisplayImageSrc(item.input_url)}")` }}
+                        aria-label={t("打开原图", "Open original image")}
+                      />
+                    ) : (
+                      <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
+                        {t("无原图", "No original")}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-zinc-500">{t("处理结果", "Result")}</p>
+                    {item.output_url ? (
+                      <a
+                        href={item.output_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block aspect-square rounded-md border border-zinc-200 bg-center"
+                        style={getTransparentPreviewStyle(item.output_url)}
+                        aria-label={kind === "cutout" ? t("打开结果图", "Open result image") : t("打开最终图", "Open final image")}
+                      />
+                    ) : (
+                      <div className="flex aspect-square items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-xs text-zinc-400">
+                        {t("无结果图", "No result image")}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {item.error_message ? (
@@ -694,16 +753,25 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
 
                 {item.output_url ? (
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {item.preview_url ? (
-                      <a
-                        href={item.preview_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
-                      >
-                        {t("打开预览图", "Open Preview")}
-                      </a>
-                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void setResultAsPreferred(item)}
+                      disabled={!item.derivative_id || preferredItemId === item.item_id || preferredResultIds.has(item.item_id)}
+                      className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                    >
+                      {preferredResultIds.has(item.item_id)
+                        ? t("已设为优先图", "Preferred")
+                        : preferredItemId === item.item_id
+                          ? t("确认中...", "Saving...")
+                          : t("确认入素材库", "Use in Assets")}
+                    </button>
+                    <a
+                      href={item.output_url}
+                      download
+                      className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+                    >
+                      {t("下载结果", "Download Result")}
+                    </a>
                     <a
                       href={item.output_url}
                       target="_blank"
