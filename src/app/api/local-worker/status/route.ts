@@ -1,6 +1,4 @@
 import { readFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 
 import { NextResponse } from "next/server";
 
@@ -8,7 +6,8 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const LOCAL_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
+const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
+const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "export_images_zip"] as const;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
 
@@ -27,6 +26,10 @@ type QueueRow = {
   image_jobs?: {
     job_type?: string | null;
   } | null;
+};
+
+type ExportQueueRow = {
+  status?: string | null;
 };
 
 function emptyQueueCounts() {
@@ -53,18 +56,32 @@ function normalizeWorkerJobTypes(value: unknown) {
 }
 
 function getLocalAssetsDir() {
-  return path.resolve(
-    process.env.LOCAL_ASSETS_DIR ||
-      (process.platform === "win32"
-        ? path.join(os.tmpdir(), "pod-ai-data", "assets")
-        : "/wmsFile/pod-ai-data/assets"),
-  );
+  const configured = process.env.LOCAL_ASSETS_DIR?.trim();
+  if (configured) {
+    return configured.replace(/[\\/]+$/, "");
+  }
+
+  const tempDir = process.env.TEMP || process.env.TMP || "C:\\Windows\\Temp";
+  return process.platform === "win32"
+    ? `${tempDir.replace(/[\\/]+$/, "")}\\pod-ai-data\\assets`
+    : "/wmsFile/pod-ai-data/assets";
+}
+
+function dirnameString(value: string) {
+  const normalized = value.replace(/[\\/]+$/, "");
+  const slashIndex = Math.max(normalized.lastIndexOf("/"), normalized.lastIndexOf("\\"));
+  return slashIndex > 0 ? normalized.slice(0, slashIndex) : ".";
 }
 
 function getWorkerStateFile() {
-  return path.resolve(
-    process.env.LOCAL_WORKER_STATE_FILE || path.join(path.dirname(getLocalAssetsDir()), "worker-status.json"),
-  );
+  const configured = process.env.LOCAL_WORKER_STATE_FILE?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  const assetsDir = getLocalAssetsDir();
+  const separator = assetsDir.includes("\\") ? "\\" : "/";
+  return `${dirnameString(assetsDir)}${separator}worker-status.json`;
 }
 
 function numberOrNull(value: unknown) {
@@ -87,7 +104,7 @@ async function readQueueState() {
     .from("image_job_items")
     .select("status,image_jobs!inner(job_type)")
     .in("status", ["pending", "processing", "failed"])
-    .in("image_jobs.job_type", LOCAL_WORKER_JOB_TYPES);
+    .in("image_jobs.job_type", IMAGE_WORKER_JOB_TYPES);
 
   if (itemError) {
     throw new Error(itemError.message);
@@ -96,7 +113,7 @@ async function readQueueState() {
   const { data: activeJobRows, error: activeJobError } = await supabase
     .from("image_jobs")
     .select("id,job_type,status,total_count,success_count,failed_count,updated_at")
-    .in("job_type", LOCAL_WORKER_JOB_TYPES)
+    .in("job_type", IMAGE_WORKER_JOB_TYPES)
     .in("status", ["pending", "processing"])
     .order("updated_at", { ascending: false })
     .limit(8);
@@ -105,8 +122,20 @@ async function readQueueState() {
     throw new Error(activeJobError.message);
   }
 
+  const { data: exportRows, error: exportError } = await supabase
+    .from("export_records")
+    .select("status")
+    .eq("export_type", "images_zip")
+    .in("status", ["pending", "processing"]);
+
+  if (exportError) {
+    throw new Error(exportError.message);
+  }
+
   const queue = {
-    active_jobs: activeJobRows?.length ?? 0,
+    active_jobs:
+      (activeJobRows?.length ?? 0) +
+      ((exportRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length),
     failed: 0,
     pending: 0,
     processing: 0,
@@ -126,6 +155,17 @@ async function readQueueState() {
       if (row.status === "pending") queueByType[jobType as LocalWorkerJobType].pending += 1;
       if (row.status === "processing") queueByType[jobType as LocalWorkerJobType].processing += 1;
       if (row.status === "failed") queueByType[jobType as LocalWorkerJobType].failed += 1;
+    }
+  }
+
+  for (const row of (exportRows ?? []) as ExportQueueRow[]) {
+    if (row.status === "pending") {
+      queue.pending += 1;
+      queueByType.export_images_zip.pending += 1;
+    }
+    if (row.status === "processing") {
+      queue.processing += 1;
+      queueByType.export_images_zip.processing += 1;
     }
   }
 

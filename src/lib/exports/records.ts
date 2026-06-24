@@ -10,7 +10,7 @@ export type ExportRecordView = {
   filename: string | null;
   id: string;
   product_count: number;
-  status: "completed" | "failed";
+  status: "pending" | "processing" | "completed" | "failed";
 };
 
 type CreateExportRecordInput = {
@@ -20,7 +20,7 @@ type CreateExportRecordInput = {
   filename?: string | null;
   productCount: number;
   productIds: string[];
-  status: "completed" | "failed";
+  status: ExportRecordView["status"];
 };
 
 export function idsFromUnknown(value: unknown) {
@@ -69,4 +69,19 @@ export async function listExportRecords() {
   }
 
   return (data ?? []) as unknown as ExportRecordView[];
+}
+
+export async function getExportRecord(recordId: string) {
+  const supabase = createSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("export_records")
+    .select("id,export_type,product_count,filename,download_url,status,error_message,created_at")
+    .eq("id", recordId)
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as unknown as ExportRecordView;
 }

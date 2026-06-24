@@ -14,6 +14,36 @@ type ExportRequest = {
   product_ids?: unknown;
 };
 
+function isPendingStatusSchemaError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("export_records_status_check") ||
+    message.includes("violates check constraint")
+  );
+}
+
+async function buildZipSynchronously(productIds: unknown) {
+  const products = await getExportProductsByIds(productIds);
+  const archive = await buildProductImagesZip(products);
+  const filename = createExportFilename("product-images", "zip");
+  const { downloadUrl } = await writePublicExportFile(filename, archive);
+  const record = await createExportRecord({
+    downloadUrl,
+    exportType: "images_zip",
+    filename,
+    productCount: products.length,
+    productIds: products.map((product) => product.id),
+    status: "completed",
+  });
+
+  return {
+    count: products.length,
+    download_url: downloadUrl,
+    filename,
+    record,
+  };
+}
+
 export async function POST(request: Request) {
   let body: ExportRequest;
 
@@ -25,24 +55,33 @@ export async function POST(request: Request) {
 
   try {
     const products = await getExportProductsByIds(body.product_ids);
-    const archive = await buildProductImagesZip(products);
-    const filename = createExportFilename("product-images", "zip");
-    const { downloadUrl } = await writePublicExportFile(filename, archive);
-    const record = await createExportRecord({
-      downloadUrl,
-      exportType: "images_zip",
-      filename,
-      productCount: products.length,
-      productIds: products.map((product) => product.id),
-      status: "completed",
-    });
 
-    return NextResponse.json({
-      count: products.length,
-      download_url: downloadUrl,
-      filename,
-      record,
-    });
+    try {
+      const record = await createExportRecord({
+        exportType: "images_zip",
+        productCount: products.length,
+        productIds: products.map((product) => product.id),
+        status: "pending",
+      });
+
+      return NextResponse.json({
+        count: products.length,
+        message: "图片 ZIP 已进入后台队列，请稍等生成完成。",
+        queued: true,
+        record,
+        record_id: record.id,
+      });
+    } catch (queueError) {
+      if (!isPendingStatusSchemaError(queueError)) {
+        throw queueError;
+      }
+
+      const result = await buildZipSynchronously(body.product_ids);
+      return NextResponse.json({
+        ...result,
+        queued: false,
+      });
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "导出图片 ZIP 失败";
 

@@ -25,7 +25,10 @@ type ExportResponse = {
   download_url?: string;
   error?: string;
   filename?: string;
+  message?: string;
+  queued?: boolean;
   record?: ExportRecordView;
+  record_id?: string;
 };
 
 const statusLabels: Record<ProductDraftStatus, { zh: string; en: string }> = {
@@ -52,12 +55,19 @@ const exportTypeLabels: Record<ExportRecordView["export_type"], { zh: string; en
 const exportStatusLabels: Record<ExportRecordView["status"], { zh: string; en: string }> = {
   completed: { zh: "成功", en: "Success" },
   failed: { zh: "失败", en: "Failed" },
+  pending: { zh: "队列中", en: "Queued" },
+  processing: { zh: "生成中", en: "Processing" },
 };
 
 const exportStatusStyles: Record<ExportRecordView["status"], string> = {
   completed: "bg-emerald-50 text-emerald-700",
   failed: "bg-red-50 text-red-700",
+  pending: "bg-zinc-100 text-zinc-700",
+  processing: "bg-sky-50 text-sky-700",
 };
+
+const EXPORT_RECORD_POLL_MS = 1500;
+const EXPORT_RECORD_TIMEOUT_MS = 10 * 60 * 1000;
 
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {
@@ -76,6 +86,26 @@ function imageCount(product: ProductDraftView) {
   }
 
   return product.main_image_url ? 1 : 0;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function upsertRecord(records: ExportRecordView[], record: ExportRecordView) {
+  return [record, ...records.filter((item) => item.id !== record.id)]
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+    .slice(0, 30);
+}
+
+function exportRecordToResponse(record: ExportRecordView): ExportResponse {
+  return {
+    count: record.product_count,
+    download_url: record.download_url ?? undefined,
+    filename: record.filename ?? undefined,
+    record,
+    record_id: record.id,
+  };
 }
 
 export function ExportsManager({
@@ -149,6 +179,40 @@ export function ExportsManager({
     setError(null);
   }
 
+  async function fetchExportRecord(recordId: string) {
+    const response = await fetch(`/api/exports/records/${encodeURIComponent(recordId)}`, {
+      cache: "no-store",
+    });
+    const data = (await response.json()) as { error?: string; record?: ExportRecordView };
+
+    if (!response.ok || !data.record) {
+      throw new Error(data.error ?? t("读取导出记录失败", "Failed to read export record"));
+    }
+
+    return data.record;
+  }
+
+  async function waitForQueuedExport(recordId: string) {
+    const deadline = Date.now() + EXPORT_RECORD_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await sleep(EXPORT_RECORD_POLL_MS);
+
+      const record = await fetchExportRecord(recordId);
+      setRecords((current) => upsertRecord(current, record));
+
+      if (record.status === "completed") {
+        return record;
+      }
+
+      if (record.status === "failed") {
+        throw new Error(record.error_message ?? t("图片 ZIP 导出失败", "Image ZIP export failed"));
+      }
+    }
+
+    throw new Error(t("图片 ZIP 生成超时，请稍后在导出记录里查看结果", "Image ZIP export timed out. Check export records later."));
+  }
+
   async function exportSelected(kind: ExportKind) {
     if (selectedIds.length === 0) {
       setError(t("请选择至少一个商品草稿", "Please select at least one product draft"));
@@ -175,14 +239,18 @@ export function ExportsManager({
         throw new Error(data.error ?? (kind === "excel" ? t("导出 Excel 失败", "Excel export failed") : t("导出图片 ZIP 失败", "Image ZIP export failed")));
       }
 
-      if (kind === "excel") {
-        setExcelResult(data);
-      } else {
-        setZipResult(data);
+      if (data.record) {
+        setRecords((current) => upsertRecord(current, data.record as ExportRecordView));
       }
 
-      if (data.record) {
-        setRecords((current) => [data.record as ExportRecordView, ...current].slice(0, 30));
+      if (kind === "excel") {
+        setExcelResult(data);
+      } else if (data.queued && data.record_id) {
+        setZipResult(data);
+        const finalRecord = await waitForQueuedExport(data.record_id);
+        setZipResult(exportRecordToResponse(finalRecord));
+      } else {
+        setZipResult(data);
       }
     } catch (requestError) {
       setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("导出失败", "Export failed"));
@@ -387,13 +455,20 @@ export function ExportsManager({
                         >
                           {record.filename ?? t("下载文件", "Download file")}
                         </a>
+                      ) : record.status === "pending" || record.status === "processing" ? (
+                        <span className="text-sky-600">{t("后台生成中", "Generating in background")}</span>
                       ) : (
                         <span className="text-zinc-400">{t("无文件", "No file")}</span>
                       )}
                     </td>
                     <td className="px-5 py-4 text-zinc-700">{formatDate(record.created_at, language === "zh" ? "zh-CN" : "en-US")}</td>
                     <td className="max-w-xs truncate px-5 py-4 text-zinc-500">
-                      {record.error_message ?? "-"}
+                      {record.error_message ??
+                        (record.status === "pending"
+                          ? t("等待 worker 领取", "Waiting for worker")
+                          : record.status === "processing"
+                            ? t("worker 正在生成 ZIP", "Worker is generating ZIP")
+                            : "-")}
                     </td>
                   </tr>
                 ))}

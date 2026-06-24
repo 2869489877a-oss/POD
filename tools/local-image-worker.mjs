@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createJiti } from "jiti";
+import JSZip from "jszip";
 import sharp from "sharp";
 
 const BASE_URL = stripTrailingSlash(
@@ -18,10 +19,12 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,export_images_zip")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
+const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
+const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
 const LOCAL_ASSETS_DIR = path.resolve(
   process.env.LOCAL_ASSETS_DIR ||
     (process.platform === "win32"
@@ -216,6 +219,36 @@ async function readImageBuffer(url) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sanitizeZipSegment(value, fallback) {
+  const source = String(value || fallback || "item").trim();
+  const sanitized = source
+    .replaceAll("\\", "-")
+    .replaceAll("/", "-")
+    .replace(/[^a-zA-Z0-9._-]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return (sanitized || fallback || "item").slice(0, 80);
+}
+
+function inferImageExtensionFromUrl(url) {
+  try {
+    const pathname = new URL(url, "http://local.invalid").pathname.toLowerCase();
+    const extension = pathname.includes(".") ? pathname.slice(pathname.lastIndexOf(".")) : "";
+    if ([".jpg", ".jpeg", ".png", ".webp"].includes(extension)) {
+      return extension;
+    }
+  } catch {
+    // Fall through to the default.
+  }
+
+  return ".jpg";
+}
+
+function getExportRecordId(job) {
+  return job.record_id || job.item_id || job.job_id;
 }
 
 function getInfringementDetector() {
@@ -1127,6 +1160,82 @@ async function processInfringementCheck(job) {
   };
 }
 
+async function fetchExportImagesZipPayload(job) {
+  const recordId = getExportRecordId(job);
+  if (!recordId) {
+    throw new Error("export_images_zip job is missing record_id");
+  }
+
+  const data = await apiFetch(`/api/local-worker/exports/${encodeURIComponent(recordId)}/payload`, {
+    method: "GET",
+  });
+
+  if (!data.payload) {
+    throw new Error("export_images_zip payload is missing");
+  }
+
+  return data.payload;
+}
+
+async function processExportImagesZip(job) {
+  const payload = await fetchExportImagesZipPayload(job);
+  const products = Array.isArray(payload.products) ? payload.products : [];
+
+  if (products.length === 0) {
+    throw new Error("export_images_zip payload has no products");
+  }
+
+  const zip = new JSZip();
+  const folderCounts = new Map();
+
+  for (const product of products) {
+    const productId = typeof product.id === "string" ? product.id : "product";
+    const skuFolder = sanitizeZipSegment(product.sku, productId);
+    const currentCount = (folderCounts.get(skuFolder) ?? 0) + 1;
+    folderCounts.set(skuFolder, currentCount);
+
+    const folderName = currentCount === 1 ? skuFolder : `${skuFolder}-${currentCount}`;
+    const folder = zip.folder(folderName);
+    if (!folder) {
+      throw new Error(`Failed to create ZIP folder: ${folderName}`);
+    }
+
+    const imageUrls = Array.isArray(product.image_urls)
+      ? product.image_urls.filter((url) => typeof url === "string" && url.trim().length > 0)
+      : [];
+
+    if (imageUrls.length === 0) {
+      throw new Error(`Product ${product.sku || productId} has no exportable images`);
+    }
+
+    for (const [index, imageUrl] of imageUrls.entries()) {
+      const buffer = await readImageBuffer(imageUrl);
+      const imageName = `${String(index + 1).padStart(2, "0")}${inferImageExtensionFromUrl(imageUrl)}`;
+      folder.file(imageName, buffer);
+    }
+  }
+
+  const filename =
+    typeof payload.filename === "string" && payload.filename.endsWith(".zip")
+      ? payload.filename
+      : "product-images.zip";
+  const archive = await zip.generateAsync({
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+    type: "nodebuffer",
+  });
+
+  return {
+    files: {
+      archive: {
+        buffer: archive,
+        contentType: "application/zip",
+        filename,
+      },
+    },
+  };
+}
+
 function appendFile(form, name, file) {
   if (!file) return;
   form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
@@ -1155,16 +1264,43 @@ async function apiFetch(pathname, options = {}) {
 }
 
 async function claimJob() {
-  const data = await apiFetch("/api/local-worker/jobs/claim", {
-    body: JSON.stringify({ job_types: JOB_TYPES }),
-    headers: { "content-type": "application/json" },
+  const imageJobTypes = JOB_TYPES.filter((jobType) => IMAGE_JOB_TYPES.has(jobType));
+
+  if (imageJobTypes.length > 0) {
+    const data = await apiFetch("/api/local-worker/jobs/claim", {
+      body: JSON.stringify({ job_types: imageJobTypes }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+
+    if (data.job) {
+      return data.job;
+    }
+  }
+
+  if (!JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
+    return null;
+  }
+
+  const exportData = await apiFetch("/api/local-worker/exports/claim", {
     method: "POST",
   });
 
-  return data.job || null;
+  return exportData.job || null;
 }
 
 async function completeJob(job, result) {
+  if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
+    const recordId = getExportRecordId(job);
+    const form = new FormData();
+    appendFile(form, "archive", result.files.archive);
+
+    return apiFetch(`/api/local-worker/exports/${encodeURIComponent(recordId)}/complete`, {
+      body: form,
+      method: "POST",
+    });
+  }
+
   if (job.job_type === "infringement_check") {
     return apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/complete`, {
       body: JSON.stringify({
@@ -1205,6 +1341,15 @@ async function completeJob(job, result) {
 }
 
 async function failJob(job, error) {
+  if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
+    const recordId = getExportRecordId(job);
+    return apiFetch(`/api/local-worker/exports/${encodeURIComponent(recordId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   return apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/fail`, {
     body: JSON.stringify({ error: getErrorMessage(error) }),
     headers: { "content-type": "application/json" },
@@ -1213,6 +1358,9 @@ async function failJob(job, error) {
 }
 
 async function processJob(job) {
+  if (job.job_type === EXPORT_IMAGES_ZIP_JOB_TYPE) {
+    return processExportImagesZip(job);
+  }
   if (job.job_type === "resize") {
     return processResize(job);
   }

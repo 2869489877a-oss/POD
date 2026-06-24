@@ -46,7 +46,7 @@ type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
 };
 
-type WorkerJobType = Exclude<ImageJob["job_type"], "enhance">;
+type WorkerJobType = Exclude<ImageJob["job_type"], "enhance"> | "export_images_zip";
 
 type WorkerSlot = {
   asset_filename?: string | null;
@@ -101,6 +101,15 @@ const jobTypeLabels: Record<ImageJob["job_type"], { zh: string; en: string }> = 
   mockup: { zh: "套图", en: "Mockup" },
   print_extraction: { zh: "印花提取", en: "Print Extract" },
   resize: { zh: "改尺寸", en: "Resize" },
+};
+
+const workerJobTypeLabels: Record<WorkerJobType, { zh: string; en: string }> = {
+  cutout: jobTypeLabels.cutout,
+  export_images_zip: { zh: "图片 ZIP 导出", en: "Image ZIP Export" },
+  infringement_check: jobTypeLabels.infringement_check,
+  mockup: jobTypeLabels.mockup,
+  print_extraction: jobTypeLabels.print_extraction,
+  resize: jobTypeLabels.resize,
 };
 
 const statusLabels: Record<ImageJobStatus, { zh: string; en: string }> = {
@@ -186,7 +195,7 @@ function formatJobTypeList(
 
   return jobTypes
     .map((jobType) => {
-      const label = jobTypeLabels[jobType as ImageJob["job_type"]];
+      const label = workerJobTypeLabels[jobType as WorkerJobType];
       return label ? t(label.zh, label.en) : jobType;
     })
     .join(" / ");
