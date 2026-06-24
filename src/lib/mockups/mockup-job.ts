@@ -44,14 +44,14 @@ export type MockupOutputResult = {
   item_id: string;
   mockup_output_id: string | null;
   output_images: string[];
-  status: "completed" | "failed";
+  status: "completed" | "failed" | "pending" | "processing";
 };
 
 export type MockupJobResult = {
   failed_count: number;
   id: string;
   outputs: MockupOutputResult[];
-  status: "completed" | "failed" | "partial_failed";
+  status: "completed" | "failed" | "partial_failed" | "pending" | "processing";
   success_count: number;
   total_count: number;
 };
@@ -226,6 +226,104 @@ async function createMockupOutput(
   }
 
   return (data as unknown as { id: string }).id;
+}
+
+export async function createQueuedMockupJob(
+  supabase: SupabaseServiceClient,
+  assetIds: string[],
+  templateId: string,
+): Promise<MockupJobResult> {
+  const { data: templateData, error: templateError } = await supabase
+    .from("mockup_templates")
+    .select("id,name,product_type,scenes")
+    .eq("id", templateId)
+    .single();
+
+  if (templateError) {
+    throw new Error(templateError.message);
+  }
+
+  const template = templateData as unknown as MockupTemplateForJob;
+  const scenes = validateScenes(template.scenes);
+
+  const { data: assetData, error: assetError } = await supabase
+    .from("assets")
+    .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,copyright_status")
+    .in("id", assetIds);
+
+  if (assetError) {
+    throw new Error(assetError.message);
+  }
+
+  const assets = (assetData ?? []) as unknown as AssetForMockup[];
+
+  if (assets.length !== assetIds.length) {
+    throw new Error("部分素材不存在，请刷新后重试");
+  }
+
+  assertAssetsPassCopyrightGate(assets);
+
+  const { data: jobData, error: jobError } = await supabase
+    .from("image_jobs")
+    .insert({
+      failed_count: 0,
+      job_type: "mockup",
+      options: {
+        execution: "local_worker",
+        scene_count: scenes.length,
+        scenes,
+        template_id: template.id,
+        template_name: template.name,
+      },
+      status: "pending",
+      success_count: 0,
+      total_count: assets.length,
+    })
+    .select("id")
+    .single();
+
+  if (jobError) {
+    throw new Error(jobError.message);
+  }
+
+  const jobId = (jobData as unknown as { id: string }).id;
+  const { error: itemCreateError } = await supabase.from("image_job_items").insert(
+    assets.map((asset) => ({
+      asset_id: asset.id,
+      input_url: pickMockupPrintUrl(asset),
+      job_id: jobId,
+      status: "pending",
+    })),
+  );
+
+  if (itemCreateError) {
+    await supabase
+      .from("image_jobs")
+      .update({
+        error_message: itemCreateError.message,
+        failed_count: assets.length,
+        status: "failed",
+      })
+      .eq("id", jobId);
+    throw new Error(itemCreateError.message);
+  }
+
+  return {
+    failed_count: 0,
+    id: jobId,
+    outputs: assets.map((asset) => ({
+      asset_id: asset.id,
+      error_message: null,
+      filename: asset.filename,
+      item_id: "",
+      mockup_output_id: null,
+      output_images: [],
+      status: "pending",
+    })),
+    status: "pending",
+    success_count: 0,
+    total_count: assets.length,
+  };
 }
 
 export async function createAndProcessMockupJob(

@@ -11,6 +11,7 @@ type ImageJobDetailRow = {
   failed_count: number;
   id: string;
   job_type: string;
+  options: unknown;
   status: string;
   success_count: number;
   total_count: number;
@@ -39,10 +40,33 @@ type ImageDerivativeDetailRow = {
   status: string;
 };
 
+type MockupOutputDetailRow = {
+  asset_id: string;
+  created_at: string;
+  error_message: string | null;
+  id: string;
+  output_images: unknown;
+  status: string;
+  template_id: string | null;
+};
+
 type ImageJobItemStatusRow = {
   id: string;
   status: string;
 };
+
+function getStringOption(options: unknown, key: string) {
+  if (!options || typeof options !== "object" || !(key in options)) {
+    return null;
+  }
+
+  const value = (options as Record<string, unknown>)[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function toStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
 
 function getPrimaryDerivativeType(jobType: string) {
   if (jobType === "cutout") return "cutout";
@@ -110,6 +134,7 @@ export async function GET(request: Request) {
         [
           "id",
           "job_type",
+          "options",
           "status",
           "total_count",
           "success_count",
@@ -152,6 +177,7 @@ export async function GET(request: Request) {
     const items = (itemData ?? []) as unknown as ImageJobItemDetailRow[];
     const primaryDerivativeType = getPrimaryDerivativeType(jobRow.job_type);
     const derivativeByItemId = new Map<string, ImageDerivativeDetailRow>();
+    const mockupByItemId = new Map<string, MockupOutputDetailRow>();
 
     if (primaryDerivativeType && items.length > 0) {
       const { data: derivativeData, error: derivativeError } = await supabase
@@ -176,16 +202,54 @@ export async function GET(request: Request) {
       }
     }
 
+    if (jobRow.job_type === "mockup" && items.length > 0) {
+      const templateId = getStringOption(jobRow.options, "template_id");
+      const assetIds = Array.from(new Set(items.map((item) => item.asset_id)));
+
+      if (templateId) {
+        const { data: mockupData, error: mockupError } = await supabase
+          .from("mockup_outputs")
+          .select("id,asset_id,template_id,output_images,status,error_message,created_at")
+          .eq("template_id", templateId)
+          .in("asset_id", assetIds)
+          .gte("created_at", jobRow.created_at)
+          .order("created_at", { ascending: false });
+
+        if (mockupError) {
+          throw new Error(mockupError.message);
+        }
+
+        const itemByAssetId = new Map(items.map((item) => [item.asset_id, item]));
+        for (const output of (mockupData ?? []) as unknown as MockupOutputDetailRow[]) {
+          const item = itemByAssetId.get(output.asset_id);
+          if (!item || mockupByItemId.has(item.id)) {
+            continue;
+          }
+
+          const outputImages = toStringArray(output.output_images);
+          if (item.output_url && outputImages.length > 0 && !outputImages.includes(item.output_url)) {
+            continue;
+          }
+
+          mockupByItemId.set(item.id, output);
+        }
+      }
+    }
+
     const job = {
       ...jobRow,
       items: items.map((item) => {
         const derivative = derivativeByItemId.get(item.id);
+        const mockup = mockupByItemId.get(item.id);
+        const mockupImages = mockup ? toStringArray(mockup.output_images) : [];
 
         return {
           ...item,
           derivative_id: derivative?.id ?? null,
-          output_url: item.output_url ?? derivative?.output_url ?? null,
-          preview_url: derivative?.preview_url ?? item.output_url ?? null,
+          mockup_output_id: mockup?.id ?? null,
+          output_images: mockupImages,
+          output_url: item.output_url ?? derivative?.output_url ?? mockupImages[0] ?? null,
+          preview_url: derivative?.preview_url ?? item.output_url ?? mockupImages[0] ?? null,
         };
       }),
     };

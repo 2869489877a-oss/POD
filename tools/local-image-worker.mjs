@@ -16,7 +16,7 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
@@ -819,6 +819,106 @@ async function processPrintExtraction(job) {
   };
 }
 
+function validateMockupScenes(value) {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error("mockup task requires scenes");
+  }
+
+  return value.map((scene, index) => {
+    const record = asRecord(scene);
+    const name = typeof record.name === "string" && record.name.trim() ? record.name.trim() : `scene-${index + 1}`;
+    const backgroundUrl = typeof record.background_url === "string" ? record.background_url.trim() : "";
+    const outputWidth = Math.round(Number(record.output_width));
+    const outputHeight = Math.round(Number(record.output_height));
+    const needPrint = record.need_print === true;
+
+    if (!backgroundUrl) {
+      throw new Error(`mockup scene ${index + 1} is missing background_url`);
+    }
+    if (!Number.isFinite(outputWidth) || outputWidth <= 0 || !Number.isFinite(outputHeight) || outputHeight <= 0) {
+      throw new Error(`mockup scene ${index + 1} has invalid output size`);
+    }
+
+    const validated = {
+      background_url: backgroundUrl,
+      name,
+      need_print: needPrint,
+      output_height: outputHeight,
+      output_width: outputWidth,
+    };
+
+    if (needPrint) {
+      const printArea = asRecord(record.print_area);
+      const x = Number(printArea.x);
+      const y = Number(printArea.y);
+      const width = Number(printArea.width);
+      const height = Number(printArea.height);
+
+      if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0 || x < 0 || y < 0) {
+        throw new Error(`mockup scene ${index + 1} has invalid print_area`);
+      }
+
+      validated.print_area = { height, width, x, y };
+    }
+
+    return validated;
+  });
+}
+
+async function renderMockupScene(scene, backgroundBuffer, printBuffer) {
+  let image = sharp(backgroundBuffer)
+    .rotate()
+    .resize(scene.output_width, scene.output_height, {
+      fit: "cover",
+      position: "center",
+    });
+
+  if (scene.need_print && scene.print_area) {
+    const printLayer = await sharp(printBuffer)
+      .rotate()
+      .resize(Math.round(scene.print_area.width), Math.round(scene.print_area.height), {
+        background: { alpha: 0, b: 0, g: 0, r: 0 },
+        fit: "contain",
+        position: "center",
+      })
+      .png()
+      .toBuffer();
+
+    image = image.composite([
+      {
+        input: printLayer,
+        left: Math.round(scene.print_area.x),
+        top: Math.round(scene.print_area.y),
+      },
+    ]);
+  }
+
+  return image.png().toBuffer();
+}
+
+async function processMockup(job) {
+  const scenes = validateMockupScenes(job.options?.scenes);
+  const printBuffer = await readImageBuffer(job.input_url);
+  const outputs = [];
+
+  for (let index = 0; index < scenes.length; index += 1) {
+    const scene = scenes[index];
+    const backgroundBuffer = await readImageBuffer(scene.background_url);
+    const output = await renderMockupScene(scene, backgroundBuffer, printBuffer);
+    outputs.push({
+      buffer: output,
+      contentType: "image/png",
+      filename: `mockup-${String(index + 1).padStart(2, "0")}.png`,
+    });
+  }
+
+  return {
+    files: {
+      outputs,
+    },
+  };
+}
+
 function appendFile(form, name, file) {
   if (!file) return;
   form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
@@ -858,6 +958,18 @@ async function claimJob() {
 
 async function completeJob(job, result) {
   const form = new FormData();
+
+  if (job.job_type === "mockup") {
+    for (const output of result.files.outputs || []) {
+      appendFile(form, "outputs", output);
+    }
+
+    return apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/complete`, {
+      body: form,
+      method: "POST",
+    });
+  }
+
   form.append("bbox", JSON.stringify(result.bbox || {}));
   form.append("metrics", JSON.stringify(result.metrics || {}));
   form.append("width", String(Math.round(result.width || 0)));
@@ -887,6 +999,9 @@ async function processJob(job) {
   }
   if (job.job_type === "print_extraction") {
     return processPrintExtraction(job);
+  }
+  if (job.job_type === "mockup") {
+    return processMockup(job);
   }
   throw new Error(`Unsupported job type: ${job.job_type}`);
 }

@@ -2,15 +2,12 @@ import "server-only";
 
 import { randomUUID } from "crypto";
 
-import sharp from "sharp";
-
 import { resizeImageBuffer } from "@/lib/image-processing/resize-image";
 import {
   getResizePreset,
   type ResizePreset,
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
-import { validateScenes, type MockupScene } from "@/lib/mockups/scenes";
 import { readImageBuffer } from "@/lib/network/image-buffer";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
 import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -39,11 +36,6 @@ type AssetForRetry = {
   preferred_design_url: string | null;
   print_extract_url: string | null;
   processed_url: string | null;
-};
-
-type MockupTemplateForRetry = {
-  id: string;
-  scenes: unknown;
 };
 
 type JobCounts = {
@@ -84,15 +76,6 @@ function getResizePresetKey(options: unknown): ResizePresetKey | null {
   return presetKey === "tshirt-print" || presetKey === "square-product" ? presetKey : null;
 }
 
-function getTemplateId(options: unknown) {
-  if (!options || typeof options !== "object" || !("template_id" in options)) {
-    return null;
-  }
-
-  const templateId = (options as { template_id?: unknown }).template_id;
-  return typeof templateId === "string" && templateId.length > 0 ? templateId : null;
-}
-
 function getRetryItemIds(value: unknown) {
   if (!Array.isArray(value)) {
     return null;
@@ -110,32 +93,10 @@ async function downloadImage(url: string) {
   });
 }
 
-function pickDesignUrl(asset: AssetForRetry) {
-  return (
-    asset.preferred_design_url ??
-    asset.print_extract_url ??
-    asset.cutout_url ??
-    asset.processed_url ??
-    asset.original_url
-  );
-}
-
 function buildResizeOutputPath(jobId: string, itemId: string, asset: AssetForRetry, preset: ResizePreset) {
   const datePath = new Date().toISOString().slice(0, 10);
   const filename = sanitizeFilename(asset.filename).replace(/\.[^.]+$/, "");
   return `processed/resize-retry/${datePath}/${jobId}/${itemId}-${randomUUID()}-${filename}.${preset.extension}`;
-}
-
-function buildMockupOutputPath(
-  jobId: string,
-  itemId: string,
-  asset: AssetForRetry,
-  scene: MockupScene,
-) {
-  const datePath = new Date().toISOString().slice(0, 10);
-  const filename = sanitizeFilename(asset.filename).replace(/\.[^.]+$/, "");
-  const sceneName = sanitizeFilename(scene.name);
-  return `mockup-outputs/retry/${datePath}/${jobId}/${itemId}/${randomUUID()}-${filename}-${sceneName}.png`;
 }
 
 async function calculateAndUpdateJobCounts(
@@ -263,98 +224,6 @@ async function retryResizeItem(
   return outputUrl;
 }
 
-async function renderMockupScene(scene: MockupScene, backgroundBuffer: Buffer, printBuffer: Buffer) {
-  let image = sharp(backgroundBuffer)
-    .rotate()
-    .resize(scene.output_width, scene.output_height, {
-      fit: "cover",
-      position: "center",
-    });
-
-  if (scene.need_print && scene.print_area) {
-    const printLayer = await sharp(printBuffer)
-      .rotate()
-      .resize(Math.round(scene.print_area.width), Math.round(scene.print_area.height), {
-        background: { alpha: 0, b: 0, g: 0, r: 0 },
-        fit: "contain",
-        position: "center",
-      })
-      .png()
-      .toBuffer();
-
-    image = image.composite([
-      {
-        input: printLayer,
-        left: Math.round(scene.print_area.x),
-        top: Math.round(scene.print_area.y),
-      },
-    ]);
-  }
-
-  return image.png().toBuffer();
-}
-
-async function retryMockupItem(
-  supabase: SupabaseServiceClient,
-  jobId: string,
-  item: ImageJobItemForRetry,
-  asset: AssetForRetry,
-  templateId: string,
-  scenes: MockupScene[],
-) {
-  const printBuffer = await downloadImage(pickDesignUrl(asset));
-  const outputImages: string[] = [];
-
-  for (const scene of scenes) {
-    const backgroundBuffer = await downloadImage(scene.background_url);
-    const outputBuffer = await renderMockupScene(scene, backgroundBuffer, printBuffer);
-    const outputPath = buildMockupOutputPath(jobId, item.id, asset, scene);
-    outputImages.push((await saveLocalAssetAtPath({
-      buffer: outputBuffer,
-      relativePath: outputPath,
-    })).publicUrl);
-  }
-
-  const { error: outputError } = await supabase.from("mockup_outputs").insert({
-    asset_id: asset.id,
-    error_message: null,
-    output_images: outputImages,
-    status: "completed",
-    template_id: templateId,
-  });
-
-  if (outputError) {
-    throw new Error(`套图结果保存失败：${outputError.message}`);
-  }
-
-  return outputImages[0] ?? null;
-}
-
-async function getMockupRetryContext(supabase: SupabaseServiceClient, options: unknown) {
-  const templateId = getTemplateId(options);
-
-  if (!templateId) {
-    throw new Error("原套图任务缺少模板 ID，无法重新执行");
-  }
-
-  const { data, error } = await supabase
-    .from("mockup_templates")
-    .select("id,scenes")
-    .eq("id", templateId)
-    .single();
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const template = data as unknown as MockupTemplateForRetry;
-
-  return {
-    scenes: validateScenes(template.scenes),
-    templateId: template.id,
-  };
-}
-
 async function getRetryResult(
   supabase: SupabaseServiceClient,
   jobId: string,
@@ -408,7 +277,7 @@ export async function retryFailedImageJobItems(
 
   const items = await getRetryItems(supabase, jobId, requestedItemIds);
 
-  if (job.job_type === "cutout" || job.job_type === "print_extraction") {
+  if (job.job_type === "cutout" || job.job_type === "print_extraction" || job.job_type === "mockup") {
     const { error: itemUpdateError } = await supabase
       .from("image_job_items")
       .update({
@@ -447,10 +316,7 @@ export async function retryFailedImageJobItems(
     Array.from(new Set(items.map((item) => item.asset_id))),
   );
 
-  const preset =
-    job.job_type === "resize" ? getResizePreset(getResizePresetKey(job.options)) : null;
-  const mockupContext =
-    job.job_type === "mockup" ? await getMockupRetryContext(supabase, job.options) : null;
+  const preset = getResizePreset(getResizePresetKey(job.options));
 
   if (job.job_type === "resize" && !preset) {
     throw new Error("原任务缺少有效的尺寸预设，无法重新执行");
@@ -491,17 +357,7 @@ export async function retryFailedImageJobItems(
         .eq("id", item.id);
       await calculateAndUpdateJobCounts(supabase, jobId);
 
-      const outputUrl =
-        job.job_type === "resize"
-          ? await retryResizeItem(supabase, jobId, item, asset, preset as ResizePreset)
-          : await retryMockupItem(
-              supabase,
-              jobId,
-              item,
-              asset,
-              mockupContext?.templateId ?? "",
-              mockupContext?.scenes ?? [],
-            );
+      const outputUrl = await retryResizeItem(supabase, jobId, item, asset, preset as ResizePreset);
 
       await supabase
         .from("image_job_items")

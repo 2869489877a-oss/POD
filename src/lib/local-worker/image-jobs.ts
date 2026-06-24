@@ -10,7 +10,7 @@ import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
-export type LocalWorkerJobType = "cutout" | "print_extraction";
+export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup";
 type ImageJobStatus = "pending" | "processing" | "completed" | "failed" | "partial_failed";
 
 type AssetForWorker = {
@@ -73,6 +73,7 @@ export type CompleteLocalWorkerItemInput = {
   height: number | null;
   mask: WorkerFileInput | null;
   metrics: Record<string, unknown>;
+  mockupOutputs?: WorkerFileInput[];
   output: WorkerFileInput;
   preview: WorkerFileInput | null;
   raw: WorkerFileInput | null;
@@ -97,6 +98,23 @@ function buildDerivativePath(filename: string, suffix: string, extension: "jpg" 
   const safeName = sanitizeFilename(filename).replace(/\.[^.]+$/, "");
 
   return `derivatives/${datePath}/${randomUUID()}-${safeName}-${suffix}.${extension}`;
+}
+
+function buildMockupOutputPath(jobId: string, itemId: string, filename: string, index: number) {
+  const datePath = new Date().toISOString().slice(0, 10);
+  const safeName = sanitizeFilename(filename).replace(/\.[^.]+$/, "");
+  const paddedIndex = String(index + 1).padStart(2, "0");
+
+  return `mockup-outputs/${datePath}/${jobId}/${itemId}/${randomUUID()}-${safeName}-${paddedIndex}.png`;
+}
+
+function stringOption(options: unknown, key: string) {
+  if (!options || typeof options !== "object" || !(key in options)) {
+    return null;
+  }
+
+  const value = (options as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function pickInputUrl(asset: AssetForWorker) {
@@ -393,6 +411,72 @@ export async function completeLocalWorkerItem(
 ) {
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
   const options = job.options ?? {};
+
+  if (job.job_type === "mockup") {
+    const templateId = stringOption(options, "template_id");
+    const mockupOutputs = input.mockupOutputs?.length ? input.mockupOutputs : [input.output];
+
+    if (!templateId) {
+      throw new Error("mockup worker task is missing template_id");
+    }
+
+    if (mockupOutputs.length === 0) {
+      throw new Error("mockup worker task has no output images");
+    }
+
+    const outputUrls: string[] = [];
+    for (let index = 0; index < mockupOutputs.length; index += 1) {
+      outputUrls.push(
+        await uploadFile(
+          supabase,
+          buildMockupOutputPath(item.job_id, item.id, asset.filename, index),
+          mockupOutputs[index],
+        ),
+      );
+    }
+
+    const { data: outputData, error: outputError } = await supabase
+      .from("mockup_outputs")
+      .insert({
+        asset_id: asset.id,
+        error_message: null,
+        output_images: outputUrls,
+        status: "completed",
+        template_id: templateId,
+      })
+      .select("id")
+      .single();
+
+    if (outputError) {
+      throw new Error(`mockup output save failed: ${outputError.message}`);
+    }
+
+    const { error: itemUpdateError } = await supabase
+      .from("image_job_items")
+      .update({
+        error_message: null,
+        output_url: outputUrls[0] ?? null,
+        status: "completed",
+      })
+      .eq("id", item.id);
+
+    if (itemUpdateError) {
+      throw new Error(`mockup item update failed: ${itemUpdateError.message}`);
+    }
+
+    const jobCounts = await updateJobCounts(supabase, item.job_id);
+    if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+      await archiveOldImageJobItems(supabase);
+    }
+
+    return {
+      job: jobCounts,
+      mockup_output_id: (outputData as unknown as { id: string }).id,
+      output_images: outputUrls,
+      output_url: outputUrls[0] ?? null,
+    };
+  }
+
   const { height, width } = await getImageSize(input.output, input.width, input.height);
   const preview = await ensurePreview(input.output, input.preview);
   const mask = await ensureMask(input.output, input.mask);
@@ -518,6 +602,39 @@ export async function failLocalWorkerItem(
   errorMessage: string,
 ) {
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
+
+  if (job.job_type === "mockup") {
+    const templateId = stringOption(job.options ?? {}, "template_id");
+
+    if (templateId) {
+      await supabase.from("mockup_outputs").insert({
+        asset_id: asset.id,
+        error_message: errorMessage,
+        output_images: [],
+        status: "failed",
+        template_id: templateId,
+      });
+    }
+
+    const { error: itemUpdateError } = await supabase
+      .from("image_job_items")
+      .update({
+        error_message: errorMessage,
+        status: "failed",
+      })
+      .eq("id", item.id);
+
+    if (itemUpdateError) {
+      throw new Error(`mockup item fail update failed: ${itemUpdateError.message}`);
+    }
+
+    const jobCounts = await updateJobCounts(supabase, item.job_id);
+    if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {
+      await archiveOldImageJobItems(supabase);
+    }
+    return jobCounts;
+  }
+
   const derivativeType = job.job_type === "cutout" ? "cutout" : "print_extract_final";
 
   await supabase.from("image_derivatives").insert({

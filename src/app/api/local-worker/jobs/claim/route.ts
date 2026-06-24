@@ -6,18 +6,18 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const allowedJobTypes = new Set<LocalWorkerJobType>(["cutout", "print_extraction"]);
+const allowedJobTypes = new Set<LocalWorkerJobType>(["cutout", "print_extraction", "mockup"]);
 
 function parseJobTypes(value: unknown): LocalWorkerJobType[] {
   if (!Array.isArray(value)) {
-    return ["cutout", "print_extraction"];
+    return ["cutout", "print_extraction", "mockup"];
   }
 
   const jobTypes = value.filter(
     (item): item is LocalWorkerJobType => typeof item === "string" && allowedJobTypes.has(item as LocalWorkerJobType),
   );
 
-  return jobTypes.length > 0 ? Array.from(new Set(jobTypes)) : ["cutout", "print_extraction"];
+  return jobTypes.length > 0 ? Array.from(new Set(jobTypes)) : ["cutout", "print_extraction", "mockup"];
 }
 
 export async function POST(request: Request) {

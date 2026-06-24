@@ -1,5 +1,6 @@
 "use server";
 
+import { createQueuedMockupJob, type MockupJobResult } from "@/lib/mockups/mockup-job";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export async function fetchMockupJobs(payload: {
@@ -32,19 +33,12 @@ export async function fetchMockupJobs(payload: {
 export async function createMockupJob(payload: {
   asset_ids: string[];
   template_id: string;
-}): Promise<{ error: string | null; count: number }> {
+}): Promise<{ error: string | null; job: MockupJobResult | null }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
-    const rows = payload.asset_ids.map((asset_id) => ({
-      asset_id,
-      template_id: payload.template_id,
-      status: "pending",
-    }));
-
-    const { error } = await supabase.from("mockup_outputs").insert(rows);
-    if (error) return { error: error.message, count: 0 };
-    return { error: null, count: rows.length };
+    const job = await createQueuedMockupJob(supabase, payload.asset_ids, payload.template_id);
+    return { error: null, job };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "创建套图任务失败", count: 0 };
+    return { error: e instanceof Error ? e.message : "创建套图任务失败", job: null };
   }
 }

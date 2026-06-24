@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createAndProcessMockupJob } from "@/lib/mockups/mockup-job";
+import { createQueuedMockupJob } from "@/lib/mockups/mockup-job";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -42,8 +42,8 @@ export async function POST(request: Request) {
   const supabase = createSupabaseServiceRoleClient();
 
   try {
-    const job = await createAndProcessMockupJob(supabase, assetIds, body.template_id);
-    return NextResponse.json({ job });
+    const job = await createQueuedMockupJob(supabase, assetIds, body.template_id);
+    return NextResponse.json({ job, queued: true });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "套图任务处理失败" },

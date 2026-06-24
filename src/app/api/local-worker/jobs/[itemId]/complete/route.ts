@@ -49,6 +49,23 @@ async function readFile(form: FormData, fieldName: string) {
   };
 }
 
+async function readFiles(form: FormData, fieldName: string) {
+  const files = [];
+
+  for (const value of form.getAll(fieldName)) {
+    if (!value || typeof value === "string") {
+      continue;
+    }
+
+    files.push({
+      buffer: Buffer.from(await value.arrayBuffer()),
+      contentType: value.type || "application/octet-stream",
+    });
+  }
+
+  return files;
+}
+
 export async function POST(request: Request) {
   const authError = requireLocalWorkerAuth(request);
   if (authError) {
@@ -62,7 +79,8 @@ export async function POST(request: Request) {
 
   try {
     const form = await request.formData();
-    const output = (await readFile(form, "output")) ?? (await readFile(form, "final"));
+    const mockupOutputs = await readFiles(form, "outputs");
+    const output = (await readFile(form, "output")) ?? (await readFile(form, "final")) ?? mockupOutputs[0] ?? null;
 
     if (!output) {
       return NextResponse.json({ error: "缺少 output 文件", ok: false }, { status: 400 });
@@ -73,6 +91,7 @@ export async function POST(request: Request) {
       height: parseOptionalNumber(form.get("height")),
       mask: await readFile(form, "mask"),
       metrics: parseJsonField(form.get("metrics")),
+      mockupOutputs,
       output,
       preview: await readFile(form, "preview"),
       raw: await readFile(form, "raw"),
