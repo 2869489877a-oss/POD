@@ -20,7 +20,7 @@ const BASE_URL = stripTrailingSlash(
     "http://127.0.0.1:3000",
 );
 const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || "").trim();
-const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
+const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 3);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
 const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
