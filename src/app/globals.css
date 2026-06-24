@@ -392,6 +392,8 @@ a {
   border-radius: 999px;
   animation: ui-spin 0.8s linear infinite;
   filter: drop-shadow(0 0 7px rgba(34, 211, 238, 0.42));
+  transform-origin: center;
+  will-change: transform;
 }
 
 .ui-spinner::after {
@@ -1165,5 +1167,23 @@ a {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+}
+
+/*
+  Loading state is functional feedback, not decoration. Keep these indicators
+  moving even when the global reduced-motion guard disables page animations.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .ui-spinner {
+    animation: ui-spin 0.8s linear infinite !important;
+  }
+
+  .ui-progress-fill::after {
+    animation: ui-progress-sweep 1.8s var(--motion-smooth) infinite !important;
+  }
+
+  .ui-task-overlay::after {
+    animation: ui-scan-line 1.8s var(--motion-smooth) infinite !important;
   }
 }
