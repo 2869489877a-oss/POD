@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import sharp from "sharp";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { generateImageWithFallback, resolveProvider } from "@/lib/ai-image/router";
+import { resolveReferenceImageDataUrl } from "@/lib/ai-image/reference-image";
 import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
 import { checkDailyImageQuota, logUsage } from "@/lib/auth/usage";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
@@ -17,6 +18,7 @@ type GenerateImageRequest = {
   style?: unknown;
   provider_id?: unknown;
   reference_url?: unknown;
+  routing_profile?: unknown;
   save_to_assets?: unknown;
   transparent_background?: unknown;
   background_tolerance?: unknown;
@@ -67,6 +69,8 @@ export async function POST(request: Request) {
   const style = typeof body.style === "string" ? body.style.trim() : undefined;
   const providerId = typeof body.provider_id === "string" ? body.provider_id : undefined;
   const referenceUrl = typeof body.reference_url === "string" && body.reference_url.trim().length > 0 ? body.reference_url.trim() : undefined;
+  const routingProfile = typeof body.routing_profile === "string" ? body.routing_profile : undefined;
+  const fastFallback = routingProfile === "grid_3x3_fast_fallback";
   const saveToAssets = body.save_to_assets !== false;
   const transparentBackground = body.transparent_background === true;
   const backgroundTolerance = optionalNumber(body.background_tolerance, 42, 1, 180);
@@ -122,13 +126,17 @@ export async function POST(request: Request) {
   }
 
   try {
+    const referenceDataUrl = referenceUrl && fastFallback
+      ? await resolveReferenceImageDataUrl(referenceUrl)
+      : undefined;
     const generation = await generateImageWithFallback(providerId, {
       prompt,
+      referenceDataUrl,
       width,
       height,
       style,
       referenceUrl,
-    });
+    }, fastFallback ? { sameProviderRetryDelays: [] } : undefined);
     const result = generation.result;
     const finalProvider = generation.resolved;
 
@@ -237,7 +245,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const rawErrorMessage = error instanceof Error ? error.message : "生图失败";
     const errorMessage = /fetch failed|network|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|UND_ERR|socket|connection/i.test(rawErrorMessage)
-      ? "上游模型连接失败，系统已自动重试 3 次，请稍后点击重试"
+      ? "上游模型连接失败，系统已尝试可用模型 Key，请稍后点击重试"
       : rawErrorMessage;
 
     if (jobId) {

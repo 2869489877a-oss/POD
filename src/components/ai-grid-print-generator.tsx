@@ -877,6 +877,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         prompt: input.prompt,
         provider_id: selectedProvider || undefined,
         reference_url: input.referenceUrl,
+        routing_profile: gridSize === 3 ? "grid_3x3_fast_fallback" : undefined,
         save_to_assets: input.saveToAssets,
         width: input.width,
       }),

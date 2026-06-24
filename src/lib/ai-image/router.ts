@@ -72,6 +72,10 @@ export type GenerateWithFallbackResult = {
   result: ImageGenResult;
 };
 
+export type GenerateImageOptions = {
+  sameProviderRetryDelays?: readonly number[];
+};
+
 export async function resolveProvider(providerId?: string): Promise<ResolvedProvider> {
   const candidates = await resolveProviderCandidates(providerId);
   return candidates[0];
@@ -123,23 +127,26 @@ export async function resolveProviderCandidates(providerId?: string): Promise<Re
 export async function generateImage(
   resolved: ResolvedProvider,
   params: ImageGenParams,
+  options: GenerateImageOptions = {},
 ): Promise<ImageGenResult> {
   const provider = providers[resolved.providerType];
   if (!provider) {
     throw new Error(`不支持的模型类型：${resolved.providerType}`);
   }
 
-  for (let attempt = 0; attempt <= SAME_PROVIDER_RETRY_DELAYS.length; attempt += 1) {
+  const sameProviderRetryDelays = options.sameProviderRetryDelays ?? SAME_PROVIDER_RETRY_DELAYS;
+
+  for (let attempt = 0; attempt <= sameProviderRetryDelays.length; attempt += 1) {
     try {
       return await provider.generate(resolved.config, params);
     } catch (error) {
       const normalized = normalizeProviderError(error);
-      if (!shouldRetrySameProvider(normalized) || attempt === SAME_PROVIDER_RETRY_DELAYS.length) {
+      if (!shouldRetrySameProvider(normalized) || attempt === sameProviderRetryDelays.length) {
         throw normalized;
       }
 
       const jitter = Math.floor(Math.random() * 300);
-      await new Promise((resolve) => setTimeout(resolve, SAME_PROVIDER_RETRY_DELAYS[attempt] + jitter));
+      await new Promise((resolve) => setTimeout(resolve, sameProviderRetryDelays[attempt] + jitter));
     }
   }
 
@@ -149,6 +156,7 @@ export async function generateImage(
 export async function generateImageWithFallback(
   providerId: string | undefined,
   params: ImageGenParams,
+  options: GenerateImageOptions = {},
 ): Promise<GenerateWithFallbackResult> {
   const candidates = await resolveProviderCandidates(providerId);
   const attempts: ProviderAttempt[] = [];
@@ -157,7 +165,7 @@ export async function generateImageWithFallback(
     await recordProviderAttempt(candidate);
 
     try {
-      const result = await generateImage(candidate, params);
+      const result = await generateImage(candidate, params, options);
       await recordProviderSuccess(candidate);
       attempts.push(buildAttempt(candidate, "success"));
       return { attempts, resolved: candidate, result };

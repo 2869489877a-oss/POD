@@ -6,6 +6,7 @@ export type ImageGenParams = {
   width?: number;
   height?: number;
   style?: string;
+  referenceDataUrl?: string;
   referenceUrl?: string;
 };
 

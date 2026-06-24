@@ -25,7 +25,7 @@ export class TongyiProvider implements ImageProvider {
     const url = this.resolveMultimodalGenerationUrl(config.baseUrl);
     const prompt = params.style ? `${params.prompt}\nStyle: ${params.style}` : params.prompt;
     const content: Array<{ image: string } | { text: string }> = [];
-    const referenceImage = params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined;
+    const referenceImage = params.referenceDataUrl ?? (params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined);
 
     if (referenceImage) {
       content.push({ image: referenceImage });

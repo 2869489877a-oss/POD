@@ -78,7 +78,7 @@ export class VolcanoArkProvider implements ImageProvider {
 
   private async buildRequestBody(config: ProviderConfig, params: ImageGenParams): Promise<Record<string, unknown>> {
     const isSeedream = this.isSeedreamModel(config.modelId);
-    const referenceImage = params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined;
+    const referenceImage = params.referenceDataUrl ?? (params.referenceUrl ? await resolveReferenceImageDataUrl(params.referenceUrl) : undefined);
     const promptParts = [params.prompt];
     if (params.style) promptParts.push(`Style: ${params.style}`);
     if (isSeedream && params.negativePrompt) promptParts.push(`Avoid: ${params.negativePrompt}`);
