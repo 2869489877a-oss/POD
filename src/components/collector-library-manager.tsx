@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Pagination } from "@/components/pagination";
 import { getDisplayImageSrc } from "@/lib/local-asset-url";
 import { useSettings } from "@/lib/settings/context";
 
@@ -37,6 +38,7 @@ type CollectorResponse = {
   items?: CollectorLibraryItem[];
   limit?: number;
   offset?: number;
+  relative_paths?: string[];
   results?: CollectorMutationResult[];
   success_count?: number;
   total?: number;
@@ -45,6 +47,7 @@ type CollectorResponse = {
 type CollectorMutationMode = "delete" | "promote" | "risk-library";
 
 const COLLECTOR_PAGE_SIZE = 120;
+const COLLECTOR_SELECT_ALL_LIMIT = 20000;
 
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -133,10 +136,11 @@ export function CollectorLibraryManager() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => formatUploadDateKey(new Date().toISOString()).slice(0, 7));
+  const [page, setPage] = useState(1);
   const [siteFilter, setSiteFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSelectingAll, setIsSelectingAll] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -198,7 +202,8 @@ export function CollectorLibraryManager() {
 
   const selectedCount = selected.size;
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
-  const hasMoreItems = items.length < total;
+  const totalPages = Math.max(1, Math.ceil(Math.max(total, 0) / COLLECTOR_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
   const previewPendingMode = previewItem && pendingMutationPaths.has(previewItem.relativePath) ? pendingMutationMode : null;
   const panelClass = isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-white";
   const mutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
@@ -221,14 +226,10 @@ export function CollectorLibraryManager() {
     return t("正在删除", "Deleting");
   }
 
-  async function loadItems(options: { append?: boolean } = {}) {
-    const append = options.append === true;
-    const offset = append ? items.length : 0;
-    if (append) {
-      setIsLoadingMore(true);
-    } else {
-      setIsLoading(true);
-    }
+  async function loadItems(targetPage = page) {
+    const normalizedPage = Math.max(1, targetPage);
+    const offset = (normalizedPage - 1) * COLLECTOR_PAGE_SIZE;
+    setIsLoading(true);
     setError(null);
 
     try {
@@ -247,31 +248,19 @@ export function CollectorLibraryManager() {
       }
 
       const nextItems = data.items || [];
-      const mergedItems = append
-        ? Array.from(new Map([...items, ...nextItems].map((item) => [item.relativePath, item])).values())
-        : nextItems;
-
       setServerDateBuckets(data.dateBuckets || []);
-      setTotal(data.total ?? mergedItems.length);
-      setItems(mergedItems);
-      setSelected((current) => {
-        const knownPaths = new Set(mergedItems.map((item) => item.relativePath));
-        return new Set(Array.from(current).filter((path) => knownPaths.has(path)));
-      });
+      setTotal(data.total ?? nextItems.length);
+      setItems(nextItems);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("读取采集库失败", "Failed to load collector library"));
     } finally {
-      if (append) {
-        setIsLoadingMore(false);
-      } else {
-        setIsLoading(false);
-      }
+      setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    void loadItems();
-  }, [activeEndDate, activeStartDate]);
+    void loadItems(safePage);
+  }, [activeEndDate, activeStartDate, safePage]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -290,29 +279,39 @@ export function CollectorLibraryManager() {
   }, [previewItem, previewPath]);
 
   function applyRecentDays(days: number) {
+    setPage(1);
+    setSelected(new Set());
     setEndDate(latestUploadDate);
     setStartDate(addDays(latestUploadDate, -(days - 1)));
     setCalendarMonth(latestUploadDate.slice(0, 7));
   }
 
   function applyThisMonth() {
+    setPage(1);
+    setSelected(new Set());
     setStartDate(latestUploadDate.slice(0, 8) + "01");
     setEndDate(latestUploadDate);
     setCalendarMonth(latestUploadDate.slice(0, 7));
   }
 
   function applySingleUploadDate(uploadDate: string) {
+    setPage(1);
+    setSelected(new Set());
     setStartDate(uploadDate);
     setEndDate(uploadDate);
     setCalendarMonth(uploadDate.slice(0, 7));
   }
 
   function clearDateRange() {
+    setPage(1);
+    setSelected(new Set());
     setStartDate("");
     setEndDate("");
   }
 
   function selectCalendarDate(dateKey: string) {
+    setPage(1);
+    setSelected(new Set());
     setCalendarMonth(dateKey.slice(0, 7));
 
     if (!startDate || endDate) {
@@ -362,6 +361,46 @@ export function CollectorLibraryManager() {
       for (const item of filteredItems) next.add(item.relativePath);
       return next;
     });
+  }
+
+  async function selectAllResults() {
+    if (total === 0 || isSelectingAll || isMutating) return;
+
+    setIsSelectingAll(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const params = new URLSearchParams({
+        limit: String(COLLECTOR_SELECT_ALL_LIMIT),
+        offset: "0",
+        paths_only: "1",
+      });
+      if (activeStartDate) params.set("start_date", activeStartDate);
+      if (activeEndDate) params.set("end_date", activeEndDate);
+
+      const response = await fetch(`/api/collector-library?${params.toString()}`, { cache: "no-store" });
+      const data = (await response.json()) as CollectorResponse;
+
+      if (!response.ok) {
+        throw new Error(data.error || t("全选采集库失败", "Failed to select collector images"));
+      }
+
+      const paths = data.relative_paths || [];
+      setSelected(new Set(paths));
+      setMessage(
+        paths.length >= COLLECTOR_SELECT_ALL_LIMIT && (data.total || 0) > paths.length
+          ? t(
+              `已选择前 ${paths.length} 张，采集库数量较大，请分日期批量处理`,
+              `Selected first ${paths.length}; use date ranges for larger batches`,
+            )
+          : t(`已全选 ${paths.length} 张采集图片`, `${paths.length} collector images selected`),
+      );
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : t("全选采集库失败", "Failed to select collector images"));
+    } finally {
+      setIsSelectingAll(false);
+    }
   }
 
   async function downloadCollectorItem(item: CollectorLibraryItem) {
@@ -704,7 +743,10 @@ export function CollectorLibraryManager() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className={"text-sm " + mutedClass}>
-          {t("共 " + filteredItems.length + " 张，已选 " + selectedCount + " 张", filteredItems.length + " total, " + selectedCount + " selected")}
+          {t(
+            `第 ${safePage}/${totalPages} 页，当前页 ${filteredItems.length} 张，全部 ${total} 张，已选 ${selectedCount} 张`,
+            `Page ${safePage}/${totalPages}, ${filteredItems.length} on this page, ${total} total, ${selectedCount} selected`,
+          )}
         </div>
         <div className={"text-sm " + mutedClass}>
           {t(
@@ -713,8 +755,16 @@ export function CollectorLibraryManager() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void selectAllResults()}
+            disabled={total === 0 || isSelectingAll || isMutating}
+            className={neutralButtonClass}
+          >
+            {isSelectingAll ? t("全选中...", "Selecting...") : t("全选所有", "Select All")}
+          </button>
           <button type="button" onClick={toggleFiltered} disabled={filteredItems.length === 0 || isMutating} className={neutralButtonClass}>
-            {allFilteredSelected ? t("取消全选", "Deselect") : t("全选当前", "Select Visible")}
+            {allFilteredSelected ? t("取消当前页", "Deselect Page") : t("全选当前页", "Select Page")}
           </button>
           <button
             type="button"
@@ -752,9 +802,12 @@ export function CollectorLibraryManager() {
             {isLoading ? t("正在读取采集库...", "Loading collector library...") : t("暂无采集图片", "No collected images yet")}
           </p>
           {isLoading ? (
-            <div className={["mx-auto mt-4 h-1.5 max-w-sm overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-zinc-100"].join(" ")}>
-              <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
-            </div>
+            <>
+              <span className="ui-spinner mx-auto mt-4 h-8 w-8 text-cyan-400" aria-hidden="true" />
+              <div className={["mx-auto mt-4 h-1.5 max-w-sm overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-zinc-100"].join(" ")}>
+                <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
+              </div>
+            </>
           ) : null}
         </section>
       ) : (
@@ -778,7 +831,7 @@ export function CollectorLibraryManager() {
                   isSelected ? "border-emerald-500 ring-2 ring-emerald-500/20" : isDark ? "border-white/[0.08]" : "border-zinc-200",
                 ].join(" ")}
               >
-                <div className={isDark ? "relative aspect-square bg-zinc-950" : "relative aspect-square bg-zinc-100"}>
+                <div className={isDark ? "relative aspect-[4/5] bg-zinc-950/90 p-2" : "relative aspect-[4/5] bg-zinc-100 p-2"}>
                   <input
                     type="checkbox"
                     checked={isSelected}
@@ -792,12 +845,12 @@ export function CollectorLibraryManager() {
                     alt={item.filename}
                     loading="lazy"
                     decoding="async"
-                    className="h-full w-full object-contain"
+                    className="h-full w-full rounded-md object-contain"
                   />
                   {isItemMutating ? (
-                    <div className="ui-task-overlay z-20">
-                      <span className="ui-activity" aria-hidden="true" />
-                      <span className="ui-task-label">{mutationLabel(pendingMode)}</span>
+                    <div className="ui-task-overlay z-20 flex-col gap-3">
+                      <span className="ui-spinner h-7 w-7 text-cyan-200" aria-hidden="true" />
+                      <span className="ui-task-label rounded-full bg-black/35 px-3 py-1">{mutationLabel(pendingMode)}</span>
                     </div>
                   ) : null}
                 </div>
@@ -870,20 +923,17 @@ export function CollectorLibraryManager() {
         </section>
       )}
 
-      {hasMoreItems ? (
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => void loadItems({ append: true })}
-            disabled={isLoadingMore || isLoading || isMutating}
-            className={neutralButtonClass}
-          >
-            {isLoadingMore
-              ? t("加载中...", "Loading...")
-              : t(`加载更多（${items.length}/${total}）`, `Load more (${items.length}/${total})`)}
-          </button>
-        </div>
-      ) : null}
+      <Pagination
+        page={safePage}
+        totalPages={totalPages}
+        total={total}
+        unitZh="张"
+        unitEn="images"
+        onChange={(nextPage) => {
+          setPage(nextPage);
+          window.scrollTo({ behavior: "smooth", top: 0 });
+        }}
+      />
 
       {previewItem && isMounted ? createPortal((
         <div

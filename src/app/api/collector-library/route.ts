@@ -5,6 +5,7 @@ import {
   addCollectorItemsToRiskLibrary,
   deleteCollectorItems,
   listCollectorItemsPage,
+  listCollectorRelativePathsPage,
   parseCollectorRelativePaths,
   promoteCollectorItems,
   saveCollectorFile,
@@ -109,6 +110,19 @@ export async function GET(request: Request) {
     const offset = Number(url.searchParams.get("offset") || 0);
     const endDate = url.searchParams.get("end_date") || undefined;
     const startDate = url.searchParams.get("start_date") || undefined;
+    const pathsOnly = url.searchParams.get("paths_only") === "1" || url.searchParams.get("paths_only") === "true";
+
+    if (pathsOnly) {
+      const page = await listCollectorRelativePathsPage({ endDate, limit, offset, startDate });
+      return NextResponse.json({
+        dateBuckets: page.dateBuckets,
+        limit: page.limit,
+        offset: page.offset,
+        relative_paths: page.relativePaths,
+        total: page.total,
+      });
+    }
+
     const page = await listCollectorItemsPage({ endDate, limit, offset, request, startDate });
     return NextResponse.json(page);
   } catch (error) {

@@ -332,6 +332,46 @@ export async function listCollectorItemsPage({
   };
 }
 
+export async function listCollectorRelativePathsPage({
+  endDate,
+  limit = 10000,
+  offset = 0,
+  startDate,
+}: ListCollectorItemsInput = {}) {
+  const root = getCollectorLibraryRoot();
+  const relativePaths = await walkCollectorFiles(root);
+  const normalizedStartDate = normalizeDateKey(startDate);
+  const normalizedEndDate = normalizeDateKey(endDate);
+  const dateCounts = new Map<string, number>();
+  const filteredPaths = relativePaths.filter((relativePath) => {
+    const uploadDate = uploadDateFromRelativePath(relativePath);
+
+    if (uploadDate) {
+      dateCounts.set(uploadDate, (dateCounts.get(uploadDate) || 0) + 1);
+    }
+
+    if (normalizedStartDate && uploadDate && uploadDate < normalizedStartDate) return false;
+    if (normalizedEndDate && uploadDate && uploadDate > normalizedEndDate) return false;
+    return true;
+  });
+  const sortedPaths = filteredPaths.sort((a, b) => {
+    const dateCompare = uploadDateFromRelativePath(b).localeCompare(uploadDateFromRelativePath(a));
+    return dateCompare !== 0 ? dateCompare : b.localeCompare(a);
+  });
+  const safeLimit = Math.max(1, Math.min(limit, 20000));
+  const safeOffset = Math.max(0, offset);
+
+  return {
+    dateBuckets: Array.from(dateCounts.entries())
+      .map(([date, count]) => ({ count, date }))
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    limit: safeLimit,
+    offset: safeOffset,
+    relativePaths: sortedPaths.slice(safeOffset, safeOffset + safeLimit),
+    total: filteredPaths.length,
+  };
+}
+
 export async function listCollectorItems(input: ListCollectorItemsInput = {}) {
   const page = await listCollectorItemsPage(input);
   return page.items;
