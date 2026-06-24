@@ -70,6 +70,29 @@ type ProcessingResponse = {
   total?: number;
 };
 
+type QueuedJobItem = {
+  asset_id: string;
+  error_message: string | null;
+  id: string;
+  input_url: string;
+  output_url: string | null;
+  status: string;
+};
+
+type QueuedJob = {
+  failed_count: number;
+  id: string;
+  items?: QueuedJobItem[];
+  status: string;
+  success_count: number;
+  total_count: number;
+};
+
+type QueuedJobResponse = {
+  error?: string;
+  job?: QueuedJob;
+};
+
 type ImageAiProcessingManagerProps = {
   initialError?: string | null;
   kind: ProcessingKind;
@@ -89,6 +112,10 @@ const printModes = [
   { zh: "深色衣服提取", en: "Dark Garment Extraction", value: "dark_garment" },
   { zh: "高对比图案", en: "High Contrast Artwork", value: "high_contrast" },
 ];
+
+const QUEUED_JOB_POLL_INTERVAL_MS = 2000;
+const QUEUED_JOB_MAX_POLLS = 300;
+const TERMINAL_JOB_STATUSES = new Set(["completed", "failed", "partial_failed"]);
 
 function getPreviewUrl(asset: Asset): string {
   return asset.preferred_design_url ?? asset.print_extract_url ?? asset.cutout_url ?? asset.processed_url ?? asset.original_url;
@@ -126,6 +153,37 @@ function buildSummaryFromResponse(
     success: data.success ?? items.filter((item) => item.status === "completed").length,
     total: data.total ?? items.length,
   };
+}
+
+function buildSummaryFromQueuedJob(job: QueuedJob, assetMap: Map<string, Asset>): ProcessingSummary {
+  const items = (job.items ?? []).map((item): ProcessingResultItem => {
+    const asset = assetMap.get(item.asset_id);
+    const isCompleted = item.status === "completed" && Boolean(item.output_url);
+
+    return {
+      asset_id: item.asset_id,
+      error_message: item.error_message ?? null,
+      filename: asset?.filename ?? item.asset_id,
+      input_url: item.input_url || asset?.original_url || "",
+      item_id: item.id,
+      output_url: item.output_url,
+      preview_url: item.output_url,
+      status: isCompleted ? "completed" : "failed",
+    };
+  });
+
+  return {
+    failed: job.failed_count ?? items.filter((item) => item.status === "failed").length,
+    results: items,
+    success: job.success_count ?? items.filter((item) => item.status === "completed").length,
+    total: job.total_count ?? items.length,
+  };
+}
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }
 
 export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiProcessingManagerProps) {
@@ -186,6 +244,35 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
 
     return () => window.clearTimeout(timer);
   }, [refreshAssets]);
+
+  async function waitForQueuedJob(jobId: string, assetMap: Map<string, Asset>) {
+    for (let poll = 0; poll < QUEUED_JOB_MAX_POLLS; poll += 1) {
+      await wait(QUEUED_JOB_POLL_INTERVAL_MS);
+
+      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as QueuedJobResponse;
+
+      if (!response.ok || data.error || !data.job) {
+        throw new Error(data.error ?? t("读取后台任务失败", "Failed to read background job"));
+      }
+
+      const job = data.job;
+      setMessage(
+        t(
+          `后台处理中：成功 ${job.success_count}/${job.total_count}，失败 ${job.failed_count}`,
+          `Background worker running: ${job.success_count}/${job.total_count} succeeded, ${job.failed_count} failed`,
+        ),
+      );
+
+      if (TERMINAL_JOB_STATUSES.has(job.status)) {
+        return buildSummaryFromQueuedJob(job, assetMap);
+      }
+    }
+
+    return null;
+  }
 
   function toggleAsset(assetId: string) {
     setSelectedIds((current) => {
@@ -271,17 +358,30 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
         setSummary(null);
         setMessage(
           t(
-            `已提交到后台 worker：共 ${data.total ?? assetIds.length} 张，正在自动处理。任务 ID：${data.job_id ?? "未知"}，稍后刷新即可查看结果。`,
-            `Submitted to the background worker: ${data.total ?? assetIds.length} image(s). Job ID: ${data.job_id ?? "unknown"}. Refresh shortly to see results.`
+            `已提交到后台 worker：共 ${data.total ?? assetIds.length} 张，正在等待处理结果。任务 ID：${data.job_id ?? "未知"}`,
+            `Submitted to the background worker: ${data.total ?? assetIds.length} image(s). Waiting for results. Job ID: ${data.job_id ?? "unknown"}.`
           ),
         );
-        setMessage(
-          t(
-            `已提交到后台 worker：共 ${data.total ?? assetIds.length} 张，正在自动处理。任务 ID：${data.job_id ?? "未知"}，稍后刷新即可查看结果。`,
-            `Submitted to the background worker: ${data.total ?? assetIds.length} image(s). Job ID: ${data.job_id ?? "unknown"}. Refresh shortly to see results.`
-          ),
-        );
+        const queuedAssetMap = new Map(assets.map((asset) => [asset.id, asset]));
+        const queuedSummary = data.job_id ? await waitForQueuedJob(data.job_id, queuedAssetMap) : null;
         await refreshAssets();
+
+        if (queuedSummary) {
+          setSummary(queuedSummary);
+          setMessage(
+            t(
+              `后台处理完成：成功 ${queuedSummary.success} 张，失败 ${queuedSummary.failed} 张`,
+              `Background processing complete: ${queuedSummary.success} succeeded, ${queuedSummary.failed} failed`,
+            ),
+          );
+        } else {
+          setMessage(
+            t(
+              "后台仍在处理，稍后刷新本页，或到图片任务页面查看结果。",
+              "Background processing is still running. Refresh this page later or check the Image Jobs page.",
+            ),
+          );
+        }
         return;
       }
 
