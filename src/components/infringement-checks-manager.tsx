@@ -402,9 +402,9 @@ export function InfringementChecksManager({
   const [error, setError] = useState<string | null>(initialError);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
+  const [isSubmittingChecks, setIsSubmittingChecks] = useState(false);
   const [checkingAssetIds, setCheckingAssetIds] = useState<Set<string>>(new Set());
-  const [activeCheckJob, setActiveCheckJob] = useState<ActiveCheckJobProgress | null>(null);
+  const [activeCheckJobs, setActiveCheckJobs] = useState<ActiveCheckJobProgress[]>([]);
   const [selectedItem, setSelectedItem] = useState<InfringementListItem | null>(null);
   const [reviewStatus, setReviewStatus] = useState<Exclude<CheckStatus, "pending">>("review");
   const [reviewNote, setReviewNote] = useState("");
@@ -488,13 +488,39 @@ export function InfringementChecksManager({
 
   const selectedCount = selectedIds.size;
   const visibleUncheckedIds = useMemo(
-    () => visibleItems.filter((item) => getLatestStatus(item) === "unchecked").map((item) => item.asset.id),
-    [visibleItems],
+    () => visibleItems
+      .filter((item) => getLatestStatus(item) === "unchecked" && !checkingAssetIds.has(item.asset.id))
+      .map((item) => item.asset.id),
+    [checkingAssetIds, visibleItems],
   );
   const allUncheckedIds = useMemo(
-    () => items.filter((item) => getLatestStatus(item) === "unchecked").map((item) => item.asset.id),
-    [items],
+    () => items
+      .filter((item) => getLatestStatus(item) === "unchecked" && !checkingAssetIds.has(item.asset.id))
+      .map((item) => item.asset.id),
+    [checkingAssetIds, items],
   );
+  const activeCheckJob = useMemo(() => {
+    if (activeCheckJobs.length === 0) return null;
+
+    const total = activeCheckJobs.reduce((sum, job) => sum + job.total, 0);
+    const done = activeCheckJobs.reduce((sum, job) => sum + job.done, 0);
+    const failed = activeCheckJobs.reduce((sum, job) => sum + job.failed, 0);
+    const pending = activeCheckJobs.reduce((sum, job) => sum + job.pending, 0);
+    const processing = activeCheckJobs.reduce((sum, job) => sum + job.processing, 0);
+    const succeeded = activeCheckJobs.reduce((sum, job) => sum + job.succeeded, 0);
+
+    return {
+      done,
+      failed,
+      jobId: activeCheckJobs.length === 1 ? activeCheckJobs[0].jobId : `${activeCheckJobs.length} jobs`,
+      pending,
+      percent: total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0,
+      processing,
+      succeeded,
+      total,
+    };
+  }, [activeCheckJobs]);
+  const isRunning = isSubmittingChecks || activeCheckJobs.length > 0;
   const stats = useMemo(() => {
     return items.reduce(
       (current, item) => {
@@ -645,21 +671,37 @@ export function InfringementChecksManager({
     });
   }
 
+  function upsertActiveCheckJob(progress: ActiveCheckJobProgress) {
+    setActiveCheckJobs((current) => [
+      ...current.filter((job) => job.jobId !== progress.jobId),
+      progress,
+    ]);
+  }
+
+  function removeActiveCheckJob(jobId: string) {
+    setActiveCheckJobs((current) => current.filter((job) => job.jobId !== jobId));
+  }
+
   async function runChecks(assetIds: string[]) {
-    if (assetIds.length === 0) {
-      setError(t("请选择要检测的素材", "Please select assets to check"));
+    const queuedAssetIds = Array.from(new Set(assetIds)).filter((assetId) => !checkingAssetIds.has(assetId));
+
+    if (queuedAssetIds.length === 0) {
+      setMessage(
+        assetIds.length > 0
+          ? t("所选素材已经在检测队列中", "Selected assets are already in the check queue")
+          : t("请选择要检测的素材", "Please select assets to check"),
+      );
       return;
     }
 
-    setIsRunning(true);
-    setCheckingAssetIds(new Set(assetIds));
-    setActiveCheckJob(null);
+    setIsSubmittingChecks(true);
+    setCheckingAssetIds((current) => new Set([...Array.from(current), ...queuedAssetIds]));
     setError(null);
-    setMessage(t(`已提交 ${assetIds.length} 张素材，正在进入 worker 队列...`, `${assetIds.length} asset(s) queued for worker processing...`));
+    setMessage(t(`已提交 ${queuedAssetIds.length} 张素材，正在进入 worker 队列...`, `${queuedAssetIds.length} asset(s) queued for worker processing...`));
 
     try {
       const response = await fetch("/api/infringement-checks", {
-        body: JSON.stringify({ asset_ids: assetIds }),
+        body: JSON.stringify({ asset_ids: queuedAssetIds }),
         headers: { "Content-Type": "application/json" },
         method: "POST",
       });
@@ -670,17 +712,24 @@ export function InfringementChecksManager({
       }
 
       if (data.queued && data.job_id) {
-        setActiveCheckJob({
+        upsertActiveCheckJob({
           done: 0,
           failed: 0,
           jobId: data.job_id,
-          pending: assetIds.length,
+          pending: queuedAssetIds.length,
           percent: 0,
           processing: 0,
           succeeded: 0,
-          total: assetIds.length,
+          total: queuedAssetIds.length,
         });
-        await pollInfringementJob(data.job_id, assetIds.length);
+        setIsSubmittingChecks(false);
+        await pollInfringementJob(data.job_id, queuedAssetIds.length, queuedAssetIds);
+      } else {
+        setCheckingAssetIds((current) => {
+          const next = new Set(current);
+          for (const assetId of queuedAssetIds) next.delete(assetId);
+          return next;
+        });
       }
 
       setMessage(data.queued ? t("后台侵权检测已完成", "Background infringement check complete") : data.message ?? t("侵权检测已完成", "Infringement check complete"));
@@ -688,69 +737,89 @@ export function InfringementChecksManager({
     } catch (requestError) {
       setMessage(null);
       setError(requestError instanceof Error ? requestError.message : t("侵权检测失败", "Infringement check failed"));
+      setCheckingAssetIds((current) => {
+        const next = new Set(current);
+        for (const assetId of queuedAssetIds) next.delete(assetId);
+        return next;
+      });
     } finally {
-      setIsRunning(false);
-      setActiveCheckJob(null);
-      setCheckingAssetIds(new Set());
+      setIsSubmittingChecks(false);
     }
   }
 
-  async function pollInfringementJob(jobId: string, fallbackTotal: number) {
+  async function pollInfringementJob(jobId: string, fallbackTotal: number, jobAssetIds: string[]) {
     const deadline = Date.now() + 10 * 60_000;
     let lastDashboardRefresh = 0;
 
-    for (;;) {
-      await sleep(1500);
+    try {
+      for (;;) {
+        await sleep(1500);
 
-      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
-      const data = (await response.json()) as ImageJobProgressResponse;
+        const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+        const data = (await response.json()) as ImageJobProgressResponse;
 
-      if (!response.ok || data.error || !data.job) {
-        throw new Error(data.error ?? t("读取后台检测进度失败", "Failed to read background check progress"));
+        if (!response.ok || data.error || !data.job) {
+          throw new Error(data.error ?? t("读取后台检测进度失败", "Failed to read background check progress"));
+        }
+
+        const total = data.job.total_count || fallbackTotal;
+        const done = data.job.success_count + data.job.failed_count;
+        const jobItems = data.job.items ?? [];
+        const processing = jobItems.filter((item) => item.status === "processing").length;
+        const pending = jobItems.length > 0
+          ? jobItems.filter((item) => item.status === "pending").length
+          : Math.max(0, total - done);
+        const unfinishedAssetIds = jobItems.length > 0
+          ? jobItems
+              .filter((item) => item.status === "pending" || item.status === "processing")
+              .map((item) => item.asset_id)
+          : jobAssetIds;
+        const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+        upsertActiveCheckJob({
+          done,
+          failed: data.job.failed_count,
+          jobId,
+          pending,
+          percent,
+          processing,
+          succeeded: data.job.success_count,
+          total,
+        });
+        setCheckingAssetIds((current) => {
+          const next = new Set(current);
+          const unfinished = new Set(unfinishedAssetIds);
+          for (const assetId of jobAssetIds) {
+            if (!unfinished.has(assetId)) next.delete(assetId);
+          }
+          for (const assetId of unfinished) next.add(assetId);
+          return next;
+        });
+        setMessage(t(
+          `worker 队列处理中：${done}/${total}，运行中 ${processing}，等待 ${pending}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`,
+          `Worker queue processing: ${done}/${total}, running ${processing}, pending ${pending}, succeeded ${data.job.success_count}, failed ${data.job.failed_count}`,
+        ));
+
+        if (Date.now() - lastDashboardRefresh > 5000 || data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
+          lastDashboardRefresh = Date.now();
+          await refreshDashboard({ silent: true });
+        }
+
+        if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
+          break;
+        }
+
+        if (Date.now() > deadline) {
+          throw new Error(t("后台检测仍在运行，请稍后刷新页面查看结果", "Background check is still running. Refresh later to see results."));
+        }
       }
-
-      const total = data.job.total_count || fallbackTotal;
-      const done = data.job.success_count + data.job.failed_count;
-      const jobItems = data.job.items ?? [];
-      const processing = jobItems.filter((item) => item.status === "processing").length;
-      const pending = jobItems.length > 0
-        ? jobItems.filter((item) => item.status === "pending").length
-        : Math.max(0, total - done);
-      const unfinishedAssetIds = jobItems
-        .filter((item) => item.status === "pending" || item.status === "processing")
-        .map((item) => item.asset_id);
-      const percent = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-
-      setActiveCheckJob({
-        done,
-        failed: data.job.failed_count,
-        jobId,
-        pending,
-        percent,
-        processing,
-        succeeded: data.job.success_count,
-        total,
+    } finally {
+      removeActiveCheckJob(jobId);
+      setCheckingAssetIds((current) => {
+        const next = new Set(current);
+        for (const assetId of jobAssetIds) next.delete(assetId);
+        return next;
       });
-      if (unfinishedAssetIds.length > 0) {
-        setCheckingAssetIds(new Set(unfinishedAssetIds));
-      }
-      setMessage(t(
-        `worker 队列处理中：${done}/${total}，运行中 ${processing}，等待 ${pending}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`,
-        `Worker queue processing: ${done}/${total}, running ${processing}, pending ${pending}, succeeded ${data.job.success_count}, failed ${data.job.failed_count}`,
-      ));
-
-      if (Date.now() - lastDashboardRefresh > 5000 || data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
-        lastDashboardRefresh = Date.now();
-        await refreshDashboard({ silent: true });
-      }
-
-      if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
-        break;
-      }
-
-      if (Date.now() > deadline) {
-        throw new Error(t("后台检测仍在运行，请稍后刷新页面查看结果", "Background check is still running. Refresh later to see results."));
-      }
     }
   }
 
@@ -1025,7 +1094,7 @@ export function InfringementChecksManager({
           <button
             type="button"
             onClick={() => void refreshDashboard()}
-            disabled={isRefreshing || isRunning}
+            disabled={isRefreshing}
             className="ui-press self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新", "Refresh")}
@@ -1044,13 +1113,13 @@ export function InfringementChecksManager({
           <button
             type="button"
             onClick={() => void runChecks(Array.from(selectedIds))}
-            disabled={selectedCount === 0 || isRunning}
+            disabled={selectedCount === 0 || isSubmittingChecks}
             className="ui-press inline-flex items-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-300"
           >
-            {isRunning ? (
+            {isSubmittingChecks ? (
               <>
                 <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
-                <span>{t("检测中...", "Checking...")}</span>
+                <span>{t("提交中...", "Submitting...")}</span>
               </>
             ) : (
               t(`检测所选 ${selectedCount} 张`, `Check Selected (${selectedCount})`)
@@ -1059,7 +1128,7 @@ export function InfringementChecksManager({
           <button
             type="button"
             onClick={() => void runChecks(visibleUncheckedIds)}
-            disabled={isRunning || visibleUncheckedIds.length === 0}
+            disabled={isSubmittingChecks || visibleUncheckedIds.length === 0}
             className="ui-press rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {t(`检测当前筛选未检测 ${visibleUncheckedIds.length} 张`, `Check Filtered Unchecked (${visibleUncheckedIds.length})`)}
@@ -1067,7 +1136,7 @@ export function InfringementChecksManager({
           <button
             type="button"
             onClick={() => void runChecks(allUncheckedIds)}
-            disabled={isRunning || allUncheckedIds.length === 0}
+            disabled={isSubmittingChecks || allUncheckedIds.length === 0}
             className="ui-press rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t(`一键检测全部未检测 ${allUncheckedIds.length} 张`, `Check All Unchecked (${allUncheckedIds.length})`)}
@@ -1685,7 +1754,7 @@ export function InfringementChecksManager({
                     <button
                       type="button"
                       onClick={() => void runChecks([item.asset.id])}
-                      disabled={isRunning}
+                      disabled={isChecking || isSubmittingChecks}
                       className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
                       {isChecking ? t("检测中", "Checking") : t("重新检测", "Re-check")}
