@@ -82,6 +82,9 @@ const statusStyles: Record<ImageJobStatus | ImageJobItem["status"], string> = {
   processing: "bg-sky-50 text-sky-700",
 };
 
+const jobTypeOptions: Array<"all" | ImageJob["job_type"]> = ["all", "print_extraction", "cutout", "resize", "enhance", "mockup"];
+const jobStatusOptions: Array<"all" | ImageJobStatus> = ["all", "processing", "partial_failed", "failed", "completed", "pending"];
+
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
@@ -91,6 +94,11 @@ function formatDate(value: string, locale: string) {
 
 function shortId(id: string) {
   return `${id.slice(0, 8)}...${id.slice(-6)}`;
+}
+
+function completionPercent(successCount: number, totalCount: number) {
+  if (totalCount <= 0) return 0;
+  return Math.min(100, Math.round((successCount / totalCount) * 100));
 }
 
 export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsCenterProps) {
@@ -103,6 +111,8 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [failedOnly, setFailedOnly] = useState(false);
+  const [jobTypeFilter, setJobTypeFilter] = useState<"all" | ImageJob["job_type"]>("all");
+  const [jobStatusFilter, setJobStatusFilter] = useState<"all" | ImageJobStatus>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [retryTargetIds, setRetryTargetIds] = useState<string[]>([]);
   const [jobsPage, setJobsPage] = useState(1);
@@ -118,6 +128,26 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       : selectedJob.items;
   }, [failedOnly, selectedJob]);
   const failedItems = selectedJob?.items.filter((item) => item.status === "failed") ?? [];
+  const visibleJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      if (jobTypeFilter !== "all" && job.job_type !== jobTypeFilter) return false;
+      if (jobStatusFilter !== "all" && job.status !== jobStatusFilter) return false;
+      return true;
+    });
+  }, [jobStatusFilter, jobTypeFilter, jobs]);
+  const jobStats = useMemo(() => {
+    return jobs.reduce(
+      (acc, job) => {
+        acc.total += 1;
+        acc.items += job.total_count;
+        acc.success += job.success_count;
+        acc.failed += job.failed_count;
+        if (job.status === "processing" || job.status === "pending") acc.running += 1;
+        return acc;
+      },
+      { failed: 0, items: 0, running: 0, success: 0, total: 0 },
+    );
+  }, [jobs]);
   const retryProgress = useMemo(() => {
     if (!selectedJob || retryTargetIds.length === 0) {
       return null;
@@ -136,11 +166,11 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     };
   }, [retryTargetIds, selectedJob]);
 
-  const jobsTotalPages = Math.max(1, Math.ceil(jobs.length / JOBS_PER_PAGE));
+  const jobsTotalPages = Math.max(1, Math.ceil(visibleJobs.length / JOBS_PER_PAGE));
   const currentJobsPage = Math.min(jobsPage, jobsTotalPages);
   const pagedJobs = useMemo(
-    () => jobs.slice((currentJobsPage - 1) * JOBS_PER_PAGE, currentJobsPage * JOBS_PER_PAGE),
-    [jobs, currentJobsPage],
+    () => visibleJobs.slice((currentJobsPage - 1) * JOBS_PER_PAGE, currentJobsPage * JOBS_PER_PAGE),
+    [visibleJobs, currentJobsPage],
   );
   const itemsTotalPages = Math.max(1, Math.ceil(visibleItems.length / ITEMS_PER_PAGE));
   const currentItemsPage = Math.min(itemsPage, itemsTotalPages);
@@ -266,6 +296,77 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
           </button>
         </div>
 
+        <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("任务总数：", "Jobs: ")}<span className="font-semibold text-zinc-950">{jobStats.total}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("处理中：", "Running: ")}<span className="font-semibold text-zinc-950">{jobStats.running}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("成功图片：", "Succeeded images: ")}<span className="font-semibold text-zinc-950">{jobStats.success}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("失败图片：", "Failed images: ")}<span className="font-semibold text-zinc-950">{jobStats.failed}</span>
+          </div>
+        </div>
+
+        <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 md:grid-cols-[220px_220px_1fr]">
+          <div>
+            <label htmlFor="job-type-filter" className="block text-xs font-medium text-zinc-500">
+              {t("任务类型", "Job Type")}
+            </label>
+            <select
+              id="job-type-filter"
+              value={jobTypeFilter}
+              onChange={(event) => {
+                setJobTypeFilter(event.target.value as "all" | ImageJob["job_type"]);
+                setJobsPage(1);
+              }}
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              {jobTypeOptions.map((type) => (
+                <option key={type} value={type}>
+                  {type === "all" ? t("全部类型", "All Types") : t(jobTypeLabels[type].zh, jobTypeLabels[type].en)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="job-status-filter" className="block text-xs font-medium text-zinc-500">
+              {t("任务状态", "Job Status")}
+            </label>
+            <select
+              id="job-status-filter"
+              value={jobStatusFilter}
+              onChange={(event) => {
+                setJobStatusFilter(event.target.value as "all" | ImageJobStatus);
+                setJobsPage(1);
+              }}
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            >
+              {jobStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status === "all" ? t("全部状态", "All Statuses") : t(statusLabels[status].zh, statusLabels[status].en)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end">
+            <button
+              type="button"
+              onClick={() => {
+                setJobTypeFilter("all");
+                setJobStatusFilter("all");
+                setJobsPage(1);
+              }}
+              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+            >
+              {t("清空筛选", "Clear Filters")}
+            </button>
+          </div>
+        </div>
+
         {error ? (
           <div className="m-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {error}
@@ -280,6 +381,8 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
 
         {jobs.length === 0 ? (
           <div className="p-8 text-sm text-zinc-500">{t("暂无图片处理任务。", "No image processing jobs yet.")}</div>
+        ) : visibleJobs.length === 0 ? (
+          <div className="p-8 text-sm text-zinc-500">{t("没有匹配当前筛选的图片任务。", "No image jobs match the current filters.")}</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-zinc-200 text-sm">
@@ -325,7 +428,20 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                         </span>
                       </td>
                       <td className="px-5 py-4 text-zinc-700">{job.total_count}</td>
-                      <td className="px-5 py-4 text-zinc-700">{job.success_count}</td>
+                      <td className="px-5 py-4 text-zinc-700">
+                        <div className="min-w-[120px]">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>{job.success_count}</span>
+                            <span className="text-xs text-zinc-400">{completionPercent(job.success_count, job.total_count)}%</span>
+                          </div>
+                          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-100">
+                            <div
+                              className="h-full rounded-full bg-emerald-600"
+                              style={{ width: `${completionPercent(job.success_count, job.total_count)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
                       <td className="px-5 py-4 text-zinc-700">{job.failed_count}</td>
                       <td className="px-5 py-4 text-zinc-700">{formatDate(job.created_at, language === "zh" ? "zh-CN" : "en-US")}</td>
                     </tr>
@@ -336,12 +452,12 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
           </div>
         )}
 
-        {jobs.length > 0 ? (
+        {visibleJobs.length > 0 ? (
           <div className="px-5 pb-5">
             <Pagination
               page={currentJobsPage}
               totalPages={jobsTotalPages}
-              total={jobs.length}
+              total={visibleJobs.length}
               unitZh="个任务"
               unitEn="jobs"
               onChange={setJobsPage}

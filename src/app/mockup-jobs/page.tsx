@@ -18,7 +18,7 @@ async function getInitialData(): Promise<{
     const [assetsResponse, templatesResponse] = await Promise.all([
       supabase
         .from("assets")
-        .select("id,filename,original_url,processed_url,status")
+        .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,status")
         .order("created_at", { ascending: false }),
       supabase
         .from("mockup_templates")

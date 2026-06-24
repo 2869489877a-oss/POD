@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { getDisplayImageSrc } from "@/lib/local-asset-url";
 import { useSettings } from "@/lib/settings/context";
 
 type CollectorLibraryItem = {
@@ -740,7 +741,7 @@ export function CollectorLibraryManager() {
                     className="absolute left-3 top-3 z-10 h-4 w-4 rounded border-zinc-300"
                   />
                   <img
-                    src={item.publicUrl}
+                    src={getDisplayImageSrc(item.publicUrl)}
                     alt={item.filename}
                     loading="lazy"
                     decoding="async"
@@ -861,7 +862,7 @@ export function CollectorLibraryManager() {
               <div className={isDark ? "min-h-[55vh] overflow-auto bg-black" : "min-h-[55vh] overflow-auto bg-zinc-100"}>
                 <div className="flex min-h-[55vh] items-center justify-center p-4">
                   <img
-                    src={previewItem.publicUrl}
+                    src={getDisplayImageSrc(previewItem.publicUrl)}
                     alt={previewItem.filename}
                     className="max-h-[72vh] max-w-full object-contain"
                   />

@@ -1,7 +1,10 @@
 import type { ProductDraftStatus, ProductDraftView } from "@/lib/products/types";
 
 type AssetLookup = {
+  cutout_url: string | null;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
 };
 
@@ -51,7 +54,13 @@ export function normalizeProductDraft(
     ? toStringArray(mockupOutputsById.get(draft.mockup_output_id)?.output_images)
     : [];
   const asset = assetsById.get(draft.asset_id);
-  const fallbackImage = asset?.processed_url ?? asset?.original_url ?? null;
+  const fallbackImage =
+    asset?.preferred_design_url ??
+    asset?.print_extract_url ??
+    asset?.cutout_url ??
+    asset?.processed_url ??
+    asset?.original_url ??
+    null;
   const images = ownImages.length > 0 ? ownImages : mockupImages;
 
   return {

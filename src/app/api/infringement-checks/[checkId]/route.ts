@@ -32,14 +32,28 @@ async function addBlockedAssetToReferenceLibrary(
   try {
     const { data: asset } = await supabase
       .from("assets")
-      .select("original_url,filename")
+      .select("original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,filename")
       .eq("id", assetId)
       .single();
 
-    const originalUrl = (asset as { original_url?: string } | null)?.original_url;
-    if (!originalUrl) return;
+    const assetRow = asset as {
+      cutout_url?: string | null;
+      filename?: string | null;
+      original_url?: string | null;
+      preferred_design_url?: string | null;
+      print_extract_url?: string | null;
+      processed_url?: string | null;
+    } | null;
+    const imageUrl =
+      assetRow?.preferred_design_url ??
+      assetRow?.print_extract_url ??
+      assetRow?.cutout_url ??
+      assetRow?.processed_url ??
+      assetRow?.original_url;
 
-    const imageHash = await computeAverageHashFromUrl(originalUrl).catch(() => null);
+    if (!imageUrl) return;
+
+    const imageHash = await computeAverageHashFromUrl(imageUrl).catch(() => null);
     if (!imageHash) return;
 
     // 去重:同一指纹已在库里就跳过
@@ -54,7 +68,7 @@ async function addBlockedAssetToReferenceLibrary(
       category: "visual_review",
       description: "人工标记为禁用的素材,自动加入参考库,用于拦截重复 / 近似的上传。",
       image_hash: imageHash,
-      image_url: originalUrl,
+      image_url: imageUrl,
       is_active: true,
       library_type: "high_risk",
       notes: `auto:blocked-asset ${assetId}`,
@@ -62,7 +76,7 @@ async function addBlockedAssetToReferenceLibrary(
       severity: "high",
       source_label: "禁用素材指纹",
       terms: [],
-      title: (asset as { filename?: string } | null)?.filename || "已禁用素材指纹",
+      title: assetRow?.filename || "已禁用素材指纹",
     });
   } catch {
     // best-effort:忽略所有错误

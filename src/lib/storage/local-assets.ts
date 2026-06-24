@@ -153,9 +153,15 @@ export function localAssetRelativePathFromPublicUrl(publicUrl: string | null) {
     const publicBasePath = new URL(getLocalAssetsPublicBaseUrl(), "http://local.invalid").pathname;
     const normalizedBasePath = stripTrailingSlash(publicBasePath);
     const pathname = new URL(publicUrl, "http://local.invalid").pathname;
-    const prefix = `${normalizedBasePath}/`;
+    const prefixes = Array.from(
+      new Set([
+        normalizedBasePath ? `${normalizedBasePath}/` : null,
+        `${DEFAULT_PUBLIC_PATH}/`,
+      ].filter((prefix): prefix is string => Boolean(prefix))),
+    );
+    const prefix = prefixes.find((candidate) => pathname.startsWith(candidate));
 
-    if (!pathname.startsWith(prefix)) {
+    if (!prefix) {
       return null;
     }
 

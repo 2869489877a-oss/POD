@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 
 import { cutoutImage } from "@/lib/image-ai/cutout";
 import type { CutoutMode } from "@/lib/image-ai/types";
+import { getLocalWorkerSecret } from "@/lib/local-worker/auth";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { saveLocalAssetAtPath } from "@/lib/storage/local-assets";
@@ -264,6 +265,13 @@ export async function POST(request: Request) {
     };
 
     if (shouldQueueForLocalWorker(body)) {
+      if (!getLocalWorkerSecret()) {
+        return NextResponse.json(
+          { error: "LOCAL_IMAGE_WORKER_ENABLED 已开启，但缺少 LOCAL_WORKER_SECRET" },
+          { status: 500 },
+        );
+      }
+
       const job = await createLocalWorkerImageJob(supabase, {
         assetIds,
         jobType: "cutout",

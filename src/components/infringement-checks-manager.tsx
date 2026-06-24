@@ -118,6 +118,16 @@ type InfringementChecksManagerProps = {
   initialItems: InfringementListItem[];
 };
 
+function getAssetPreviewUrl(item: InfringementListItem) {
+  return (
+    item.asset.preferred_design_url ??
+    item.asset.print_extract_url ??
+    item.asset.cutout_url ??
+    item.asset.processed_url ??
+    item.asset.original_url
+  );
+}
+
 const checkStatusLabels: Record<CheckStatus, { en: string; zh: string }> = {
   blocked: { en: "Blocked", zh: "禁用" },
   clear: { en: "Clear", zh: "未命中" },
@@ -1410,7 +1420,7 @@ export function InfringementChecksManager({
           const evidenceQuality = evidence.evidence_quality ?? "none";
           const actionableMatches = matches.filter((match) => !isVisualReviewMatch(match));
           const displayRiskLabel = getDisplayRiskLabel(riskLevel, evidence);
-          const previewUrl = item.asset.processed_url ?? item.asset.original_url;
+          const previewUrl = getAssetPreviewUrl(item);
           const isSelected = selectedIds.has(item.asset.id);
           const isChecking = checkingAssetIds.has(item.asset.id);
 
@@ -1540,7 +1550,7 @@ export function InfringementChecksManager({
                       {t("人工复核", "Review")}
                     </button>
                     <a
-                      href={item.asset.original_url}
+                      href={previewUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
@@ -1587,7 +1597,7 @@ export function InfringementChecksManager({
               <div>
                 <div className="relative min-h-[360px] overflow-hidden rounded-md bg-zinc-100">
                   <Image
-                    src={getDisplayImageSrc(selectedItem.asset.original_url)}
+                    src={getDisplayImageSrc(getAssetPreviewUrl(selectedItem))}
                     alt={selectedItem.asset.filename}
                     fill
                     sizes="(min-width: 1024px) 480px, 90vw"
@@ -1595,7 +1605,7 @@ export function InfringementChecksManager({
                   />
                 </div>
                 <a
-                  href={selectedItem.asset.original_url}
+                  href={getAssetPreviewUrl(selectedItem)}
                   target="_blank"
                   rel="noreferrer"
                   className="mt-3 inline-flex text-sm font-medium text-emerald-700 hover:text-emerald-800"

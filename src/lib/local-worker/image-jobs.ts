@@ -100,7 +100,13 @@ function buildDerivativePath(filename: string, suffix: string, extension: "jpg" 
 }
 
 function pickInputUrl(asset: AssetForWorker) {
-  return asset.preferred_design_url ?? asset.processed_url ?? asset.original_url;
+  return (
+    asset.preferred_design_url ??
+    asset.print_extract_url ??
+    asset.cutout_url ??
+    asset.processed_url ??
+    asset.original_url
+  );
 }
 
 function buildOptions(input: CreateLocalWorkerImageJobInput): WorkerJobOptions {

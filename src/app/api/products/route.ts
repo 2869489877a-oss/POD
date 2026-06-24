@@ -60,7 +60,7 @@ async function listProductDrafts() {
   const [{ data: draftData, error: draftError }, { data: assetData, error: assetError }, { data: mockupData, error: mockupError }] =
     await Promise.all([
       supabase.from("product_drafts").select(productColumns).order("created_at", { ascending: false }),
-      supabase.from("assets").select("id,original_url,processed_url"),
+      supabase.from("assets").select("id,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url"),
       supabase.from("mockup_outputs").select("id,output_images"),
     ]);
 
@@ -77,9 +77,14 @@ async function listProductDrafts() {
   }
 
   const assetsById = new Map(
-    ((assetData ?? []) as unknown as Array<{ id: string; original_url: string; processed_url: string | null }>).map(
-      (asset) => [asset.id, asset],
-    ),
+    ((assetData ?? []) as unknown as Array<{
+      cutout_url: string | null;
+      id: string;
+      original_url: string;
+      preferred_design_url: string | null;
+      print_extract_url: string | null;
+      processed_url: string | null;
+    }>).map((asset) => [asset.id, asset]),
   );
   const mockupOutputsById = new Map(
     ((mockupData ?? []) as unknown as Array<{ id: string; output_images: unknown }>).map(
@@ -152,7 +157,7 @@ export async function POST(request: Request) {
 
     const { data: asset, error: assetError } = await supabase
       .from("assets")
-      .select("original_url,processed_url,copyright_status")
+      .select("original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,copyright_status")
       .eq("id", assetId)
       .single();
 
@@ -162,15 +167,24 @@ export async function POST(request: Request) {
 
     const assetImage = asset as unknown as {
       copyright_status: string;
+      cutout_url: string | null;
       id?: string;
       original_url: string;
+      preferred_design_url: string | null;
+      print_extract_url: string | null;
       processed_url: string | null;
     };
 
     assertAssetsPassCopyrightGate([{ ...assetImage, id: assetId }]);
 
     if (images.length === 0) {
-      images = [assetImage.processed_url ?? assetImage.original_url];
+      images = [
+        assetImage.preferred_design_url ??
+          assetImage.print_extract_url ??
+          assetImage.cutout_url ??
+          assetImage.processed_url ??
+          assetImage.original_url,
+      ];
     }
 
     const { data, error } = await supabase

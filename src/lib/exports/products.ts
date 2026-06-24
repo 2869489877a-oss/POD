@@ -54,7 +54,7 @@ function isExportableStatus(status: string) {
 async function normalizeDraftRows(rows: ProductDraftRow[]) {
   const supabase = createSupabaseServiceRoleClient();
   const [assetsResponse, mockupsResponse] = await Promise.all([
-    supabase.from("assets").select("id,original_url,processed_url,copyright_status"),
+    supabase.from("assets").select("id,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,copyright_status"),
     supabase.from("mockup_outputs").select("id,output_images"),
   ]);
 
@@ -69,9 +69,12 @@ async function normalizeDraftRows(rows: ProductDraftRow[]) {
   const assetsById = new Map(
     (
       (assetsResponse.data ?? []) as unknown as Array<{
+        cutout_url: string | null;
         id: string;
         copyright_status: string;
         original_url: string;
+        preferred_design_url: string | null;
+        print_extract_url: string | null;
         processed_url: string | null;
       }>
     ).map((asset) => [asset.id, asset]),

@@ -42,6 +42,8 @@ const statusStyles: Record<ProductDraftStatus, string> = {
   ready: "bg-emerald-50 text-emerald-700",
 };
 
+const statusFilterOptions: Array<"all" | ProductDraftStatus> = ["all", "ready", "draft", "exported", "failed"];
+
 const exportTypeLabels: Record<ExportRecordView["export_type"], { zh: string; en: string }> = {
   excel: { zh: "Excel", en: "Excel" },
   images_zip: { zh: "图片 ZIP", en: "Image ZIP" },
@@ -89,18 +91,40 @@ export function ExportsManager({
   const [zipResult, setZipResult] = useState<ExportResponse | null>(null);
   const [records, setRecords] = useState<ExportRecordView[]>(exportRecords);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | ProductDraftStatus>("all");
 
+  const visibleProducts = useMemo(() => {
+    const keyword = searchQuery.trim().toLowerCase();
+
+    return products.filter((product) => {
+      if (statusFilter !== "all" && product.status !== statusFilter) return false;
+      if (!keyword) return true;
+
+      return [
+        product.title,
+        product.sku,
+        product.product_type,
+        product.status,
+        product.id,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(keyword));
+    });
+  }, [products, searchQuery, statusFilter]);
   const selectedProducts = useMemo(
     () => products.filter((product) => selectedIds.includes(product.id)),
     [products, selectedIds],
   );
-  const allSelected = products.length > 0 && selectedIds.length === products.length;
-  const productsTotalPages = Math.max(1, Math.ceil(products.length / PRODUCTS_PER_PAGE));
+  const allVisibleSelected = visibleProducts.length > 0 && visibleProducts.every((product) => selectedIds.includes(product.id));
+  const productsTotalPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
   const currentPage = Math.min(page, productsTotalPages);
   const pagedProducts = useMemo(
-    () => products.slice((currentPage - 1) * PRODUCTS_PER_PAGE, currentPage * PRODUCTS_PER_PAGE),
-    [products, currentPage],
+    () => visibleProducts.slice((currentPage - 1) * PRODUCTS_PER_PAGE, currentPage * PRODUCTS_PER_PAGE),
+    [visibleProducts, currentPage],
   );
+  const currentPageVisibleIds = useMemo(() => pagedProducts.map((product) => product.id), [pagedProducts]);
+  const currentPageSelected = currentPageVisibleIds.length > 0 && currentPageVisibleIds.every((id) => selectedIds.includes(id));
 
   function toggleProduct(productId: string) {
     setSelectedIds((current) =>
@@ -112,7 +136,16 @@ export function ExportsManager({
   }
 
   function toggleAll() {
-    setSelectedIds(allSelected ? [] : products.map((product) => product.id));
+    setSelectedIds(allVisibleSelected ? [] : Array.from(new Set([...selectedIds, ...visibleProducts.map((product) => product.id)])));
+    setError(null);
+  }
+
+  function toggleCurrentPage() {
+    if (currentPageSelected) {
+      setSelectedIds((current) => current.filter((id) => !currentPageVisibleIds.includes(id)));
+    } else {
+      setSelectedIds((current) => Array.from(new Set([...current, ...currentPageVisibleIds])));
+    }
     setError(null);
   }
 
@@ -172,10 +205,18 @@ export function ExportsManager({
             <button
               type="button"
               onClick={toggleAll}
-              disabled={products.length === 0 || busyKind !== null}
+              disabled={visibleProducts.length === 0 || busyKind !== null}
               className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              {allSelected ? t("取消全选", "Deselect All") : t("全选", "Select All")}
+              {allVisibleSelected ? t("取消筛选结果", "Deselect Filtered") : t("选择筛选结果", "Select Filtered")}
+            </button>
+            <button
+              type="button"
+              onClick={toggleCurrentPage}
+              disabled={pagedProducts.length === 0 || busyKind !== null}
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+            >
+              {currentPageSelected ? t("取消本页", "Deselect Page") : t("选择本页", "Select Page")}
             </button>
             <button
               type="button"
@@ -198,7 +239,9 @@ export function ExportsManager({
 
         <div className="mt-4 grid gap-3 text-sm text-zinc-600 sm:grid-cols-3">
           <div className="rounded-md bg-zinc-50 px-3 py-2">
-            {t("可导出商品：", "Exportable products: ")}<span className="font-semibold text-zinc-950">{products.length}</span>
+            {t("可导出商品：", "Exportable products: ")}
+            <span className="font-semibold text-zinc-950">{visibleProducts.length}</span>
+            <span className="text-zinc-400"> / {products.length}</span>
           </div>
           <div className="rounded-md bg-zinc-50 px-3 py-2">
             {t("已选择：", "Selected: ")}<span className="font-semibold text-zinc-950">{selectedIds.length}</span>
@@ -210,6 +253,62 @@ export function ExportsManager({
             </span>
           </div>
         </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px_auto]">
+          <div>
+            <label htmlFor="export-search" className="sr-only">
+              {t("搜索商品", "Search products")}
+            </label>
+            <input
+              id="export-search"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setPage(1);
+              }}
+              placeholder={t("搜索标题、SKU、类型", "Search title, SKU, or type")}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(event) => {
+              setStatusFilter(event.target.value as "all" | ProductDraftStatus);
+              setPage(1);
+            }}
+            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+            aria-label={t("按状态筛选", "Filter by status")}
+          >
+            {statusFilterOptions.map((status) => (
+              <option key={status} value={status}>
+                {status === "all" ? t("全部状态", "All Statuses") : t(statusLabels[status].zh, statusLabels[status].en)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setSearchQuery("");
+              setStatusFilter("all");
+              setPage(1);
+            }}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100"
+          >
+            {t("清空筛选", "Clear Filters")}
+          </button>
+        </div>
+
+        {busyKind ? (
+          <div className="mt-4 rounded-md border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">
+            <div className="flex items-center justify-between gap-3">
+              <span>{busyKind === "excel" ? t("正在生成 Excel 文件", "Generating Excel file") : t("正在打包商品图片 ZIP", "Packing product image ZIP")}</span>
+              <span>{selectedIds.length} {t("个商品", "products")}</span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-sky-100">
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-sky-600" />
+            </div>
+          </div>
+        ) : null}
 
         {error ? (
           <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -312,6 +411,8 @@ export function ExportsManager({
 
         {products.length === 0 ? (
           <div className="p-8 text-sm text-zinc-500">{t("暂无可导出的商品草稿。", "No exportable product drafts.")}</div>
+        ) : visibleProducts.length === 0 ? (
+          <div className="p-8 text-sm text-zinc-500">{t("没有匹配当前筛选的商品。", "No products match the current filters.")}</div>
         ) : (
           <div className="divide-y divide-zinc-200">
             {pagedProducts.map((product) => {
@@ -369,12 +470,12 @@ export function ExportsManager({
           </div>
         )}
 
-        {products.length > 0 ? (
+        {visibleProducts.length > 0 ? (
           <div className="px-5 pb-5">
             <Pagination
               page={currentPage}
               totalPages={productsTotalPages}
-              total={products.length}
+              total={visibleProducts.length}
               unitZh="个"
               unitEn="products"
               onChange={setPage}

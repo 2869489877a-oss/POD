@@ -32,9 +32,12 @@ type ImageJobItemForRetry = {
 };
 
 type AssetForRetry = {
+  cutout_url: string | null;
   filename: string;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
 };
 
@@ -105,6 +108,16 @@ async function downloadImage(url: string) {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });
+}
+
+function pickDesignUrl(asset: AssetForRetry) {
+  return (
+    asset.preferred_design_url ??
+    asset.print_extract_url ??
+    asset.cutout_url ??
+    asset.processed_url ??
+    asset.original_url
+  );
 }
 
 function buildResizeOutputPath(jobId: string, itemId: string, asset: AssetForRetry, preset: ResizePreset) {
@@ -208,7 +221,7 @@ async function getRetryItems(
 async function getAssetsById(supabase: SupabaseServiceClient, assetIds: string[]) {
   const { data, error } = await supabase
     .from("assets")
-    .select("id,filename,original_url,processed_url")
+    .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url")
     .in("id", assetIds);
 
   if (error) {
@@ -289,7 +302,7 @@ async function retryMockupItem(
   templateId: string,
   scenes: MockupScene[],
 ) {
-  const printBuffer = await downloadImage(asset.processed_url ?? asset.original_url);
+  const printBuffer = await downloadImage(pickDesignUrl(asset));
   const outputImages: string[] = [];
 
   for (const scene of scenes) {

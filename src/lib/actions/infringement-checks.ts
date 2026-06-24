@@ -5,11 +5,14 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 export type InfringementAssetRow = {
   copyright_status: string;
   created_at: string;
+  cutout_url: string | null;
   filename: string;
   format: string;
   height: number;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
   source: string;
   width: number;
@@ -40,6 +43,9 @@ const assetColumns = [
   "id",
   "original_url",
   "processed_url",
+  "print_extract_url",
+  "cutout_url",
+  "preferred_design_url",
   "filename",
   "width",
   "height",

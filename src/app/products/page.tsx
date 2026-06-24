@@ -43,7 +43,7 @@ async function getInitialData(): Promise<{
       supabase.from("product_drafts").select(productColumns).order("created_at", { ascending: false }),
       supabase
         .from("assets")
-        .select("id,filename,original_url,processed_url")
+        .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url")
         .order("created_at", { ascending: false }),
       supabase
         .from("mockup_outputs")
@@ -79,9 +79,12 @@ async function getInitialData(): Promise<{
     }
 
     const assets = (assetsResponse.data ?? []) as unknown as Array<{
+      cutout_url: string | null;
       filename: string;
       id: string;
       original_url: string;
+      preferred_design_url: string | null;
+      print_extract_url: string | null;
       processed_url: string | null;
     }>;
     const mockups = (mockupsResponse.data ?? []) as unknown as Array<{
@@ -95,7 +98,10 @@ async function getInitialData(): Promise<{
       assets.map((asset) => [
         asset.id,
         {
+          cutout_url: asset.cutout_url,
           original_url: asset.original_url,
+          preferred_design_url: asset.preferred_design_url,
+          print_extract_url: asset.print_extract_url,
           processed_url: asset.processed_url,
         },
       ]),
@@ -116,7 +122,12 @@ async function getInitialData(): Promise<{
       assetOptions: assets.map((asset) => ({
         filename: asset.filename,
         id: asset.id,
-        image_url: asset.processed_url ?? asset.original_url,
+        image_url:
+          asset.preferred_design_url ??
+          asset.print_extract_url ??
+          asset.cutout_url ??
+          asset.processed_url ??
+          asset.original_url,
       })),
       error: null,
       mockupOutputOptions: mockups.map((mockup) => ({

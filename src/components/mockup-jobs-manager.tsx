@@ -13,9 +13,12 @@ const ASSETS_PER_PAGE = 12;
 import type { MockupScene } from "@/lib/mockups/scenes";
 
 export type MockupJobAsset = {
+  cutout_url: string | null;
   filename: string;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
   status: string;
 };
@@ -68,6 +71,16 @@ const jobStatusLabels: Record<MockupJobResult["status"], { zh: string; en: strin
 
 function shortId(id: string) {
   return id.length > 14 ? `${id.slice(0, 8)}...${id.slice(-6)}` : id;
+}
+
+function pickAssetPreviewUrl(asset: MockupJobAsset) {
+  return (
+    asset.preferred_design_url ??
+    asset.print_extract_url ??
+    asset.cutout_url ??
+    asset.processed_url ??
+    asset.original_url
+  );
 }
 
 export function MockupJobsManager({
@@ -273,7 +286,7 @@ export function MockupJobsManager({
           <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
             {pagedAssets.map((asset) => {
               const isSelected = selectedAssetIds.has(asset.id);
-              const previewUrl = asset.processed_url ?? asset.original_url;
+              const previewUrl = pickAssetPreviewUrl(asset);
 
               return (
                 <article
@@ -308,7 +321,7 @@ export function MockupJobsManager({
                       <span className="min-w-0 truncate">{asset.filename}</span>
                     </label>
                     <p className="text-xs text-zinc-500">
-                      {asset.processed_url ? t("使用处理后图片", "Using processed image") : t("使用原图", "Using original image")}
+                      {previewUrl === asset.original_url ? t("使用原图", "Using original image") : t("使用优先图", "Using preferred image")}
                     </p>
                   </div>
                 </article>

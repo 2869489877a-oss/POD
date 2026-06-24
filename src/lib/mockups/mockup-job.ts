@@ -15,9 +15,12 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
 type AssetForMockup = {
   copyright_status: string;
+  cutout_url: string | null;
   filename: string;
   id: string;
   original_url: string;
+  preferred_design_url: string | null;
+  print_extract_url: string | null;
   processed_url: string | null;
 };
 
@@ -71,6 +74,16 @@ async function downloadImage(url: string) {
     maxBytes: 25 * 1024 * 1024,
     timeoutMs: 30_000,
   });
+}
+
+function pickMockupPrintUrl(asset: AssetForMockup) {
+  return (
+    asset.preferred_design_url ??
+    asset.print_extract_url ??
+    asset.cutout_url ??
+    asset.processed_url ??
+    asset.original_url
+  );
 }
 
 async function uploadMockupScene(
@@ -128,7 +141,7 @@ async function renderMockupImagesForAsset(
   asset: AssetForMockup,
   scenes: MockupScene[],
 ) {
-  const printUrl = asset.processed_url ?? asset.original_url;
+  const printUrl = pickMockupPrintUrl(asset);
   const printBuffer = await downloadImage(printUrl);
   const urls: string[] = [];
 
@@ -235,7 +248,7 @@ export async function createAndProcessMockupJob(
 
   const { data: assetData, error: assetError } = await supabase
     .from("assets")
-    .select("id,filename,original_url,processed_url,copyright_status")
+    .select("id,filename,original_url,processed_url,print_extract_url,cutout_url,preferred_design_url,copyright_status")
     .in("id", assetIds);
 
   if (assetError) {
@@ -276,7 +289,7 @@ export async function createAndProcessMockupJob(
   const { error: itemCreateError } = await supabase.from("image_job_items").insert(
     assets.map((asset) => ({
       asset_id: asset.id,
-      input_url: asset.processed_url ?? asset.original_url,
+      input_url: pickMockupPrintUrl(asset),
       job_id: jobId,
       status: "pending",
     })),

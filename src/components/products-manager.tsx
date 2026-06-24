@@ -58,6 +58,8 @@ const statusStyles: Record<ProductDraftStatus, string> = {
   ready: "bg-emerald-50 text-emerald-700",
 };
 
+const statusFilterOptions: Array<"all" | ProductDraftStatus> = ["all", "ready", "draft", "exported", "failed"];
+
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
@@ -91,6 +93,7 @@ export function ProductsManager({
   const [page, setPage] = useState(1);
   const [isDownloadingImages, setIsDownloadingImages] = useState(false);
   const [imageZipResult, setImageZipResult] = useState<ProductImagesZipResponse | null>(null);
+  const [statusFilter, setStatusFilter] = useState<"all" | ProductDraftStatus>("all");
 
   const [sourceType, setSourceType] = useState<SourceType>("mockup_output");
   const [assetId, setAssetId] = useState(assetOptions[0]?.id ?? "");
@@ -107,22 +110,29 @@ export function ProductsManager({
   const visibleProducts = useMemo(() => {
     const keyword = searchQuery.trim().toLowerCase();
 
-    if (!keyword) {
-      return products;
-    }
-
     return products.filter((product) =>
-      [
-        product.title,
-        product.sku,
-        product.product_type,
-        product.status,
-        product.id,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(keyword)),
-      );
-  }, [products, searchQuery]);
+      (statusFilter === "all" || product.status === statusFilter) &&
+      (!keyword || [
+          product.title,
+          product.sku,
+          product.product_type,
+          product.status,
+          product.id,
+        ]
+          .filter(Boolean)
+          .some((value) => String(value).toLowerCase().includes(keyword))),
+    );
+  }, [products, searchQuery, statusFilter]);
+  const productStats = useMemo(() => {
+    return products.reduce(
+      (acc, product) => {
+        acc.total += 1;
+        acc[product.status] += 1;
+        return acc;
+      },
+      { draft: 0, exported: 0, failed: 0, ready: 0, total: 0 } as Record<ProductDraftStatus | "total", number>,
+    );
+  }, [products]);
   const productTotalPages = Math.max(1, Math.ceil(visibleProducts.length / PRODUCTS_PER_PAGE));
   const currentPage = Math.min(page, productTotalPages);
   const pagedProducts = useMemo(
@@ -479,7 +489,7 @@ export function ProductsManager({
         </section>
 
         <section className="rounded-md border border-zinc-200 bg-white">
-          <div className="grid gap-4 border-b border-zinc-200 px-5 py-4 md:grid-cols-[1fr_260px]">
+          <div className="grid gap-4 border-b border-zinc-200 px-5 py-4 md:grid-cols-[1fr_240px_200px]">
             <div>
               <h3 className="text-base font-semibold text-zinc-950">{t("商品草稿列表", "Product Drafts")}</h3>
               <p className="mt-1 text-sm text-zinc-500">
@@ -500,6 +510,44 @@ export function ProductsManager({
                 placeholder={t("搜索标题、SKU、类型", "Search title, SKU, or type")}
                 className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-900"
               />
+            </div>
+            <div>
+              <label htmlFor="product-status-filter" className="sr-only">
+                {t("按状态筛选", "Filter by status")}
+              </label>
+              <select
+                id="product-status-filter"
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value as "all" | ProductDraftStatus);
+                  setPage(1);
+                }}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+              >
+                {statusFilterOptions.map((status) => (
+                  <option key={status} value={status}>
+                    {status === "all" ? t("全部状态", "All Statuses") : t(statusLabels[status].zh, statusLabels[status].en)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              {t("总数：", "Total: ")}<span className="font-semibold text-zinc-950">{productStats.total}</span>
+            </div>
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              {t("待导出：", "Ready: ")}<span className="font-semibold text-zinc-950">{productStats.ready}</span>
+            </div>
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              {t("草稿：", "Draft: ")}<span className="font-semibold text-zinc-950">{productStats.draft}</span>
+            </div>
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              {t("已导出：", "Exported: ")}<span className="font-semibold text-zinc-950">{productStats.exported}</span>
+            </div>
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              {t("失败：", "Failed: ")}<span className="font-semibold text-zinc-950">{productStats.failed}</span>
             </div>
           </div>
 
