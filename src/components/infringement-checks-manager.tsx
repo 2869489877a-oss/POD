@@ -977,7 +977,7 @@ export function InfringementChecksManager({
           >
             {isRunning ? (
               <>
-                <span className="ui-activity" aria-hidden="true" />
+                <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                 <span>{t("检测中...", "Checking...")}</span>
               </>
             ) : (
@@ -998,7 +998,7 @@ export function InfringementChecksManager({
           <div className="ui-enter ui-scan-panel mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
             <div className="relative flex items-center justify-between gap-3">
               <span className="flex min-w-0 items-center gap-2">
-                <span className="ui-activity" aria-hidden="true" />
+                <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                 <span className="truncate">{t(`规则引擎正在扫描 ${checkingAssetIds.size} 张素材...`, `Rule engine is scanning ${checkingAssetIds.size} asset(s)...`)}</span>
               </span>
               <span className="shrink-0 font-semibold">{t("运行中", "Running")}</span>
@@ -1506,7 +1506,7 @@ export function InfringementChecksManager({
                   </label>
                   {isChecking ? (
                     <div className="ui-task-overlay z-20">
-                      <span className="ui-activity" aria-hidden="true" />
+                      <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                       <span className="ui-task-label">{t("检测中", "Checking")}</span>
                     </div>
                   ) : null}

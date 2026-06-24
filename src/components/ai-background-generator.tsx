@@ -567,7 +567,7 @@ export function AiBackgroundGenerator() {
         <div className="pointer-events-none absolute inset-4 rounded-[16px] border border-dashed opacity-40" style={{ borderColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)" }} />
         {generating ? (
           <div className="relative z-10 text-center">
-            <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
+            <span className="ui-spinner ui-spinner-lg mx-auto text-cyan-400" aria-hidden="true" />
             <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{statusDescription}</p>
           </div>
         ) : result?.result_url ? (

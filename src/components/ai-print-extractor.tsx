@@ -103,7 +103,7 @@ export function AiPrintExtractor() {
       >
         {processing ? (
           <div className="relative z-10 text-center">
-            <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
+            <span className="ui-spinner ui-spinner-lg mx-auto text-cyan-400" aria-hidden="true" />
             <p className={`mt-4 text-sm ${isDark ? "text-slate-400" : "text-slate-500"}`}>{t("正在本地换底...", "Replacing background locally...")}</p>
           </div>
         ) : resultUrl ? (

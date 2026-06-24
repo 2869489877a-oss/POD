@@ -381,13 +381,42 @@ a {
 }
 
 .ui-spinner {
+  position: relative;
   display: inline-block;
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
+  width: var(--ui-spinner-size, 1.2rem);
+  height: var(--ui-spinner-size, 1.2rem);
+  flex: 0 0 auto;
+  border: max(2px, calc(var(--ui-spinner-size, 1.2rem) * 0.1)) solid currentColor;
+  border-left-color: transparent;
+  border-bottom-color: color-mix(in srgb, currentColor 32%, transparent);
   border-radius: 999px;
   animation: ui-spin 0.8s linear infinite;
+  filter: drop-shadow(0 0 7px rgba(34, 211, 238, 0.42));
+}
+
+.ui-spinner::after {
+  content: "";
+  position: absolute;
+  right: calc(var(--ui-spinner-size, 1.2rem) * -0.03);
+  top: calc(var(--ui-spinner-size, 1.2rem) * 0.05);
+  width: calc(var(--ui-spinner-size, 1.2rem) * 0.28);
+  height: calc(var(--ui-spinner-size, 1.2rem) * 0.28);
+  border-right: max(2px, calc(var(--ui-spinner-size, 1.2rem) * 0.1)) solid currentColor;
+  border-top: max(2px, calc(var(--ui-spinner-size, 1.2rem) * 0.1)) solid currentColor;
+  border-radius: 1px;
+  transform: rotate(30deg);
+}
+
+.ui-spinner-sm {
+  --ui-spinner-size: 1rem;
+}
+
+.ui-spinner-md {
+  --ui-spinner-size: 1.35rem;
+}
+
+.ui-spinner-lg {
+  --ui-spinner-size: 2.25rem;
 }
 
 .ui-activity {

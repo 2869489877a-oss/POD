@@ -803,7 +803,7 @@ export function CollectorLibraryManager() {
           </p>
           {isLoading ? (
             <>
-              <span className="ui-spinner mx-auto mt-4 h-8 w-8 text-cyan-400" aria-hidden="true" />
+              <span className="ui-spinner ui-spinner-lg mx-auto mt-4 text-cyan-400" aria-hidden="true" />
               <div className={["mx-auto mt-4 h-1.5 max-w-sm overflow-hidden rounded-full", isDark ? "bg-white/[0.08]" : "bg-zinc-100"].join(" ")}>
                 <div className="ui-progress-fill h-full w-2/3 rounded-full bg-cyan-500" />
               </div>
@@ -849,7 +849,7 @@ export function CollectorLibraryManager() {
                   />
                   {isItemMutating ? (
                     <div className="ui-task-overlay z-20 flex-col gap-3">
-                      <span className="ui-spinner h-7 w-7 text-cyan-200" aria-hidden="true" />
+                      <span className="ui-spinner ui-spinner-md text-cyan-200" aria-hidden="true" />
                       <span className="ui-task-label rounded-full bg-black/35 px-3 py-1">{mutationLabel(pendingMode)}</span>
                     </div>
                   ) : null}

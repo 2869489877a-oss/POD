@@ -319,7 +319,7 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
             >
               {status.state === "submitting" ? (
                 <>
-                  <span className="ui-activity ui-activity-sm" aria-hidden="true" />
+                  <span className="ui-spinner ui-spinner-sm text-cyan-300" aria-hidden="true" />
                   {mode === "login" ? "正在验证…" : "正在注册…"}
                 </>
               ) : mode === "login" ? (

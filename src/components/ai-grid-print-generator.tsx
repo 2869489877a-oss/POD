@@ -1294,7 +1294,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
                       <img src={item.previewUrl} alt={item.file.name} className="h-full w-full object-cover" />
                       {running ? (
                         <div className="ui-task-overlay text-[10px]">
-                          <span className="ui-activity" aria-hidden="true" />
+                          <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                         </div>
                       ) : null}
                     </div>
@@ -1750,7 +1750,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
             >
               {running ? (
                 <div className="w-full max-w-md text-center">
-                  <span className="ui-activity ui-activity-lg mx-auto" aria-hidden="true" />
+                  <span className="ui-spinner ui-spinner-lg mx-auto text-cyan-400" aria-hidden="true" />
                   <p className="mt-3 text-sm text-slate-500">{statusLabel}</p>
                   <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-200/80">
                     <div

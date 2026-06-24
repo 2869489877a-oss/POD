@@ -131,22 +131,30 @@ async function fetchReferenceItems(
     return referenceItemsCache.items;
   }
 
-  const { data, error } = await supabase
-    .from("infringement_reference_items")
-    .select("id,library_type,category,title,terms,image_url,image_hash,risk_level,severity,description,source_label,source_url,notes,is_active")
-    .eq("is_active", true)
-    .limit(5000);
+  const rows: ReferenceRow[] = [];
 
-  if (error) {
-    const message = error.message.toLowerCase();
-    if (error.code === "42P01" || message.includes("infringement_reference_items")) {
-      return [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from("infringement_reference_items")
+      .select("id,library_type,category,title,terms,image_url,image_hash,risk_level,severity,description,source_label,source_url,notes,is_active")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+      .range(from, from + 999);
+
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (error.code === "42P01" || message.includes("infringement_reference_items")) {
+        return [];
+      }
+
+      throw new Error(error.message);
     }
 
-    throw new Error(error.message);
+    rows.push(...((data ?? []) as unknown as ReferenceRow[]));
+    if ((data ?? []).length < 1000) break;
   }
 
-  const items = ((data ?? []) as unknown as ReferenceRow[]).map(normalizeReferenceRow);
+  const items = rows.map(normalizeReferenceRow);
 
   if (REFERENCE_CACHE_TTL_MS > 0) {
     referenceItemsCache = {

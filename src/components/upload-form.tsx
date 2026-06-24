@@ -525,7 +525,7 @@ export function UploadForm({
               >
                 {isCheckingInfringement ? (
                   <>
-                    <span className="ui-activity" aria-hidden="true" />
+                    <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                     <span>
                       {infringementProgress
                         ? t(`检测中 ${infringementProgress.completed}/${infringementProgress.total}`, `Checking ${infringementProgress.completed}/${infringementProgress.total}`)
@@ -552,7 +552,7 @@ export function UploadForm({
               <div className={["ui-scan-panel mt-4 rounded-md border p-3", isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-black/[0.08] bg-black/[0.02]"].join(" ")}>
                 <div className={["relative flex items-center justify-between gap-3 text-[13px]", isDark ? "text-zinc-300" : "text-zinc-600"].join(" ")}>
                   <span className="flex min-w-0 items-center gap-2">
-                    <span className="ui-activity" aria-hidden="true" />
+                    <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                     <span className="truncate">
                       {t(
                         `检测进度 ${infringementProgress.completed}/${infringementProgress.total}`,
