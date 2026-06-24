@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
+import { makeBackgroundTransparent } from "@/lib/image-processing/transparent-background";
 import { readImageBuffer } from "@/lib/network/image-buffer";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { deleteLocalAssetByPublicUrl, saveLocalAssetAtPath } from "@/lib/storage/local-assets";
@@ -17,6 +18,7 @@ type SplitGridRequest = {
   save_to_assets?: unknown;
   source_names?: unknown;
   split_mode?: unknown;
+  transparent_background?: unknown;
 };
 
 type SplitPiece = {
@@ -301,6 +303,7 @@ export async function POST(request: Request) {
   const sourceNames = parseSourceNames(body.source_names);
   const requestedSplitMode = stringValue(body.split_mode);
   const splitMode: "content" | "grid" = requestedSplitMode === "content" ? "content" : "grid";
+  const transparentBackground = body.transparent_background === true;
   const expectedPieces = rows * columns;
 
   try {
@@ -336,10 +339,13 @@ export async function POST(request: Request) {
 
     for (let index = 0; index < rects.length; index += 1) {
       const rect = rects[index];
-      const buffer = await sharp(sourceBuffer)
+      const rawPieceBuffer = await sharp(sourceBuffer)
         .extract({ height: rect.height, left: rect.left, top: rect.top, width: rect.width })
         .png()
         .toBuffer();
+      const buffer = transparentBackground
+        ? await makeBackgroundTransparent(rawPieceBuffer, { feather: 16, tolerance: 52, transparency: 100 })
+        : rawPieceBuffer;
       const sourceName = sourceNames[index] || `grid-${index + 1}`;
       const filename = `${String(index + 1).padStart(2, "0")}-${sanitizeFilename(sourceName)}-print.png`;
       const saved = saveToAssets

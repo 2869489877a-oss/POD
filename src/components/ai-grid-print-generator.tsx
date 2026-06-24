@@ -138,21 +138,29 @@ function buildGridPrompt(gridSize: number, language: "zh" | "en") {
   const zhName = gridDisplayName(gridSize, "zh");
 
   if (language === "zh") {
-    return `这张参考图是 ${label} ${zhName}拼图，每个格子对应一张不同衣服图片中的印花。请按从左到右、从上到下的顺序分别提取 ${total} 个格子里的印花，不要把不同格子的图案混合，不要跨格生成。输出仍保持 ${label} ${zhName}布局，每个格子分别对应原始 ${total} 张图的印花。整张 ${label} 母图需要保持高分辨率和高锐度，细节清晰，适合 300dpi POD 服装印刷；拆分后的每个子图也要保持清晰、完整、可直接用于印刷。每个格子只保留对应的独立印花图案，居中、边缘清晰、细节完整。不要包含：${PRINT_AVOID_TERMS}。`;
+    return `这张参考图是 ${label} ${zhName}拼图，每个格子对应一张不同衣服图片中的印花。请按从左到右、从上到下的顺序分别提取 ${total} 个格子里的平面印花图案/文字/插画，不要把不同格子的图案混合，不要跨格生成。输出仍保持 ${label} ${zhName}布局，每个格子分别对应原始 ${total} 张图的印花。整张 ${label} 母图需要保持高分辨率和高锐度，细节清晰，适合 300dpi POD 服装印刷；拆分后的每个子图也要保持清晰、完整、可直接用于印刷。每个格子只保留对应的独立印花本体，居中、边缘清晰、细节完整；背景按后续底色指令处理。重要：这不是商品抠图任务，不要生成衣服照片、布料矩形、商品场景图或截图；如果印花在 T 恤、卫衣、包、布料上，只提取印花墨迹本身，去除衣服、包身、布料纹理、褶皱、阴影、手、衣架、标签和照片背景。不要把白色衣服、黑色衣服、粉色布料等原始载体当成底图保留。不要包含：${PRINT_AVOID_TERMS}。`;
   }
 
-  return `The reference image is a ${label} grid. Each cell comes from a different garment photo and contains one print design. Extract the ${total} print designs separately from left to right and top to bottom. Do not blend designs across cells. Keep the output as a ${label} grid, with each cell corresponding to its original source image. The full ${label} master image must stay high-resolution, sharp, detailed, and suitable for 300dpi POD garment printing; each split cell should remain clear, complete, and ready for print use. Each cell should contain only its matching standalone print artwork, centered, clean-edged, and detailed. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
+  return `The reference image is a ${label} grid. Each cell comes from a different garment photo and contains one flat print design, text design, or illustration. Extract the ${total} print artworks separately from left to right and top to bottom. Do not blend designs across cells. Keep the output as a ${label} grid, with each cell corresponding to its original source image. The full ${label} master image must stay high-resolution, sharp, detailed, and suitable for 300dpi POD garment printing; each split cell should remain clear, complete, and ready for print use. Each cell should contain only its matching standalone print artwork, centered, clean-edged, and detailed; handle the background according to the following background instruction. Important: this is not a product cutout task. Do not generate garment photos, fabric rectangles, product scene cutouts, or screenshots. If the print is on a T-shirt, hoodie, bag, or fabric, extract only the ink/artwork itself and remove the garment, bag body, fabric texture, wrinkles, shadows, hands, hanger, labels, and photo background. Do not keep the original white shirt, black shirt, pink fabric, or any carrier material as the background. Do not include: ${PRINT_AVOID_TERMS_EN}.`;
 }
 
 function buildBackgroundPrompt(option: BackgroundColorOption, totalCells: number, language: "zh" | "en") {
   const colorZh = option.zh;
   const colorEn = option.en.toLowerCase();
 
-  if (language === "zh") {
-    return `所有 ${totalCells} 个格子都换成${colorZh}底。`;
+  if (option.id === "transparent") {
+    if (language === "zh") {
+      return `所有 ${totalCells} 个格子必须是真正透明背景（alpha=0），不是白底、灰底、棋盘格贴图、衣服布料底或商品照片底。每个格子只保留可印刷的印花图案像素，去除原衣服/包/布料/阴影/照片背景/矩形底块。`;
+    }
+
+    return `All ${totalCells} cells must use a real transparent background with alpha=0, not a white background, gray background, checkerboard image, garment fabric background, or product photo background. Keep only the printable artwork pixels in each cell; remove the original garment, bag, fabric, shadows, photo background, and rectangular backing block.`;
   }
 
-  return `Change all ${totalCells} cell backgrounds to ${colorEn}.`;
+  if (language === "zh") {
+    return `所有 ${totalCells} 个格子都换成干净的${colorZh}纯色底，只放提取后的印花图案，不要保留原衣服、布料或照片背景。`;
+  }
+
+  return `Change all ${totalCells} cell backgrounds to a clean solid ${colorEn} background with only the extracted print artwork on top. Do not keep the original garment, fabric, or photo background.`;
 }
 
 function createItemId() {
@@ -879,6 +887,9 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         reference_url: input.referenceUrl,
         routing_profile: gridSize === 3 ? "grid_3x3_fast_fallback" : undefined,
         save_to_assets: input.saveToAssets,
+        transparent_background: selectedBackgroundColor === "transparent",
+        background_tolerance: 52,
+        background_feather: 16,
         width: input.width,
       }),
       headers: { "Content-Type": "application/json" },
@@ -907,6 +918,7 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
         save_to_assets: true,
         source_names: sourceNames,
         split_mode: "grid",
+        transparent_background: selectedBackgroundColor === "transparent",
       }),
       headers: { "Content-Type": "application/json" },
       method: "POST",
