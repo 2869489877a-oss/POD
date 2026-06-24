@@ -8,7 +8,9 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const LOCAL_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize"];
+const LOCAL_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
+
+type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
 
 type WorkerState = {
   concurrency?: number;
@@ -19,6 +21,36 @@ type WorkerState = {
   updated_at?: string;
   worker?: string;
 };
+
+type QueueRow = {
+  status?: string | null;
+  image_jobs?: {
+    job_type?: string | null;
+  } | null;
+};
+
+function emptyQueueCounts() {
+  return {
+    failed: 0,
+    pending: 0,
+    processing: 0,
+  };
+}
+
+function normalizeWorkerJobTypes(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const allowed = new Set<string>(LOCAL_WORKER_JOB_TYPES);
+  return Array.from(
+    new Set(
+      value
+        .map((item) => String(item).trim())
+        .filter((item): item is LocalWorkerJobType => allowed.has(item)),
+    ),
+  );
+}
 
 function getLocalAssetsDir() {
   return path.resolve(
@@ -79,16 +111,28 @@ async function readQueueState() {
     pending: 0,
     processing: 0,
   };
+  const queueByType = Object.fromEntries(LOCAL_WORKER_JOB_TYPES.map((type) => [type, emptyQueueCounts()])) as Record<
+    LocalWorkerJobType,
+    ReturnType<typeof emptyQueueCounts>
+  >;
 
-  for (const row of (itemRows ?? []) as Array<{ status?: string }>) {
+  for (const row of (itemRows ?? []) as QueueRow[]) {
     if (row.status === "pending") queue.pending += 1;
     if (row.status === "processing") queue.processing += 1;
     if (row.status === "failed") queue.failed += 1;
+
+    const jobType = row.image_jobs?.job_type;
+    if (jobType && jobType in queueByType) {
+      if (row.status === "pending") queueByType[jobType as LocalWorkerJobType].pending += 1;
+      if (row.status === "processing") queueByType[jobType as LocalWorkerJobType].processing += 1;
+      if (row.status === "failed") queueByType[jobType as LocalWorkerJobType].failed += 1;
+    }
   }
 
   return {
     active_jobs: activeJobRows ?? [],
     queue,
+    queue_by_type: queueByType,
   };
 }
 
@@ -100,19 +144,30 @@ export async function GET() {
     const heartbeatMs = numberOrNull(workerState?.heartbeat_ms) ?? 5000;
     const staleAfterSeconds = Math.max(15, Math.ceil((heartbeatMs * 4) / 1000));
     const online = lastSeenSeconds !== null && lastSeenSeconds <= staleAfterSeconds;
+    const workerJobTypes = normalizeWorkerJobTypes(workerState?.job_types);
+    const missingJobTypes = LOCAL_WORKER_JOB_TYPES.filter((jobType) => !workerJobTypes.includes(jobType));
+    const blockedJobTypes = missingJobTypes.filter((jobType) => {
+      const counts = queueState.queue_by_type[jobType];
+      return counts.pending + counts.processing > 0;
+    });
 
     return NextResponse.json(
       {
+        blocked_job_types: blockedJobTypes,
+        expected_job_types: LOCAL_WORKER_JOB_TYPES,
         last_seen_seconds: lastSeenSeconds,
+        missing_job_types: missingJobTypes,
         ok: true,
         online,
         queue: queueState.queue,
+        queue_by_type: queueState.queue_by_type,
+        ready: online && missingJobTypes.length === 0,
         state_file: getWorkerStateFile(),
         stale_after_seconds: staleAfterSeconds,
         worker: workerState
           ? {
               concurrency: workerState.concurrency ?? null,
-              job_types: workerState.job_types ?? [],
+              job_types: workerJobTypes,
               slots: workerState.slots ?? [],
               started_at: workerState.started_at ?? null,
               updated_at: workerState.updated_at ?? null,

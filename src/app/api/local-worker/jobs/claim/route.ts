@@ -6,7 +6,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const DEFAULT_JOB_TYPES: LocalWorkerJobType[] = ["cutout", "print_extraction", "mockup", "resize"];
+const DEFAULT_JOB_TYPES: LocalWorkerJobType[] = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"];
 const allowedJobTypes = new Set<LocalWorkerJobType>(DEFAULT_JOB_TYPES);
 
 function parseJobTypes(value: unknown): LocalWorkerJobType[] {

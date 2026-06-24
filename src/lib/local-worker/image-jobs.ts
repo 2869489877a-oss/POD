@@ -10,7 +10,7 @@ import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
-export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup" | "resize";
+export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup" | "resize" | "infringement_check";
 type ImageJobStatus = "pending" | "processing" | "completed" | "failed" | "partial_failed";
 
 type AssetForWorker = {
@@ -207,7 +207,7 @@ async function getImageSize(output: WorkerFileInput, width: number | null, heigh
   };
 }
 
-async function updateJobCounts(supabase: SupabaseServiceClient, jobId: string) {
+export async function updateJobCounts(supabase: SupabaseServiceClient, jobId: string) {
   const { data, error } = await supabase
     .from("image_job_items")
     .select("status")
@@ -539,6 +539,10 @@ export async function completeLocalWorkerItem(
     };
   }
 
+  if (job.job_type === "infringement_check") {
+    throw new Error("infringement_check task must be completed with a JSON detection payload");
+  }
+
   const { height, width } = await getImageSize(input.output, input.width, input.height);
   const preview = await ensurePreview(input.output, input.preview);
   const mask = await ensureMask(input.output, input.mask);
@@ -664,6 +668,22 @@ export async function failLocalWorkerItem(
   errorMessage: string,
 ) {
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
+
+  if (job.job_type === "infringement_check") {
+    const { error: itemUpdateError } = await supabase
+      .from("image_job_items")
+      .update({
+        error_message: errorMessage,
+        status: "failed",
+      })
+      .eq("id", item.id);
+
+    if (itemUpdateError) {
+      throw new Error(`infringement item fail update failed: ${itemUpdateError.message}`);
+    }
+
+    return updateJobCounts(supabase, item.job_id);
+  }
 
   if (job.job_type === "resize") {
     const { error: itemUpdateError } = await supabase

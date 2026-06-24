@@ -56,7 +56,21 @@ type DetectionEvidence = {
 type RunChecksResponse = {
   checks?: InfringementCheckRow[];
   error?: string;
+  job_id?: string;
   message?: string;
+  queued?: boolean;
+  total?: number;
+};
+
+type ImageJobProgressResponse = {
+  error?: string;
+  job?: {
+    failed_count: number;
+    id: string;
+    status: string;
+    success_count: number;
+    total_count: number;
+  };
 };
 
 type ReviewResponse = {
@@ -328,6 +342,10 @@ function formatDate(value: string | null, locale: string) {
 
 function shortId(id: string) {
   return `${id.slice(0, 8)}...${id.slice(-6)}`;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function getLatestStatus(item: InfringementListItem): CheckStatus | "unchecked" {
@@ -621,7 +639,11 @@ export function InfringementChecksManager({
         throw new Error(data.error ?? t("侵权检测失败", "Infringement check failed"));
       }
 
-      setMessage(data.message ?? t("侵权检测已完成", "Infringement check complete"));
+      if (data.queued && data.job_id) {
+        await pollInfringementJob(data.job_id, assetIds.length);
+      }
+
+      setMessage(data.queued ? t("后台侵权检测已完成", "Background infringement check complete") : data.message ?? t("侵权检测已完成", "Infringement check complete"));
       await refreshDashboard();
     } catch (requestError) {
       setMessage(null);
@@ -629,6 +651,36 @@ export function InfringementChecksManager({
     } finally {
       setIsRunning(false);
       setCheckingAssetIds(new Set());
+    }
+  }
+
+  async function pollInfringementJob(jobId: string, fallbackTotal: number) {
+    const deadline = Date.now() + 10 * 60_000;
+
+    for (;;) {
+      await sleep(1500);
+
+      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      const data = (await response.json()) as ImageJobProgressResponse;
+
+      if (!response.ok || data.error || !data.job) {
+        throw new Error(data.error ?? t("读取后台检测进度失败", "Failed to read background check progress"));
+      }
+
+      const total = data.job.total_count || fallbackTotal;
+      const done = data.job.success_count + data.job.failed_count;
+      setMessage(t(
+        `后台检测中：${done}/${total}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`,
+        `Background checking: ${done}/${total}, succeeded ${data.job.success_count}, failed ${data.job.failed_count}`,
+      ));
+
+      if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
+        break;
+      }
+
+      if (Date.now() > deadline) {
+        throw new Error(t("后台检测仍在运行，请稍后刷新页面查看结果", "Background check is still running. Refresh later to see results."));
+      }
     }
   }
 

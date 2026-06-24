@@ -17,6 +17,7 @@ import type {
   InfringementReferenceItem,
 } from "@/lib/infringement/types";
 import { extractTextFromImageUrl } from "@/lib/infringement/ocr";
+import { createInfringementCheckJob } from "@/lib/infringement/worker-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -383,6 +384,42 @@ export async function POST(request: Request) {
   try {
     const assetIds = parseAssetIds(body.asset_ids);
     const supabase = createSupabaseServiceRoleClient();
+
+    if (process.env.INFRINGEMENT_CHECKS_SYNC !== "true") {
+      try {
+        const job = await createInfringementCheckJob(supabase, assetIds);
+
+        await logActivity({
+          action: "infringement.batch_check.queued",
+          durationMs: elapsedMs(startedAt),
+          entityType: "image_jobs",
+          metadata: {
+            asset_count: assetIds.length,
+            job_id: (job as { id?: string }).id,
+          },
+          request,
+          status: "success",
+        });
+
+        return NextResponse.json({
+          job,
+          job_id: (job as { id?: string }).id,
+          message: `已提交 ${assetIds.length} 张素材到后台侵权检测队列`,
+          queued: true,
+          total: assetIds.length,
+        });
+      } catch (queueError) {
+        if (process.env.INFRINGEMENT_CHECKS_REQUIRE_WORKER === "true") {
+          throw queueError;
+        }
+        console.warn(
+          `[infringement-checks] queue fallback to sync: ${
+            queueError instanceof Error ? queueError.message : String(queueError)
+          }`,
+        );
+      }
+    }
+
     const [databaseReferenceItems, assetsWithOcr] = await Promise.all([
       fetchReferenceItems(supabase),
       fetchAssetsWithOcr(supabase, assetIds),

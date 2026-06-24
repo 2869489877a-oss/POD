@@ -23,7 +23,7 @@ export type ImageJob = {
   error_message: string | null;
   failed_count: number;
   id: string;
-  job_type: "resize" | "cutout" | "print_extraction" | "enhance" | "mockup";
+  job_type: "resize" | "cutout" | "print_extraction" | "enhance" | "mockup" | "infringement_check";
   status: ImageJobStatus;
   success_count: number;
   total_count: number;
@@ -46,6 +46,8 @@ type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
 };
 
+type WorkerJobType = Exclude<ImageJob["job_type"], "enhance">;
+
 type WorkerSlot = {
   asset_filename?: string | null;
   duration_ms?: number | null;
@@ -61,7 +63,10 @@ type WorkerSlot = {
 };
 
 type WorkerStatus = {
+  blocked_job_types?: WorkerJobType[];
+  expected_job_types?: WorkerJobType[];
   last_seen_seconds: number | null;
+  missing_job_types?: WorkerJobType[];
   online: boolean;
   queue?: {
     active_jobs: number;
@@ -69,6 +74,8 @@ type WorkerStatus = {
     pending: number;
     processing: number;
   };
+  queue_by_type?: Partial<Record<WorkerJobType, { failed: number; pending: number; processing: number }>>;
+  ready?: boolean;
   stale_after_seconds: number;
   state_file?: string;
   worker: {
@@ -90,6 +97,7 @@ type ImageJobsCenterProps = {
 const jobTypeLabels: Record<ImageJob["job_type"], { zh: string; en: string }> = {
   cutout: { zh: "抠图", en: "Cutout" },
   enhance: { zh: "清晰化", en: "Enhance" },
+  infringement_check: { zh: "侵权检测", en: "IP Check" },
   mockup: { zh: "套图", en: "Mockup" },
   print_extraction: { zh: "印花提取", en: "Print Extract" },
   resize: { zh: "改尺寸", en: "Resize" },
@@ -118,7 +126,7 @@ const statusStyles: Record<ImageJobStatus | ImageJobItem["status"], string> = {
   processing: "bg-sky-50 text-sky-700",
 };
 
-const jobTypeOptions: Array<"all" | ImageJob["job_type"]> = ["all", "print_extraction", "cutout", "resize", "enhance", "mockup"];
+const jobTypeOptions: Array<"all" | ImageJob["job_type"]> = ["all", "infringement_check", "print_extraction", "cutout", "resize", "enhance", "mockup"];
 const jobStatusOptions: Array<"all" | ImageJobStatus> = ["all", "processing", "partial_failed", "failed", "completed", "pending"];
 
 function formatDate(value: string, locale: string) {
@@ -166,6 +174,22 @@ function formatDuration(seconds: number | null) {
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return `${minutes}m ${rest}s`;
+}
+
+function formatJobTypeList(
+  jobTypes: string[],
+  t: (zh: string, en: string) => string,
+) {
+  if (jobTypes.length === 0) {
+    return "-";
+  }
+
+  return jobTypes
+    .map((jobType) => {
+      const label = jobTypeLabels[jobType as ImageJob["job_type"]];
+      return label ? t(label.zh, label.en) : jobType;
+    })
+    .join(" / ");
 }
 
 export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsCenterProps) {
@@ -257,6 +281,14 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     () => visibleItems.slice((currentItemsPage - 1) * ITEMS_PER_PAGE, currentItemsPage * ITEMS_PER_PAGE),
     [visibleItems, currentItemsPage],
   );
+  const missingWorkerJobTypes = workerStatus?.missing_job_types ?? [];
+  const blockedWorkerJobTypes = workerStatus?.blocked_job_types ?? [];
+  const hasWorkerCoverageIssue = Boolean(workerStatus?.online && missingWorkerJobTypes.length > 0);
+  const workerStatusClassName = hasWorkerCoverageIssue
+    ? "bg-amber-50 text-amber-700"
+    : workerStatus?.online
+      ? "bg-emerald-50 text-emerald-700"
+      : "bg-amber-50 text-amber-700";
 
   async function refreshWorkerStatus(showLoading = false) {
     if (showLoading) {
@@ -408,7 +440,12 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
             <h3 className="text-base font-semibold text-zinc-950">{t("本地 Worker 状态", "Local Worker Status")}</h3>
             <p className="mt-1 text-sm text-zinc-500">
               {workerStatus?.online
-                ? t(`在线，最后心跳 ${formatDuration(workerStatus.last_seen_seconds)} 前`, `Online, last heartbeat ${formatDuration(workerStatus.last_seen_seconds)} ago`)
+                ? hasWorkerCoverageIssue
+                  ? t(
+                      `在线，但缺少任务类型：${formatJobTypeList(missingWorkerJobTypes, t)}`,
+                      `Online, but missing job types: ${formatJobTypeList(missingWorkerJobTypes, t)}`,
+                    )
+                  : t(`在线，最后心跳 ${formatDuration(workerStatus.last_seen_seconds)} 前`, `Online, last heartbeat ${formatDuration(workerStatus.last_seen_seconds)} ago`)
                 : workerStatus?.worker
                   ? t(`疑似离线，最后心跳 ${formatDuration(workerStatus.last_seen_seconds)} 前`, `Possibly offline, last heartbeat ${formatDuration(workerStatus.last_seen_seconds)} ago`)
                   : t("尚未读取到 worker 心跳", "No worker heartbeat found yet")}
@@ -418,10 +455,10 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
             <span
               className={[
                 "inline-flex rounded-md px-2.5 py-1 text-xs font-medium",
-                workerStatus?.online ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+                workerStatusClassName,
               ].join(" ")}
             >
-              {workerStatus?.online ? t("在线", "Online") : t("离线/未启动", "Offline")}
+              {hasWorkerCoverageIssue ? t("需配置", "Needs Config") : workerStatus?.online ? t("在线", "Online") : t("离线/未启动", "Offline")}
             </span>
             <button
               type="button"
@@ -440,7 +477,29 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
           </div>
         ) : null}
 
-        <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-5">
+        {hasWorkerCoverageIssue ? (
+          <div className="m-5 rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-medium">
+              {t(
+                `当前 worker 没有开启：${formatJobTypeList(missingWorkerJobTypes, t)}`,
+                `Current worker is not enabled for: ${formatJobTypeList(missingWorkerJobTypes, t)}`,
+              )}
+            </p>
+            <p className="mt-1 text-amber-700">
+              {blockedWorkerJobTypes.length > 0
+                ? t(
+                    `这些队列会卡住：${formatJobTypeList(blockedWorkerJobTypes, t)}。请在服务器 pod-ai-worker 环境变量里补全 LOCAL_IMAGE_WORKER_JOB_TYPES 后重启 worker。`,
+                    `These queues can be stuck: ${formatJobTypeList(blockedWorkerJobTypes, t)}. Add LOCAL_IMAGE_WORKER_JOB_TYPES to pod-ai-worker and restart the worker.`,
+                  )
+                : t(
+                    "请在服务器 pod-ai-worker 环境变量里补全 LOCAL_IMAGE_WORKER_JOB_TYPES，避免后续任务卡住。",
+                    "Add LOCAL_IMAGE_WORKER_JOB_TYPES to pod-ai-worker to prevent future jobs from getting stuck.",
+                  )}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-6">
           <div className="rounded-md bg-zinc-50 px-3 py-2">
             {t("并发：", "Concurrency: ")}<span className="font-semibold text-zinc-950">{workerStatus?.worker?.concurrency ?? "-"}</span>
           </div>
@@ -455,6 +514,12 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
           </div>
           <div className="rounded-md bg-zinc-50 px-3 py-2">
             {t("活跃任务：", "Active Jobs: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.active_jobs ?? 0}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("任务类型：", "Job Types: ")}
+            <span className="font-semibold text-zinc-950">
+              {formatJobTypeList(workerStatus?.worker?.job_types ?? [], t)}
+            </span>
           </div>
         </div>
 

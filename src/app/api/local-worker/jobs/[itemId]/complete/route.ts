@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { completeInfringementWorkerItem } from "@/lib/infringement/worker-jobs";
 import { requireLocalWorkerAuth } from "@/lib/local-worker/auth";
 import { completeLocalWorkerItem } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -78,6 +79,27 @@ export async function POST(request: Request) {
   }
 
   try {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = (await request.json()) as { infringement?: unknown; kind?: unknown };
+      const infringement = body.infringement;
+
+      if (body.kind !== "infringement_check" || typeof infringement !== "object" || infringement === null) {
+        return NextResponse.json({ error: "JSON 回写只支持 infringement_check", ok: false }, { status: 400 });
+      }
+
+      const result = await completeInfringementWorkerItem(
+        createSupabaseServiceRoleClient(),
+        itemId,
+        infringement as Parameters<typeof completeInfringementWorkerItem>[2],
+      );
+
+      return NextResponse.json({
+        ok: true,
+        result,
+      });
+    }
+
     const form = await request.formData();
     const mockupOutputs = await readFiles(form, "outputs");
     const output = (await readFile(form, "output")) ?? (await readFile(form, "final")) ?? mockupOutputs[0] ?? null;

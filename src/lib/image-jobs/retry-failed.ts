@@ -6,7 +6,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
 type ImageJobForRetry = {
   id: string;
-  job_type: "resize" | "mockup" | "cutout" | "print_extraction" | "enhance";
+  job_type: "resize" | "mockup" | "cutout" | "print_extraction" | "enhance" | "infringement_check";
   options: unknown;
 };
 
@@ -174,7 +174,8 @@ export async function retryFailedImageJobItems(
     job.job_type !== "resize" &&
     job.job_type !== "mockup" &&
     job.job_type !== "cutout" &&
-    job.job_type !== "print_extraction"
+    job.job_type !== "print_extraction" &&
+    job.job_type !== "infringement_check"
   ) {
     throw new Error("当前任务类型暂不支持重新执行");
   }
@@ -197,16 +198,18 @@ export async function retryFailedImageJobItems(
     throw new Error(itemUpdateError.message);
   }
 
-  const { error: assetUpdateError } = await supabase
-    .from("assets")
-    .update({ status: "processing" })
-    .in(
-      "id",
-      Array.from(new Set(items.map((item) => item.asset_id))),
-    );
+  if (job.job_type !== "infringement_check") {
+    const { error: assetUpdateError } = await supabase
+      .from("assets")
+      .update({ status: "processing" })
+      .in(
+        "id",
+        Array.from(new Set(items.map((item) => item.asset_id))),
+      );
 
-  if (assetUpdateError) {
-    throw new Error(assetUpdateError.message);
+    if (assetUpdateError) {
+      throw new Error(assetUpdateError.message);
+    }
   }
 
   await calculateAndUpdateJobCounts(supabase, jobId);

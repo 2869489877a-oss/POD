@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
+import { createJiti } from "jiti";
 import sharp from "sharp";
 
 const BASE_URL = stripTrailingSlash(
@@ -16,7 +18,7 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 1);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
@@ -31,11 +33,16 @@ const WORKER_STATE_FILE = path.resolve(
 );
 const HEARTBEAT_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_HEARTBEAT_MS, 1000, 60_000, 5000);
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+const OCR_LANGS = process.env.OCR_LANGS?.trim() || "eng+chi_sim";
+const OCR_PSM = process.env.OCR_PSM?.trim() || "11";
+const OCR_TIMEOUT_MS = clampInt(process.env.OCR_TIMEOUT_MS, 5_000, 120_000, 25_000);
+const OCR_MAX_DIM = clampInt(process.env.OCR_MAX_DIM, 600, 4000, 2000);
 
 let stopping = false;
 const STARTED_AT = new Date().toISOString();
 const workerSlots = new Map();
 let stateWriteQueue = Promise.resolve();
+let infringementDetector = null;
 
 process.on("SIGINT", () => {
   stopping = true;
@@ -209,6 +216,103 @@ async function readImageBuffer(url) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function getInfringementDetector() {
+  if (infringementDetector) {
+    return infringementDetector;
+  }
+
+  const jiti = createJiti(import.meta.url, {
+    alias: {
+      "@": path.resolve("src"),
+    },
+    interopDefault: true,
+  });
+  infringementDetector = jiti("../src/lib/infringement/detector.ts");
+  return infringementDetector;
+}
+
+async function computeAverageHash(buffer) {
+  const pixels = await sharp(buffer)
+    .resize(8, 8, { fit: "fill" })
+    .greyscale()
+    .raw()
+    .toBuffer();
+  const average = pixels.reduce((sum, value) => sum + value, 0) / pixels.length;
+  let bits = "";
+
+  for (const value of pixels) {
+    bits += value >= average ? "1" : "0";
+  }
+
+  let hex = "";
+  for (let index = 0; index < bits.length; index += 4) {
+    hex += parseInt(bits.slice(index, index + 4), 2).toString(16);
+  }
+
+  return hex;
+}
+
+async function extractTextFromImageBuffer(source) {
+  let rendered = source;
+
+  try {
+    rendered = await sharp(source)
+      .resize(OCR_MAX_DIM, OCR_MAX_DIM, { fit: "inside", withoutEnlargement: true })
+      .grayscale()
+      .png()
+      .toBuffer();
+  } catch {
+    rendered = source;
+  }
+
+  let dir = null;
+  try {
+    dir = await mkdtemp(path.join(os.tmpdir(), "pod-ocr-"));
+    const inputPath = path.join(dir, "input.png");
+    await writeFile(inputPath, rendered);
+    return await runTesseract(inputPath);
+  } catch {
+    return null;
+  } finally {
+    if (dir) {
+      await rm(dir, { force: true, recursive: true }).catch(() => undefined);
+    }
+  }
+}
+
+function runTesseract(inputPath) {
+  return new Promise((resolve) => {
+    let stdout = "";
+    let settled = false;
+
+    const proc = spawn("tesseract", [inputPath, "stdout", "-l", OCR_LANGS, "--psm", OCR_PSM], {
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // ignore
+      }
+      finish(null);
+    }, OCR_TIMEOUT_MS);
+
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }
+
+    proc.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    proc.on("error", () => finish(null));
+    proc.on("close", (code) => finish(code === 0 ? stdout.trim() : null));
+  });
 }
 
 async function normalizeToRgba(inputBuffer, maxSize) {
@@ -978,6 +1082,51 @@ async function processMockup(job) {
   };
 }
 
+async function fetchInfringementPayload(job) {
+  const data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload`, {
+    method: "GET",
+  });
+
+  if (!data.payload) {
+    throw new Error("infringement payload is missing");
+  }
+
+  return data.payload;
+}
+
+async function processInfringementCheck(job) {
+  const payload = await fetchInfringementPayload(job);
+  const detector = getInfringementDetector();
+  const source = await readImageBuffer(payload.input_url || job.input_url);
+  const shouldRunOcr = !payload.asset?.ocr_checked_at;
+  const ocrText = shouldRunOcr
+    ? await extractTextFromImageBuffer(source)
+    : (payload.asset?.ocr_text || null);
+  const imageHash = payload.should_compute_hash ? await computeAverageHash(source) : null;
+  const result = detector.runInfringementDetection({
+    asset: {
+      copyright_status: payload.asset?.copyright_status || "unknown",
+      filename: payload.asset?.filename || job.asset?.filename || "image",
+      id: payload.asset?.id || job.asset?.id || job.asset_id,
+      image_hash: imageHash,
+      original_url: payload.asset?.original_url || payload.input_url || job.input_url,
+      source: payload.asset?.source || "upload",
+    },
+    ocrText,
+    productTexts: Array.isArray(payload.product_texts) ? payload.product_texts : [],
+    referenceItems: Array.isArray(payload.reference_items) ? payload.reference_items : [],
+  });
+
+  return {
+    infringement: {
+      image_hash: imageHash,
+      ocr_attempted: shouldRunOcr && ocrText !== null,
+      ocr_text: ocrText,
+      result,
+    },
+  };
+}
+
 function appendFile(form, name, file) {
   if (!file) return;
   form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
@@ -1016,6 +1165,17 @@ async function claimJob() {
 }
 
 async function completeJob(job, result) {
+  if (job.job_type === "infringement_check") {
+    return apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/complete`, {
+      body: JSON.stringify({
+        infringement: result.infringement,
+        kind: "infringement_check",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   const form = new FormData();
 
   if (job.job_type === "mockup") {
@@ -1064,6 +1224,9 @@ async function processJob(job) {
   }
   if (job.job_type === "mockup") {
     return processMockup(job);
+  }
+  if (job.job_type === "infringement_check") {
+    return processInfringementCheck(job);
   }
   throw new Error(`Unsupported job type: ${job.job_type}`);
 }
