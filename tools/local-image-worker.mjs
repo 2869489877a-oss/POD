@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import sharp from "sharp";
@@ -25,15 +26,24 @@ const LOCAL_ASSETS_DIR = path.resolve(
       ? path.join(process.cwd(), ".local-assets", "assets")
       : "/wmsFile/pod-ai-data/assets"),
 );
+const WORKER_STATE_FILE = path.resolve(
+  process.env.LOCAL_WORKER_STATE_FILE || path.join(path.dirname(LOCAL_ASSETS_DIR), "worker-status.json"),
+);
+const HEARTBEAT_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_HEARTBEAT_MS, 1000, 60_000, 5000);
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 let stopping = false;
+const STARTED_AT = new Date().toISOString();
+const workerSlots = new Map();
+let stateWriteQueue = Promise.resolve();
 
 process.on("SIGINT", () => {
   stopping = true;
+  queueWorkerStateWrite("sigint");
 });
 process.on("SIGTERM", () => {
   stopping = true;
+  queueWorkerStateWrite("sigterm");
 });
 
 function stripTrailingSlash(value) {
@@ -48,6 +58,71 @@ function clampInt(value, min, max, fallback) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function writeWorkerState(reason = "heartbeat") {
+  const now = new Date().toISOString();
+  const payload = {
+    assets_dir: LOCAL_ASSETS_DIR,
+    base_url: BASE_URL,
+    concurrency: CONCURRENCY,
+    heartbeat_ms: HEARTBEAT_MS,
+    hostname: os.hostname(),
+    job_types: JOB_TYPES,
+    pid: process.pid,
+    reason,
+    slots: Array.from(workerSlots.values()).sort((a, b) => Number(a.worker_id) - Number(b.worker_id)),
+    started_at: STARTED_AT,
+    stopping,
+    updated_at: now,
+    worker: "local-image-worker",
+  };
+  const dir = path.dirname(WORKER_STATE_FILE);
+  const tmpFile = `${WORKER_STATE_FILE}.${process.pid}.tmp`;
+
+  await mkdir(dir, { recursive: true });
+  await writeFile(tmpFile, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await rename(tmpFile, WORKER_STATE_FILE);
+}
+
+function queueWorkerStateWrite(reason = "heartbeat") {
+  stateWriteQueue = stateWriteQueue
+    .catch(() => undefined)
+    .then(() => writeWorkerState(reason))
+    .catch((error) => {
+      console.error(`[local-image-worker] heartbeat write failed: ${getErrorMessage(error)}`);
+    });
+}
+
+function setWorkerSlot(workerId, nextState) {
+  const existing = workerSlots.get(workerId) || {};
+  workerSlots.set(workerId, {
+    ...existing,
+    ...nextState,
+    updated_at: new Date().toISOString(),
+    worker_id: workerId,
+  });
+  queueWorkerStateWrite("slot-update");
+}
+
+function setWorkerIdle(workerId) {
+  const current = workerSlots.get(workerId);
+  if (current?.status === "idle" && current?.stage === "idle") {
+    return;
+  }
+
+  setWorkerSlot(workerId, {
+    asset_id: null,
+    asset_filename: null,
+    duration_ms: null,
+    item_id: null,
+    job_id: null,
+    job_type: null,
+    last_error: null,
+    stage: "idle",
+    started_at: null,
+    status: "idle",
+  });
 }
 
 function getErrorMessage(error) {
@@ -818,6 +893,7 @@ async function processJob(job) {
 
 async function workerLoop(workerId) {
   let lastIdleLog = 0;
+  setWorkerIdle(workerId);
 
   while (!stopping) {
     let job = null;
@@ -825,6 +901,7 @@ async function workerLoop(workerId) {
     try {
       job = await claimJob();
       if (!job) {
+        setWorkerIdle(workerId);
         const now = Date.now();
         if (now - lastIdleLog >= IDLE_LOG_MS) {
           console.log(`[worker:${workerId}] idle`);
@@ -836,11 +913,38 @@ async function workerLoop(workerId) {
 
       console.log(`[worker:${workerId}] claimed ${job.job_type} item=${job.item_id} asset=${job.asset?.filename || job.asset_id || ""}`);
       const startedAt = Date.now();
+      setWorkerSlot(workerId, {
+        asset_id: job.asset?.id || job.asset_id || null,
+        asset_filename: job.asset?.filename || null,
+        duration_ms: null,
+        item_id: job.item_id,
+        job_id: job.job_id,
+        job_type: job.job_type,
+        last_error: null,
+        stage: "processing",
+        started_at: new Date(startedAt).toISOString(),
+        status: "processing",
+      });
       const result = await processJob(job);
+      setWorkerSlot(workerId, {
+        stage: "saving",
+        status: "processing",
+      });
       await completeJob(job, result);
+      setWorkerSlot(workerId, {
+        duration_ms: Date.now() - startedAt,
+        last_error: null,
+        stage: "completed",
+        status: "completed",
+      });
       console.log(`[worker:${workerId}] completed item=${job.item_id} in ${Date.now() - startedAt}ms`);
     } catch (error) {
       console.error(`[worker:${workerId}] ${getErrorMessage(error)}`);
+      setWorkerSlot(workerId, {
+        last_error: getErrorMessage(error),
+        stage: job ? "failed" : "claim_failed",
+        status: "failed",
+      });
       if (job) {
         try {
           await failJob(job, error);
@@ -864,8 +968,18 @@ async function main() {
   console.log(
     `[local-image-worker] base=${BASE_URL} concurrency=${CONCURRENCY} assets=${LOCAL_ASSETS_DIR} jobTypes=${JOB_TYPES.join(",")}`,
   );
+  console.log(`[local-image-worker] state=${WORKER_STATE_FILE}`);
 
+  for (let workerId = 1; workerId <= CONCURRENCY; workerId += 1) {
+    setWorkerIdle(workerId);
+  }
+  const heartbeatTimer = setInterval(() => queueWorkerStateWrite("heartbeat"), HEARTBEAT_MS);
+  heartbeatTimer.unref?.();
+  queueWorkerStateWrite("startup");
   await Promise.all(Array.from({ length: CONCURRENCY }, (_, index) => workerLoop(index + 1)));
+  clearInterval(heartbeatTimer);
+  queueWorkerStateWrite("stopped");
+  await stateWriteQueue;
   console.log("[local-image-worker] stopped");
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
 import { fetchImageJobs, fetchImageJobDetail, retryImageJob } from "@/lib/actions/image-jobs";
@@ -44,6 +44,42 @@ type ImageJobItem = {
 
 type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
+};
+
+type WorkerSlot = {
+  asset_filename?: string | null;
+  duration_ms?: number | null;
+  item_id?: string | null;
+  job_id?: string | null;
+  job_type?: string | null;
+  last_error?: string | null;
+  stage?: string | null;
+  started_at?: string | null;
+  status?: string | null;
+  updated_at?: string | null;
+  worker_id: number | string;
+};
+
+type WorkerStatus = {
+  last_seen_seconds: number | null;
+  online: boolean;
+  queue?: {
+    active_jobs: number;
+    failed: number;
+    pending: number;
+    processing: number;
+  };
+  stale_after_seconds: number;
+  state_file?: string;
+  worker: {
+    concurrency: number | null;
+    job_types: string[];
+    slots: WorkerSlot[];
+    started_at: string | null;
+    updated_at: string | null;
+    worker: string;
+  } | null;
+  worker_jobs?: ImageJob[];
 };
 
 type ImageJobsCenterProps = {
@@ -101,6 +137,37 @@ function completionPercent(successCount: number, totalCount: number) {
   return Math.min(100, Math.round((successCount / totalCount) * 100));
 }
 
+function doneCount(job: Pick<ImageJob, "failed_count" | "success_count">) {
+  return job.success_count + job.failed_count;
+}
+
+function progressPercent(job: Pick<ImageJob, "failed_count" | "success_count" | "total_count">) {
+  if (job.total_count <= 0) return 0;
+  return Math.min(100, Math.round((doneCount(job) / job.total_count) * 100));
+}
+
+function isActiveJobStatus(status: ImageJobStatus | ImageJobItem["status"]) {
+  return status === "pending" || status === "processing";
+}
+
+function countItemsByStatus(items: ImageJobItem[]) {
+  return items.reduce(
+    (acc, item) => {
+      acc[item.status] += 1;
+      return acc;
+    },
+    { completed: 0, failed: 0, pending: 0, processing: 0 },
+  );
+}
+
+function formatDuration(seconds: number | null) {
+  if (seconds === null) return "n/a";
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${minutes}m ${rest}s`;
+}
+
 export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsCenterProps) {
   const { language, t } = useSettings();
   const [jobs, setJobs] = useState<ImageJob[]>(initialJobs);
@@ -115,6 +182,9 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
   const [jobStatusFilter, setJobStatusFilter] = useState<"all" | ImageJobStatus>("all");
   const [message, setMessage] = useState<string | null>(null);
   const [retryTargetIds, setRetryTargetIds] = useState<string[]>([]);
+  const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
+  const [workerStatusError, setWorkerStatusError] = useState<string | null>(null);
+  const [isWorkerStatusRefreshing, setIsWorkerStatusRefreshing] = useState(false);
   const [jobsPage, setJobsPage] = useState(1);
   const [itemsPage, setItemsPage] = useState(1);
 
@@ -128,6 +198,14 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       : selectedJob.items;
   }, [failedOnly, selectedJob]);
   const failedItems = selectedJob?.items.filter((item) => item.status === "failed") ?? [];
+  const selectedJobItemStats = useMemo(
+    () => countItemsByStatus(selectedJob?.items ?? []),
+    [selectedJob],
+  );
+  const currentProcessingItems = useMemo(
+    () => selectedJob?.items.filter((item) => item.status === "processing") ?? [],
+    [selectedJob],
+  );
   const visibleJobs = useMemo(() => {
     return jobs.filter((job) => {
       if (jobTypeFilter !== "all" && job.job_type !== jobTypeFilter) return false;
@@ -142,10 +220,11 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
         acc.items += job.total_count;
         acc.success += job.success_count;
         acc.failed += job.failed_count;
+        acc.done += doneCount(job);
         if (job.status === "processing" || job.status === "pending") acc.running += 1;
         return acc;
       },
-      { failed: 0, items: 0, running: 0, success: 0, total: 0 },
+      { done: 0, failed: 0, items: 0, running: 0, success: 0, total: 0 },
     );
   }, [jobs]);
   const retryProgress = useMemo(() => {
@@ -178,6 +257,30 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     () => visibleItems.slice((currentItemsPage - 1) * ITEMS_PER_PAGE, currentItemsPage * ITEMS_PER_PAGE),
     [visibleItems, currentItemsPage],
   );
+
+  async function refreshWorkerStatus(showLoading = false) {
+    if (showLoading) {
+      setIsWorkerStatusRefreshing(true);
+    }
+
+    try {
+      const response = await fetch("/api/local-worker/status", { cache: "no-store" });
+      const data = (await response.json()) as WorkerStatus & { error?: string; ok?: boolean };
+
+      if (!response.ok || data.error) {
+        throw new Error(data.error ?? t("读取 worker 状态失败", "Failed to read worker status"));
+      }
+
+      setWorkerStatus(data);
+      setWorkerStatusError(null);
+    } catch (requestError) {
+      setWorkerStatusError(requestError instanceof Error ? requestError.message : t("读取 worker 状态失败", "Failed to read worker status"));
+    } finally {
+      if (showLoading) {
+        setIsWorkerStatusRefreshing(false);
+      }
+    }
+  }
 
   async function refreshJobs() {
     setIsRefreshing(true);
@@ -263,7 +366,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     }, 1000);
 
     try {
-      const data = await retryImageJob(selectedJob.id);
+      const data = await retryImageJob(selectedJob.id, targetIds);
       if (data.error) throw new Error(data.error);
 
       setMessage(t("重新执行任务已提交", "Retry job submitted"));
@@ -278,8 +381,118 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     }
   }
 
+  useEffect(() => {
+    void refreshWorkerStatus();
+    const timer = window.setInterval(() => {
+      void refreshWorkerStatus();
+
+      const hasActiveJobs = jobs.some((job) => isActiveJobStatus(job.status));
+      const hasActiveSelectedJob = selectedJob
+        ? isActiveJobStatus(selectedJob.status) || selectedJob.items.some((item) => isActiveJobStatus(item.status))
+        : false;
+      const hasWorkerQueue = Boolean((workerStatus?.queue?.pending ?? 0) + (workerStatus?.queue?.processing ?? 0));
+
+      if (hasActiveJobs || hasActiveSelectedJob || hasWorkerQueue || isRetrying) {
+        void refreshJobs();
+      }
+    }, 3000);
+
+    return () => window.clearInterval(timer);
+  }, [jobs, selectedJob, workerStatus?.queue?.pending, workerStatus?.queue?.processing, isRetrying]);
+
   return (
     <div className="space-y-6">
+      <section className="rounded-md border border-zinc-200 bg-white">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("本地 Worker 状态", "Local Worker Status")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {workerStatus?.online
+                ? t(`在线，最后心跳 ${formatDuration(workerStatus.last_seen_seconds)} 前`, `Online, last heartbeat ${formatDuration(workerStatus.last_seen_seconds)} ago`)
+                : workerStatus?.worker
+                  ? t(`疑似离线，最后心跳 ${formatDuration(workerStatus.last_seen_seconds)} 前`, `Possibly offline, last heartbeat ${formatDuration(workerStatus.last_seen_seconds)} ago`)
+                  : t("尚未读取到 worker 心跳", "No worker heartbeat found yet")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={[
+                "inline-flex rounded-md px-2.5 py-1 text-xs font-medium",
+                workerStatus?.online ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700",
+              ].join(" ")}
+            >
+              {workerStatus?.online ? t("在线", "Online") : t("离线/未启动", "Offline")}
+            </span>
+            <button
+              type="button"
+              onClick={() => void refreshWorkerStatus(true)}
+              disabled={isWorkerStatusRefreshing}
+              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+            >
+              {isWorkerStatusRefreshing ? t("刷新中...", "Refreshing...") : t("刷新 Worker", "Refresh Worker")}
+            </button>
+          </div>
+        </div>
+
+        {workerStatusError ? (
+          <div className="m-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {workerStatusError}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("并发：", "Concurrency: ")}<span className="font-semibold text-zinc-950">{workerStatus?.worker?.concurrency ?? "-"}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("等待：", "Pending: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.pending ?? 0}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("处理中：", "Processing: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.processing ?? 0}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("失败待处理：", "Failed: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.failed ?? 0}</span>
+          </div>
+          <div className="rounded-md bg-zinc-50 px-3 py-2">
+            {t("活跃任务：", "Active Jobs: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.active_jobs ?? 0}</span>
+          </div>
+        </div>
+
+        {workerStatus?.worker?.slots && workerStatus.worker.slots.length > 0 ? (
+          <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+            {workerStatus.worker.slots.map((slot) => (
+              <div key={slot.worker_id} className="rounded-md border border-zinc-200 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-zinc-950">Worker {slot.worker_id}</span>
+                  <span
+                    className={[
+                      "rounded-md px-2.5 py-1 text-xs font-medium",
+                      slot.status === "processing"
+                        ? "bg-sky-50 text-sky-700"
+                        : slot.status === "failed"
+                          ? "bg-red-50 text-red-700"
+                          : slot.status === "completed"
+                            ? "bg-emerald-50 text-emerald-700"
+                            : "bg-zinc-100 text-zinc-700",
+                    ].join(" ")}
+                  >
+                    {slot.stage ?? slot.status ?? "idle"}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1 text-xs text-zinc-500">
+                  <p>{t("任务：", "Job: ")}{slot.job_type ? `${slot.job_type} / ${slot.item_id ? shortId(slot.item_id) : "-"}` : t("空闲", "Idle")}</p>
+                  {slot.asset_filename ? <p className="truncate">{t("文件：", "File: ")}{slot.asset_filename}</p> : null}
+                  {slot.duration_ms ? <p>{t("耗时：", "Duration: ")}{Math.round(slot.duration_ms / 1000)}s</p> : null}
+                  {slot.last_error ? <p className="text-red-600">{slot.last_error}</p> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-5 text-sm text-zinc-500">{t("暂无 worker slot 信息。", "No worker slot information yet.")}</div>
+        )}
+      </section>
+
       <section className="rounded-md border border-zinc-200 bg-white">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
           <div>
@@ -431,14 +644,18 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                       <td className="px-5 py-4 text-zinc-700">
                         <div className="min-w-[120px]">
                           <div className="flex items-center justify-between gap-3">
-                            <span>{job.success_count}</span>
-                            <span className="text-xs text-zinc-400">{completionPercent(job.success_count, job.total_count)}%</span>
+                            <span>{doneCount(job)} / {job.total_count}</span>
+                            <span className="text-xs text-zinc-400">{progressPercent(job)}%</span>
                           </div>
                           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-100">
                             <div
                               className="h-full rounded-full bg-emerald-600"
-                              style={{ width: `${completionPercent(job.success_count, job.total_count)}%` }}
+                              style={{ width: `${progressPercent(job)}%` }}
                             />
+                          </div>
+                          <div className="mt-1 flex justify-between text-[11px] text-zinc-400">
+                            <span>{t("成功", "OK")} {job.success_count}</span>
+                            <span>{t("失败", "Fail")} {job.failed_count}</span>
                           </div>
                         </div>
                       </td>
@@ -511,6 +728,44 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
         {detailError ? (
           <div className="m-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {detailError}
+          </div>
+        ) : null}
+
+        {selectedJob ? (
+          <div className="m-5 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-zinc-950">{t("真实处理进度", "Live Progress")}</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {t(
+                    `已结束 ${doneCount(selectedJob)} / ${selectedJob.total_count}，等待 ${selectedJobItemStats.pending}，处理中 ${selectedJobItemStats.processing}`,
+                    `${doneCount(selectedJob)} / ${selectedJob.total_count} done, ${selectedJobItemStats.pending} pending, ${selectedJobItemStats.processing} processing`,
+                  )}
+                </p>
+              </div>
+              <span className="rounded-md bg-white px-2.5 py-1 text-xs font-medium text-zinc-700">
+                {progressPercent(selectedJob)}%
+              </span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+              <div
+                className="h-full rounded-full bg-emerald-700 transition-all"
+                style={{ width: `${progressPercent(selectedJob)}%` }}
+              />
+            </div>
+            <div className="mt-3 grid gap-2 text-xs text-zinc-600 sm:grid-cols-4">
+              <span>{t("等待", "Pending")} {selectedJobItemStats.pending}</span>
+              <span>{t("处理中", "Processing")} {selectedJobItemStats.processing}</span>
+              <span>{t("成功", "Completed")} {selectedJobItemStats.completed}</span>
+              <span>{t("失败", "Failed")} {selectedJobItemStats.failed}</span>
+            </div>
+            {currentProcessingItems.length > 0 ? (
+              <p className="mt-3 text-xs text-sky-700">
+                {t("当前处理中：", "Currently processing: ")}
+                {currentProcessingItems.slice(0, 3).map((item) => shortId(item.id)).join(", ")}
+                {currentProcessingItems.length > 3 ? ` +${currentProcessingItems.length - 3}` : ""}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

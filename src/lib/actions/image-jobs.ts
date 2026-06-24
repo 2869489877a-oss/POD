@@ -1,5 +1,6 @@
 "use server";
 
+import { retryFailedImageJobItems } from "@/lib/image-jobs/retry-failed";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export async function fetchImageJobs(): Promise<{ error: string | null; jobs: unknown[] }> {
@@ -40,16 +41,14 @@ export async function fetchImageJobDetail(jobId: string): Promise<{ error: strin
   }
 }
 
-export async function retryImageJob(jobId: string): Promise<{ error: string | null; ok: boolean }> {
+export async function retryImageJob(
+  jobId: string,
+  itemIds?: string[],
+): Promise<{ error: string | null; job?: unknown; ok: boolean }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
-    const { error } = await supabase
-      .from("image_jobs")
-      .update({ status: "pending", error_message: null })
-      .eq("id", jobId);
-
-    if (error) return { error: error.message, ok: false };
-    return { error: null, ok: true };
+    const job = await retryFailedImageJobItems(supabase, jobId, itemIds);
+    return { error: null, job, ok: true };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "重试失败", ok: false };
   }
