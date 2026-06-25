@@ -25,11 +25,46 @@ function getUniqueAssetIds(value: unknown) {
   );
 }
 
+function parseAssetIdsFromForm(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") {
+    return [];
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  try {
+    return getUniqueAssetIds(JSON.parse(trimmed) as unknown);
+  } catch {
+    return getUniqueAssetIds(trimmed.split(",").map((item) => item.trim()));
+  }
+}
+
+async function readRequestBody(request: Request): Promise<CreateResizeJobRequest> {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+
+  if (contentType.includes("application/json")) {
+    return (await request.json()) as CreateResizeJobRequest;
+  }
+
+  const form = await request.formData();
+  return {
+    asset_ids: [
+      ...form.getAll("asset_id").filter((item): item is string => typeof item === "string"),
+      ...form.getAll("asset_ids[]").filter((item): item is string => typeof item === "string"),
+      ...parseAssetIdsFromForm(form.get("asset_ids")),
+    ],
+    preset_key: form.get("preset_key"),
+  };
+}
+
 export async function POST(request: Request) {
   let body: CreateResizeJobRequest;
 
   try {
-    body = (await request.json()) as CreateResizeJobRequest;
+    body = await readRequestBody(request);
   } catch {
     return NextResponse.json({ error: "无法读取任务参数" }, { status: 400 });
   }

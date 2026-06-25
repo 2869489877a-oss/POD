@@ -1545,7 +1545,8 @@ async function processAiApplyPattern(job) {
 
 function appendFile(form, name, file) {
   if (!file) return;
-  form.append(name, new Blob([new Uint8Array(file.buffer)], { type: file.contentType }), file.filename);
+  const bytes = file.buffer instanceof Uint8Array ? file.buffer : new Uint8Array(file.buffer);
+  form.append(name, new Blob([bytes], { type: file.contentType }), file.filename);
 }
 
 async function apiFetch(pathname, options = {}) {
