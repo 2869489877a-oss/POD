@@ -308,6 +308,32 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     };
   }, [selectedAsset]);
 
+  useEffect(() => {
+    if (!isResizeDialogOpen) {
+      return;
+    }
+
+    const mainScroll = document.getElementById("pod-main-scroll");
+    const originalOverflow = document.body.style.overflow;
+    const originalMainOverflow = mainScroll?.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (mainScroll) mainScroll.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isResizeRunning) {
+        setIsResizeDialogOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      if (mainScroll) mainScroll.style.overflow = originalMainOverflow ?? "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isResizeDialogOpen, isResizeRunning]);
+
   async function fetchAssets(
     nextStatus: "all" | AssetStatus = status,
     nextCopyrightStatus: "all" | CopyrightStatus = copyrightStatus,
@@ -1029,24 +1055,56 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         }}
       />
 
-      {isResizeDialogOpen ? (
+      {isResizeDialogOpen && isMounted ? createPortal((
         <div
-          className="ui-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/60 px-4 py-6"
+          className={[
+            "ui-modal-overlay fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6",
+            isDark ? "bg-black/75" : "bg-zinc-950/60",
+          ].join(" ")}
           role="dialog"
           aria-modal="true"
           aria-labelledby="resize-dialog-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isResizeRunning) {
+              setIsResizeDialogOpen(false);
+            }
+          }}
         >
-          <div className="ui-modal-panel w-full max-w-2xl rounded-md bg-white shadow-xl">
-            <div className="border-b border-zinc-200 px-6 py-4">
-              <h3 id="resize-dialog-title" className="text-base font-semibold text-zinc-950">
+          <div
+            className={[
+              "ui-modal-panel relative flex max-h-[calc(100vh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-md border shadow-2xl sm:max-h-[calc(100vh-3rem)]",
+              isDark
+                ? "border-white/[0.08] bg-[#0f0f10] text-zinc-100 shadow-black/50"
+                : "border-zinc-200 bg-white text-zinc-950 shadow-black/20",
+            ].join(" ")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsResizeDialogOpen(false)}
+              disabled={isResizeRunning}
+              className={[
+                "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border text-lg font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
+                isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
+              ].join(" ")}
+              aria-label={t("关闭批量改尺寸", "Close batch resize")}
+            >
+              x
+            </button>
+
+            <div className={[
+              "shrink-0 border-b px-5 py-4 pr-16 sm:px-6",
+              isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
+            ].join(" ")}>
+              <h3 id="resize-dialog-title" className={["text-base font-semibold", isDark ? "text-white" : "text-zinc-950"].join(" ")}>
                 {t("批量改尺寸", "Batch Resize")}
               </h3>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className={["mt-1 text-sm", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
                 {t(`已选择 ${selectedCount} 张图片，处理结果会写入素材的 processed_url。`, `${selectedCount} image(s) selected. Results will be written to processed_url.`)}
               </p>
             </div>
 
-            <div className="space-y-4 p-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 sm:p-6">
               {resizePresetOptions.map((presetKey) => {
                 const preset = resizePresets[presetKey];
                 const isSelected = resizePresetKey === presetKey;
@@ -1055,10 +1113,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <label
                     key={preset.key}
                     className={[
-                      "flex cursor-pointer gap-3 rounded-md border p-4 transition",
+                      "ui-hover-sheen flex cursor-pointer gap-3 rounded-md border p-4 transition",
                       isSelected
-                        ? "border-emerald-700 bg-emerald-50"
-                        : "border-zinc-200 hover:bg-zinc-50",
+                        ? isDark
+                          ? "border-cyan-300/40 bg-cyan-400/10"
+                          : "border-emerald-700 bg-emerald-50"
+                        : isDark
+                          ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                          : "border-zinc-200 hover:bg-zinc-50",
                     ].join(" ")}
                   >
                     <input
@@ -1070,10 +1132,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       className="mt-1 h-4 w-4 border-zinc-300"
                     />
                     <span>
-                      <span className="block text-sm font-semibold text-zinc-950">
+                      <span className={["block text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
                         {t(preset.label, preset.labelEn)}
                       </span>
-                      <span className="mt-1 block text-sm text-zinc-600">
+                      <span className={["mt-1 block text-sm", isDark ? "text-zinc-400" : "text-zinc-600"].join(" ")}>
                         {t(preset.description, preset.descriptionEn)}
                       </span>
                     </span>
@@ -1081,17 +1143,26 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                 );
               })}
 
-              <div className="rounded-md bg-zinc-50 p-4 text-sm leading-6 text-zinc-600">
+              <div className={[
+                "rounded-md border p-4 text-sm leading-6",
+                isDark ? "border-cyan-300/15 bg-cyan-400/10 text-cyan-100" : "border-zinc-200 bg-zinc-50 text-zinc-600",
+              ].join(" ")}>
                 {t("当前只做尺寸标准化，不做抠图、高清化或套图。原图记录会保留，处理后图片会上传到 Supabase Storage。", "This only standardizes image size. It does not cut out, enhance, or create mockups. Original records are kept and processed images are uploaded to Supabase Storage.")}
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-zinc-200 px-6 py-4">
+            <div className={[
+              "flex shrink-0 justify-end gap-3 border-t px-5 py-4 sm:px-6",
+              isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
+            ].join(" ")}>
               <button
                 type="button"
                 onClick={() => setIsResizeDialogOpen(false)}
                 disabled={isResizeRunning}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+                className={[
+                  "rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                  isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
+                ].join(" ")}
               >
                 {t("取消", "Cancel")}
               </button>
@@ -1106,7 +1177,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </div>
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
 
       {selectedAsset && isMounted ? createPortal((
         <div
