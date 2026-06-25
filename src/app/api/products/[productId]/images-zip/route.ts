@@ -16,6 +16,14 @@ function getProductId(request: Request) {
   return productsIndex >= 0 ? decodeURIComponent(segments[productsIndex + 1] ?? "") : "";
 }
 
+function isPendingStatusSchemaError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes("export_records_status_check") ||
+    message.includes("violates check constraint")
+  );
+}
+
 export async function POST(request: Request) {
   const productId = getProductId(request);
 
@@ -29,6 +37,27 @@ export async function POST(request: Request) {
 
     if (!product) {
       throw new Error("商品草稿不存在，请刷新后重试");
+    }
+
+    try {
+      const record = await createExportRecord({
+        exportType: "images_zip",
+        productCount: products.length,
+        productIds: products.map((product) => product.id),
+        status: "pending",
+      });
+
+      return NextResponse.json({
+        count: products.length,
+        message: "商品套图 ZIP 已进入后台队列，请稍等生成完成。",
+        queued: true,
+        record,
+        record_id: record.id,
+      });
+    } catch (queueError) {
+      if (!isPendingStatusSchemaError(queueError)) {
+        throw queueError;
+      }
     }
 
     const archive = await buildSingleProductImagesZip(product);

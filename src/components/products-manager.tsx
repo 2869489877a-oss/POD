@@ -7,6 +7,8 @@ import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 
 const PRODUCTS_PER_PAGE = 8;
+const PRODUCT_ZIP_POLL_MS = 1500;
+const PRODUCT_ZIP_TIMEOUT_MS = 10 * 60 * 1000;
 
 import type {
   MockupOutputOption,
@@ -38,6 +40,29 @@ type ProductImagesZipResponse = {
   download_url?: string;
   error?: string;
   filename?: string;
+  message?: string;
+  queued?: boolean;
+  record?: ProductExportRecord;
+  record_id?: string;
+};
+
+type ProductExportRecord = {
+  download_url?: string | null;
+  error_message?: string | null;
+  filename?: string | null;
+  id: string;
+  product_count?: number;
+  status: "pending" | "processing" | "completed" | "failed";
+};
+
+type WorkerStatusResponse = {
+  blocked_job_types?: string[];
+  error?: string;
+  missing_job_types?: string[];
+  online?: boolean;
+  worker?: {
+    job_types?: string[];
+  } | null;
 };
 
 type SourceType = "asset" | "mockup_output";
@@ -73,6 +98,20 @@ function formatPrice(value: number | null) {
 
 function toLines(value: string[]) {
   return value.join("\n");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function exportRecordToProductZipResponse(record: ProductExportRecord): ProductImagesZipResponse {
+  return {
+    count: record.product_count,
+    download_url: record.download_url ?? undefined,
+    filename: record.filename ?? undefined,
+    record,
+    record_id: record.id,
+  };
 }
 
 export function ProductsManager({
@@ -308,6 +347,82 @@ export function ProductsManager({
     }
   }
 
+  async function ensureExportWorkerReady() {
+    try {
+      const response = await fetch("/api/local-worker/status", { cache: "no-store" });
+      const data = (await response.json()) as WorkerStatusResponse;
+
+      if (!response.ok || data.error) {
+        return t(
+          "Worker status is temporarily unavailable. The ZIP task will still be queued.",
+          "Worker status is temporarily unavailable. The ZIP task will still be queued.",
+        );
+      }
+
+      if (!data.online) {
+        throw new Error(t("pod-ai-worker is offline. Start it before exporting image ZIP files.", "pod-ai-worker is offline. Start it before exporting image ZIP files."));
+      }
+
+      const jobTypes = data.worker?.job_types ?? [];
+      const exportMissing =
+        data.missing_job_types?.includes("export_images_zip") ||
+        data.blocked_job_types?.includes("export_images_zip") ||
+        !jobTypes.includes("export_images_zip");
+
+      if (exportMissing) {
+        throw new Error(
+          t(
+            "pod-ai-worker is not enabled for export_images_zip. Add it to LOCAL_IMAGE_WORKER_JOB_TYPES and restart worker.",
+            "pod-ai-worker is not enabled for export_images_zip. Add it to LOCAL_IMAGE_WORKER_JOB_TYPES and restart worker.",
+          ),
+        );
+      }
+
+      return null;
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.message.includes("pod-ai-worker")) {
+        throw requestError;
+      }
+
+      return t(
+        "Worker status is temporarily unavailable. The ZIP task will still be queued.",
+        "Worker status is temporarily unavailable. The ZIP task will still be queued.",
+      );
+    }
+  }
+
+  async function fetchExportRecord(recordId: string) {
+    const response = await fetch(`/api/exports/records/${encodeURIComponent(recordId)}`, {
+      cache: "no-store",
+    });
+    const data = (await response.json()) as { error?: string; record?: ProductExportRecord };
+
+    if (!response.ok || !data.record) {
+      throw new Error(data.error ?? t("Failed to read export record", "Failed to read export record"));
+    }
+
+    return data.record;
+  }
+
+  async function waitForQueuedProductZip(recordId: string) {
+    const deadline = Date.now() + PRODUCT_ZIP_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      await sleep(PRODUCT_ZIP_POLL_MS);
+
+      const record = await fetchExportRecord(recordId);
+      if (record.status === "completed") {
+        return record;
+      }
+
+      if (record.status === "failed") {
+        throw new Error(record.error_message ?? t("Product image ZIP export failed", "Product image ZIP export failed"));
+      }
+    }
+
+    throw new Error(t("Product image ZIP export timed out. Check export records later.", "Product image ZIP export timed out. Check export records later."));
+  }
+
   async function downloadProductImages(product: ProductDraftView) {
     if (product.images.length === 0 && !product.main_image_url) {
       setError(t("该商品没有图片，无法下载", "This product has no images to download"));
@@ -322,16 +437,32 @@ export function ProductsManager({
     setImageZipResult(null);
 
     try {
+      const workerWarning = await ensureExportWorkerReady();
+      if (workerWarning) {
+        setMessage(workerWarning);
+      }
+
       const response = await fetch(`/api/products/${product.id}/images-zip`, {
         method: "POST",
       });
       const data = (await response.json()) as ProductImagesZipResponse;
 
-      if (!response.ok || !data.download_url) {
+      if (!response.ok) {
         throw new Error(data.error ?? t("下载商品套图失败", "Failed to download product image ZIP"));
       }
 
-      setImageZipResult(data);
+      let result = data;
+      if (data.queued && data.record_id) {
+        setMessage(data.message ?? t("Product image ZIP queued. Waiting for worker...", "Product image ZIP queued. Waiting for worker..."));
+        const record = await waitForQueuedProductZip(data.record_id);
+        result = exportRecordToProductZipResponse(record);
+      }
+
+      if (!result.download_url) {
+        throw new Error(data.error ?? t("下载商品套图失败", "Failed to download product image ZIP"));
+      }
+
+      setImageZipResult(result);
       setMessage(t("商品套图 ZIP 已生成", "Product image ZIP generated"));
     } catch (requestError) {
       setError(requestError instanceof Error ? (requestError.message.includes("fetch") ? t("网络请求失败，请将 localhost 加入代理排除列表后重试", "Network request failed. Add localhost to your proxy bypass list and try again.") : requestError.message) : t("下载商品套图失败", "Failed to download product image ZIP"));

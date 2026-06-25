@@ -23,10 +23,6 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 3);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
-  .split(",")
-  .map((item) => item.trim())
-  .filter(Boolean);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
 const ASSET_DELETE_JOB_TYPE = "asset_delete";
 const COLLECTOR_OPERATION_JOB_TYPE = "collector_operation";
@@ -34,6 +30,37 @@ const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
 const AI_SPLIT_GRID_JOB_TYPE = "ai_split_grid";
 const AI_APPLY_PATTERN_JOB_TYPE = "ai_apply_pattern";
 const AI_GENERATE_IMAGE_JOB_TYPE = "ai_generate_image";
+const ALL_JOB_TYPES = [
+  ...IMAGE_JOB_TYPES,
+  ASSET_DELETE_JOB_TYPE,
+  COLLECTOR_OPERATION_JOB_TYPE,
+  EXPORT_IMAGES_ZIP_JOB_TYPE,
+  AI_SPLIT_GRID_JOB_TYPE,
+  AI_APPLY_PATTERN_JOB_TYPE,
+  AI_GENERATE_IMAGE_JOB_TYPE,
+];
+const ALL_JOB_TYPE_SET = new Set(ALL_JOB_TYPES);
+const DEFAULT_JOB_TYPE_LIMITS = {
+  [AI_APPLY_PATTERN_JOB_TYPE]: 1,
+  [AI_GENERATE_IMAGE_JOB_TYPE]: 1,
+  [AI_SPLIT_GRID_JOB_TYPE]: 1,
+  [ASSET_DELETE_JOB_TYPE]: 1,
+  [COLLECTOR_OPERATION_JOB_TYPE]: 2,
+  [EXPORT_IMAGES_ZIP_JOB_TYPE]: 1,
+  cutout: 3,
+  infringement_check: 3,
+  mockup: 2,
+  print_extraction: 2,
+  resize: 3,
+};
+const JOB_TYPES = uniqueJobTypes(
+  (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES ||
+    "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item && ALL_JOB_TYPE_SET.has(item)),
+);
+const JOB_TYPE_LIMITS = buildJobTypeLimits();
 const LOCAL_ASSETS_DIR = path.resolve(
   process.env.LOCAL_ASSETS_DIR ||
     (process.platform === "win32"
@@ -65,6 +92,7 @@ let aiImageWorker = null;
 let aiSplitGridWorker = null;
 let aiApplyPatternWorker = null;
 let infringementReferenceCache = null;
+let claimCursor = 0;
 
 process.on("SIGINT", () => {
   stopping = true;
@@ -113,6 +141,96 @@ function clampInt(value, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.floor(numberValue)));
 }
 
+function uniqueJobTypes(items) {
+  return Array.from(new Set(items));
+}
+
+function jobTypeEnvKey(jobType) {
+  return `LOCAL_IMAGE_WORKER_${jobType.toUpperCase()}_CONCURRENCY`;
+}
+
+function legacyJobTypeEnvKey(jobType) {
+  return `LOCAL_IMAGE_WORKER_CONCURRENCY_${jobType.toUpperCase()}`;
+}
+
+function parseJobTypeConcurrencyOverrides() {
+  const overrides = new Map();
+  const configured = process.env.LOCAL_IMAGE_WORKER_TYPE_CONCURRENCY || "";
+
+  for (const entry of configured.split(/[;,]/)) {
+    const normalized = entry.trim();
+    if (!normalized) continue;
+
+    const separatorIndex = normalized.includes("=") ? normalized.indexOf("=") : normalized.indexOf(":");
+    if (separatorIndex <= 0) continue;
+
+    const key = normalized.slice(0, separatorIndex).trim();
+    const value = normalized.slice(separatorIndex + 1).trim();
+    if (key === "*" || ALL_JOB_TYPE_SET.has(key)) {
+      overrides.set(key, value);
+    }
+  }
+
+  return overrides;
+}
+
+function buildJobTypeLimits() {
+  const limits = {};
+  const overrides = parseJobTypeConcurrencyOverrides();
+  const wildcardOverride = overrides.get("*");
+
+  for (const jobType of JOB_TYPES) {
+    const defaultLimit = DEFAULT_JOB_TYPE_LIMITS[jobType] ?? CONCURRENCY;
+    const perTypeEnv =
+      process.env[jobTypeEnvKey(jobType)] ??
+      process.env[legacyJobTypeEnvKey(jobType)] ??
+      overrides.get(jobType) ??
+      wildcardOverride;
+    limits[jobType] = clampInt(perTypeEnv, 0, CONCURRENCY, Math.min(CONCURRENCY, defaultLimit));
+  }
+
+  return limits;
+}
+
+function getJobTypeLimit(jobType) {
+  return Math.max(0, Math.min(CONCURRENCY, JOB_TYPE_LIMITS[jobType] ?? CONCURRENCY));
+}
+
+function activeJobTypeCounts() {
+  const counts = new Map();
+
+  for (const slot of workerSlots.values()) {
+    const jobType = slot?.job_type;
+    if (!jobType) continue;
+    if (!["claiming", "processing"].includes(slot.status) && !["claiming", "processing", "saving"].includes(slot.stage)) {
+      continue;
+    }
+
+    counts.set(jobType, (counts.get(jobType) ?? 0) + 1);
+  }
+
+  return counts;
+}
+
+function claimableJobTypes() {
+  const activeCounts = activeJobTypeCounts();
+  return JOB_TYPES.filter((jobType) => (activeCounts.get(jobType) ?? 0) < getJobTypeLimit(jobType));
+}
+
+function rotatedJobTypes(jobTypes) {
+  if (jobTypes.length <= 1) {
+    return jobTypes;
+  }
+
+  const startIndex = claimCursor % jobTypes.length;
+  claimCursor += 1;
+  return [...jobTypes.slice(startIndex), ...jobTypes.slice(0, startIndex)];
+}
+
+function formatJobTypeLimits() {
+  return JOB_TYPES.map((jobType) => `${jobType}=${getJobTypeLimit(jobType)}`).join(",");
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -125,6 +243,7 @@ async function writeWorkerState(reason = "heartbeat") {
     concurrency: CONCURRENCY,
     heartbeat_ms: HEARTBEAT_MS,
     hostname: os.hostname(),
+    job_type_limits: JOB_TYPE_LIMITS,
     job_types: JOB_TYPES,
     pid: process.pid,
     reason,
@@ -1451,12 +1570,10 @@ async function apiFetch(pathname, options = {}) {
   return data;
 }
 
-async function claimJob() {
-  const imageJobTypes = JOB_TYPES.filter((jobType) => IMAGE_JOB_TYPES.has(jobType));
-
-  if (imageJobTypes.length > 0) {
+async function claimJob(jobType) {
+  if (IMAGE_JOB_TYPES.has(jobType)) {
     const data = await apiFetch("/api/local-worker/jobs/claim", {
-      body: JSON.stringify({ job_types: imageJobTypes }),
+      body: JSON.stringify({ job_types: [jobType] }),
       headers: { "content-type": "application/json" },
       method: "POST",
     });
@@ -1466,7 +1583,7 @@ async function claimJob() {
     }
   }
 
-  if (JOB_TYPES.includes(ASSET_DELETE_JOB_TYPE)) {
+  if (jobType === ASSET_DELETE_JOB_TYPE) {
     const deleteData = await apiFetch("/api/local-worker/asset-delete/claim", {
       method: "POST",
     });
@@ -1476,7 +1593,7 @@ async function claimJob() {
     }
   }
 
-  if (JOB_TYPES.includes(COLLECTOR_OPERATION_JOB_TYPE)) {
+  if (jobType === COLLECTOR_OPERATION_JOB_TYPE) {
     const collectorData = await apiFetch("/api/local-worker/collector-operations/claim", {
       method: "POST",
     });
@@ -1486,7 +1603,7 @@ async function claimJob() {
     }
   }
 
-  if (JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
+  if (jobType === EXPORT_IMAGES_ZIP_JOB_TYPE) {
     const exportData = await apiFetch("/api/local-worker/exports/claim", {
       method: "POST",
     });
@@ -1496,7 +1613,7 @@ async function claimJob() {
     }
   }
 
-  if (JOB_TYPES.includes(AI_SPLIT_GRID_JOB_TYPE)) {
+  if (jobType === AI_SPLIT_GRID_JOB_TYPE) {
     const splitData = await apiFetch("/api/local-worker/ai-split-grid/claim", {
       method: "POST",
     });
@@ -1506,7 +1623,7 @@ async function claimJob() {
     }
   }
 
-  if (JOB_TYPES.includes(AI_APPLY_PATTERN_JOB_TYPE)) {
+  if (jobType === AI_APPLY_PATTERN_JOB_TYPE) {
     const applyData = await apiFetch("/api/local-worker/ai-apply-pattern/claim", {
       method: "POST",
     });
@@ -1516,15 +1633,44 @@ async function claimJob() {
     }
   }
 
-  if (!JOB_TYPES.includes(AI_GENERATE_IMAGE_JOB_TYPE)) {
+  if (jobType === AI_GENERATE_IMAGE_JOB_TYPE) {
+    const aiData = await apiFetch("/api/local-worker/ai-images/claim", {
+      method: "POST",
+    });
+
+    return aiData.job || null;
+  }
+
+  return null;
+}
+
+async function claimNextJob(workerId) {
+  const candidates = rotatedJobTypes(claimableJobTypes());
+  if (candidates.length === 0) {
     return null;
   }
 
-  const aiData = await apiFetch("/api/local-worker/ai-images/claim", {
-    method: "POST",
-  });
+  for (const jobType of candidates) {
+    setWorkerSlot(workerId, {
+      asset_id: null,
+      asset_filename: null,
+      duration_ms: null,
+      item_id: null,
+      job_id: null,
+      job_type: jobType,
+      last_error: null,
+      stage: "claiming",
+      started_at: null,
+      status: "claiming",
+    });
 
-  return aiData.job || null;
+    const job = await claimJob(jobType);
+    if (job) {
+      return job;
+    }
+  }
+
+  return null;
 }
 
 async function completeJob(job, result) {
@@ -1724,7 +1870,7 @@ async function workerLoop(workerId) {
     let job = null;
 
     try {
-      job = await claimJob();
+      job = await claimNextJob(workerId);
       if (!job) {
         setWorkerIdle(workerId);
         const now = Date.now();
@@ -1793,6 +1939,7 @@ async function main() {
   console.log(
     `[local-image-worker] base=${BASE_URL} concurrency=${CONCURRENCY} assets=${LOCAL_ASSETS_DIR} jobTypes=${JOB_TYPES.join(",")}`,
   );
+  console.log(`[local-image-worker] typeLimits=${formatJobTypeLimits()}`);
   console.log(`[local-image-worker] state=${WORKER_STATE_FILE}`);
 
   for (let workerId = 1; workerId <= CONCURRENCY; workerId += 1) {

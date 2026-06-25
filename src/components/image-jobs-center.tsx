@@ -3,7 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
-import { fetchImageJobs, fetchImageJobDetail, fetchImageJobSummary, retryImageJob } from "@/lib/actions/image-jobs";
+import {
+  fetchImageJobs,
+  fetchImageJobDetail,
+  fetchImageJobSummary,
+  recoverStaleWorkerQueues,
+  requeueFailedWorkerQueues,
+  retryImageJob,
+} from "@/lib/actions/image-jobs";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 import { getDisplayImageSrc } from "@/lib/local-asset-url";
@@ -89,6 +96,7 @@ type WorkerStatus = {
   state_file?: string;
   worker: {
     concurrency: number | null;
+    job_type_limits?: Partial<Record<WorkerJobType, number>>;
     job_types: string[];
     slots: WorkerSlot[];
     started_at: string | null;
@@ -202,10 +210,14 @@ function formatJobTypeList(
 
   return jobTypes
     .map((jobType) => {
-      const label = workerJobTypeLabels[jobType as WorkerJobType];
-      return label ? t(label.zh, label.en) : jobType;
+      return formatWorkerJobType(jobType, t);
     })
     .join(" / ");
+}
+
+function formatWorkerJobType(jobType: string, t: (zh: string, en: string) => string) {
+  const label = workerJobTypeLabels[jobType as WorkerJobType];
+  return label ? t(label.zh, label.en) : jobType;
 }
 
 export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsCenterProps) {
@@ -225,6 +237,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
   const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
   const [workerStatusError, setWorkerStatusError] = useState<string | null>(null);
   const [isWorkerStatusRefreshing, setIsWorkerStatusRefreshing] = useState(false);
+  const [isMaintainingWorkerQueue, setIsMaintainingWorkerQueue] = useState(false);
   const [jobsPage, setJobsPage] = useState(1);
   const [itemsPage, setItemsPage] = useState(1);
 
@@ -305,6 +318,15 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     : workerStatus?.online
       ? "bg-emerald-50 text-emerald-700"
       : "bg-amber-50 text-amber-700";
+  const workerQueueTypes = useMemo(() => {
+    const rawTypes = [
+      ...(workerStatus?.expected_job_types ?? []),
+      ...(workerStatus?.worker?.job_types ?? []),
+      ...Object.keys(workerStatus?.queue_by_type ?? {}),
+    ];
+
+    return Array.from(new Set(rawTypes)).filter(Boolean) as WorkerJobType[];
+  }, [workerStatus?.expected_job_types, workerStatus?.queue_by_type, workerStatus?.worker?.job_types]);
 
   async function refreshWorkerStatus(showLoading = false) {
     if (showLoading) {
@@ -442,6 +464,42 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     }
   }
 
+  async function maintainWorkerQueue(mode: "recover_stale" | "requeue_failed") {
+    setIsMaintainingWorkerQueue(true);
+    setWorkerStatusError(null);
+    setMessage(null);
+
+    try {
+      const data =
+        mode === "recover_stale"
+          ? await recoverStaleWorkerQueues()
+          : await requeueFailedWorkerQueues();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const changedCount = mode === "recover_stale" ? (data.recovered ?? 0) : (data.requeued ?? 0);
+      setMessage(
+        mode === "recover_stale"
+          ? t(`Recovered ${changedCount} stale queue item(s)`, `Recovered ${changedCount} stale queue item(s)`)
+          : t(`Requeued ${changedCount} failed queue item(s)`, `Requeued ${changedCount} failed queue item(s)`),
+      );
+
+      await Promise.all([refreshWorkerStatus(true), refreshJobs()]);
+    } catch (requestError) {
+      setWorkerStatusError(
+        requestError instanceof Error
+          ? requestError.message
+          : mode === "recover_stale"
+            ? t("鎭㈠鍗′綇浠诲姟澶辫触", "Failed to recover stale jobs")
+            : t("閲嶆帓澶辫触浠诲姟澶辫触", "Failed to requeue failed jobs"),
+      );
+    } finally {
+      setIsMaintainingWorkerQueue(false);
+    }
+  }
+
   useEffect(() => {
     const initialTimer = window.setTimeout(() => {
       void refreshWorkerStatus();
@@ -501,6 +559,22 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
             >
               {isWorkerStatusRefreshing ? t("刷新中...", "Refreshing...") : t("刷新 Worker", "Refresh Worker")}
             </button>
+            <button
+              type="button"
+              onClick={() => void maintainWorkerQueue("recover_stale")}
+              disabled={isMaintainingWorkerQueue}
+              className="rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:text-amber-300"
+            >
+              {isMaintainingWorkerQueue ? t("Processing...", "Processing...") : t("Recover Stale", "Recover Stale")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void maintainWorkerQueue("requeue_failed")}
+              disabled={isMaintainingWorkerQueue || (workerStatus?.queue?.failed ?? 0) === 0}
+              className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-red-300"
+            >
+              {t("Requeue Failed", "Requeue Failed")}
+            </button>
           </div>
         </div>
 
@@ -555,6 +629,50 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
             </span>
           </div>
         </div>
+
+        {workerQueueTypes.length > 0 ? (
+          <div className="border-b border-zinc-200 px-5 py-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold text-zinc-950">{t("Worker Queue Detail", "Worker Queue Detail")}</h4>
+              <span className="text-xs text-zinc-500">{t("Limit / Pending / Processing / Failed", "Limit / Pending / Processing / Failed")}</span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {workerQueueTypes.map((jobType) => {
+                const counts = workerStatus?.queue_by_type?.[jobType] ?? { failed: 0, pending: 0, processing: 0 };
+                const limit = workerStatus?.worker?.job_type_limits?.[jobType] ?? "-";
+                const isMissing = missingWorkerJobTypes.includes(jobType);
+                const isBlocked = blockedWorkerJobTypes.includes(jobType);
+
+                return (
+                  <div
+                    key={jobType}
+                    className={[
+                      "rounded-md border px-3 py-2 text-sm",
+                      isBlocked
+                        ? "border-red-200 bg-red-50"
+                        : isMissing
+                          ? "border-amber-200 bg-amber-50"
+                          : "border-zinc-200 bg-zinc-50",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-medium text-zinc-950">{formatWorkerJobType(jobType, t)}</span>
+                      <span className="rounded-md bg-white px-2 py-0.5 text-xs text-zinc-600">
+                        {isMissing ? t("Missing", "Missing") : t("Ready", "Ready")}
+                      </span>
+                    </div>
+                    <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-zinc-600">
+                      <span>{t("Limit", "Limit")}: <b className="text-zinc-950">{limit}</b></span>
+                      <span>{t("Pending", "Pending")}: <b className="text-zinc-950">{counts.pending}</b></span>
+                      <span>{t("Running", "Running")}: <b className="text-zinc-950">{counts.processing}</b></span>
+                      <span>{t("Failed", "Failed")}: <b className="text-zinc-950">{counts.failed}</b></span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
 
         {workerStatus?.worker?.slots && workerStatus.worker.slots.length > 0 ? (
           <div className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">

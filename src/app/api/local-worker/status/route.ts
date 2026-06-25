@@ -16,6 +16,7 @@ type QueueStatus = "pending" | "processing" | "failed";
 type WorkerState = {
   concurrency?: number;
   heartbeat_ms?: number;
+  job_type_limits?: Partial<Record<LocalWorkerJobType, number>>;
   job_types?: string[];
   slots?: unknown[];
   started_at?: string;
@@ -286,6 +287,7 @@ export async function GET() {
         worker: workerState
           ? {
               concurrency: workerState.concurrency ?? null,
+              job_type_limits: workerState.job_type_limits ?? {},
               job_types: workerJobTypes,
               slots: workerState.slots ?? [],
               started_at: workerState.started_at ?? null,

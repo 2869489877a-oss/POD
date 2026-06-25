@@ -31,6 +31,16 @@ type ExportResponse = {
   record_id?: string;
 };
 
+type WorkerStatusResponse = {
+  blocked_job_types?: string[];
+  error?: string;
+  missing_job_types?: string[];
+  online?: boolean;
+  worker?: {
+    job_types?: string[];
+  } | null;
+};
+
 const statusLabels: Record<ProductDraftStatus, { zh: string; en: string }> = {
   draft: { zh: "草稿", en: "Draft" },
   exported: { zh: "已导出", en: "Exported" },
@@ -213,6 +223,40 @@ export function ExportsManager({
     throw new Error(t("图片 ZIP 生成超时，请稍后在导出记录里查看结果", "Image ZIP export timed out. Check export records later."));
   }
 
+  async function ensureExportWorkerReady() {
+    try {
+      const response = await fetch("/api/local-worker/status", { cache: "no-store" });
+      const data = (await response.json()) as WorkerStatusResponse;
+
+      if (!response.ok || data.error) {
+        return;
+      }
+
+      if (!data.online) {
+        throw new Error(t("pod-ai-worker is offline. Start it before exporting image ZIP files.", "pod-ai-worker is offline. Start it before exporting image ZIP files."));
+      }
+
+      const jobTypes = data.worker?.job_types ?? [];
+      const exportMissing =
+        data.missing_job_types?.includes("export_images_zip") ||
+        data.blocked_job_types?.includes("export_images_zip") ||
+        !jobTypes.includes("export_images_zip");
+
+      if (exportMissing) {
+        throw new Error(
+          t(
+            "pod-ai-worker is not enabled for export_images_zip. Add it to LOCAL_IMAGE_WORKER_JOB_TYPES and restart worker.",
+            "pod-ai-worker is not enabled for export_images_zip. Add it to LOCAL_IMAGE_WORKER_JOB_TYPES and restart worker.",
+          ),
+        );
+      }
+    } catch (requestError) {
+      if (requestError instanceof Error && requestError.message.includes("pod-ai-worker")) {
+        throw requestError;
+      }
+    }
+  }
+
   async function exportSelected(kind: ExportKind) {
     if (selectedIds.length === 0) {
       setError(t("请选择至少一个商品草稿", "Please select at least one product draft"));
@@ -223,6 +267,10 @@ export function ExportsManager({
     setError(null);
 
     try {
+      if (kind === "zip") {
+        await ensureExportWorkerReady();
+      }
+
       const response = await fetch(
         kind === "excel" ? "/api/exports/excel" : "/api/exports/images-zip",
         {
