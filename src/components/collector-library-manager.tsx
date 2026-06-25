@@ -306,6 +306,27 @@ export function CollectorLibraryManager() {
     return undefined;
   }, [previewItem, previewPath]);
 
+  useEffect(() => {
+    if (!previewItem) return undefined;
+
+    const mainScroll = document.getElementById("pod-main-scroll");
+    const originalOverflow = document.body.style.overflow;
+    const originalMainOverflow = mainScroll?.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (mainScroll) mainScroll.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setPreviewPath(null);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      if (mainScroll) mainScroll.style.overflow = originalMainOverflow ?? "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewItem]);
+
   function applyRecentDays(days: number) {
     setPage(1);
     setSelected(new Set());
@@ -1026,10 +1047,7 @@ export function CollectorLibraryManager() {
         total={total}
         unitZh="张"
         unitEn="images"
-        onChange={(nextPage) => {
-          setPage(nextPage);
-          window.scrollTo({ behavior: "smooth", top: 0 });
-        }}
+        onChange={setPage}
       />
 
       {previewItem && isMounted ? createPortal((

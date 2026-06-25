@@ -87,13 +87,13 @@ export function Sidebar() {
   return (
     <aside
       className={[
-        "ui-sidebar sticky top-0 z-20 flex h-screen w-[240px] shrink-0 flex-col",
+        "ui-sidebar relative z-20 flex h-screen w-[240px] shrink-0 flex-col",
         isDark
           ? "border-r border-white/[0.08] bg-[#07090b]/96"
           : "border-r border-black/[0.08] bg-white/92",
       ].join(" ")}
     >
-      <div className={`flex h-14 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+      <div className={`flex h-14 shrink-0 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
         <BrandLogo size={28} />
         <div className="min-w-0">
           <h1 className={`truncate text-[13px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
@@ -104,7 +104,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
         {navGroups.map((group) => {
           const groupItems = group.hrefs
             .map((href) => navItems.find((item) => item.href === href))
@@ -160,7 +160,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className={`border-t px-4 py-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+      <div className={`shrink-0 border-t px-4 py-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
         <div className="flex items-center gap-2">
           <span className="relative flex h-1.5 w-1.5">
             <span className="animate-pulse-glow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />

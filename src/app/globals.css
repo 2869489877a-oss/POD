@@ -365,6 +365,55 @@ a {
   transform: translateY(1px) scale(0.99);
 }
 
+.pod-content,
+.ui-sidebar nav {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(34, 211, 238, 0.36) transparent;
+}
+
+.pod-content::-webkit-scrollbar,
+.ui-sidebar nav::-webkit-scrollbar {
+  width: 10px;
+}
+
+.pod-content::-webkit-scrollbar-track,
+.ui-sidebar nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pod-content::-webkit-scrollbar-thumb,
+.ui-sidebar nav::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.38);
+  background-clip: padding-box;
+}
+
+.pod-content::-webkit-scrollbar-thumb:hover,
+.ui-sidebar nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.58);
+  background-clip: padding-box;
+}
+
+.ui-pagination {
+  position: relative;
+  isolation: isolate;
+}
+
+.ui-pagination::before {
+  content: "";
+  position: absolute;
+  inset: -0.55rem -1rem;
+  z-index: -1;
+  border: 1px solid rgba(34, 211, 238, 0.12);
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.07), transparent 42%, rgba(16, 185, 129, 0.06)),
+    rgba(255, 255, 255, 0.02);
+  opacity: 0.85;
+}
+
 .ui-progress-fill {
   position: relative;
   overflow: hidden;

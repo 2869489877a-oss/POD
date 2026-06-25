@@ -25,27 +25,44 @@ export function Pagination({ page, totalPages, total, unitZh = "条", unitEn = "
   if (totalPages <= 1) return null;
 
   const buttonClass = isDark
-    ? "rounded-lg border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-sm font-medium text-slate-200 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-    : "rounded-lg border border-black/[0.08] bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40";
+    ? "ui-press rounded-lg border border-cyan-400/15 bg-white/[0.05] px-3.5 py-1.5 text-sm font-medium text-slate-200 transition hover:border-cyan-300/35 hover:bg-cyan-400/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+    : "ui-press rounded-lg border border-black/[0.08] bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 transition hover:border-cyan-500/30 hover:bg-cyan-50 disabled:cursor-not-allowed disabled:opacity-40";
 
   const inputClass = isDark
-    ? "h-8 w-16 rounded-lg border border-white/10 bg-white/[0.05] px-2 text-center text-sm text-slate-200 outline-none focus:border-white/25"
-    : "h-8 w-16 rounded-lg border border-black/[0.08] bg-white px-2 text-center text-sm text-slate-700 outline-none focus:border-black/25";
+    ? "h-8 w-16 rounded-lg border border-cyan-400/15 bg-white/[0.05] px-2 text-center text-sm text-slate-200 outline-none focus:border-cyan-300/45"
+    : "h-8 w-16 rounded-lg border border-black/[0.08] bg-white px-2 text-center text-sm text-slate-700 outline-none focus:border-cyan-500/45";
+
+  function scrollContentToTop() {
+    window.requestAnimationFrame(() => {
+      const main = document.getElementById("pod-main-scroll");
+      if (main) {
+        main.scrollTo({ behavior: "smooth", top: 0 });
+        return;
+      }
+      window.scrollTo({ behavior: "smooth", top: 0 });
+    });
+  }
+
+  function changePage(nextPage: number) {
+    if (nextPage === page) return;
+    onChange(nextPage);
+    scrollContentToTop();
+  }
 
   function handleJump() {
     const parsed = Number.parseInt(jumpValue, 10);
     if (Number.isNaN(parsed)) return;
     const target = Math.min(Math.max(parsed, 1), totalPages);
-    if (target !== page) onChange(target);
+    changePage(target);
     setJumpValue("");
   }
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 pt-5">
+    <div className="ui-pagination flex flex-wrap items-center justify-center gap-x-3 gap-y-2 pt-5">
       <button
         type="button"
         disabled={page <= 1}
-        onClick={() => onChange(page - 1)}
+        onClick={() => changePage(page - 1)}
         className={buttonClass}
       >
         {t("上一页", "Previous")}
@@ -56,7 +73,7 @@ export function Pagination({ page, totalPages, total, unitZh = "条", unitEn = "
       <button
         type="button"
         disabled={page >= totalPages}
-        onClick={() => onChange(page + 1)}
+        onClick={() => changePage(page + 1)}
         className={buttonClass}
       >
         {t("下一页", "Next")}

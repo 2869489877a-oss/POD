@@ -287,8 +287,11 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       return;
     }
 
+    const mainScroll = document.getElementById("pod-main-scroll");
     const originalOverflow = document.body.style.overflow;
+    const originalMainOverflow = mainScroll?.style.overflow;
     document.body.style.overflow = "hidden";
+    if (mainScroll) mainScroll.style.overflow = "hidden";
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -300,6 +303,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
 
     return () => {
       document.body.style.overflow = originalOverflow;
+      if (mainScroll) mainScroll.style.overflow = originalMainOverflow ?? "";
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [selectedAsset]);
