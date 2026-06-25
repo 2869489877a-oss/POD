@@ -3,19 +3,19 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export type InfringementAssetRow = {
-  copyright_status: string;
-  created_at: string;
+  copyright_status: string | null;
+  created_at: string | null;
   cutout_url: string | null;
-  filename: string;
-  format: string;
-  height: number;
+  filename: string | null;
+  format: string | null;
+  height: number | null;
   id: string;
-  original_url: string;
+  original_url: string | null;
   preferred_design_url: string | null;
   print_extract_url: string | null;
   processed_url: string | null;
-  source: string;
-  width: number;
+  source: string | null;
+  width: number | null;
 };
 
 export type InfringementCheckRow = {
@@ -73,7 +73,7 @@ const checkColumns = [
 
 const DEFAULT_DASHBOARD_LIMIT = Math.max(
   1,
-  Math.min(1000, Number(process.env.INFRINGEMENT_DASHBOARD_LIMIT ?? 500) || 500),
+  Math.min(1000, Number(process.env.INFRINGEMENT_DASHBOARD_LIMIT ?? 240) || 240),
 );
 
 function chunkArray<T>(items: T[], size: number) {
@@ -85,9 +85,9 @@ function chunkArray<T>(items: T[], size: number) {
 }
 
 async function fetchDashboardAssets(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
-  const { data, error, count } = await supabase
+  const { data, error } = await supabase
     .from("assets")
-    .select(assetColumns, { count: "exact" })
+    .select(assetColumns)
     .order("created_at", { ascending: false })
     .range(0, DEFAULT_DASHBOARD_LIMIT - 1);
 
@@ -97,7 +97,7 @@ async function fetchDashboardAssets(supabase: ReturnType<typeof createSupabaseSe
 
   return {
     assets: (data ?? []) as unknown as InfringementAssetRow[],
-    totalCount: count ?? (data ?? []).length,
+    totalCount: (data ?? []).length,
   };
 }
 

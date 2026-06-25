@@ -1,7 +1,8 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Infringement previews can come from local storage, Supabase, or arbitrary source URLs. */
+
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 
 import {
   fetchInfringementDashboard,
@@ -16,6 +17,7 @@ import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 
 const CHECKS_PER_PAGE = 8;
+const FALLBACK_ASSET_IMAGE = "/images/empty-assets.png";
 
 type CheckStatus = "pending" | "clear" | "review" | "risky" | "blocked";
 type RiskLevel = "unknown" | "low" | "medium" | "high" | "critical";
@@ -103,7 +105,7 @@ type ReviewResponse = {
 };
 
 type ReferenceLibraryItemRow = {
-  category: InfringementRuleCategory;
+  category?: InfringementRuleCategory | null;
   description?: string | null;
   id: string;
   imageHash?: string | null;
@@ -115,8 +117,8 @@ type ReferenceLibraryItemRow = {
   source: "built_in" | "database";
   sourceLabel?: string | null;
   sourceUrl?: string | null;
-  terms: string[];
-  title: string;
+  terms?: string[] | null;
+  title?: string | null;
 };
 
 type BuiltInReferenceStats = {
@@ -161,8 +163,35 @@ function getAssetPreviewUrl(item: InfringementListItem) {
     item.asset.print_extract_url ??
     item.asset.cutout_url ??
     item.asset.processed_url ??
-    item.asset.original_url
+    item.asset.original_url ??
+    FALLBACK_ASSET_IMAGE
   );
+}
+
+function getAssetFilename(item: InfringementListItem) {
+  return item.asset.filename?.trim() || item.asset.id || "unknown-image";
+}
+
+function getAssetDimensionLabel(item: InfringementListItem) {
+  const width = typeof item.asset.width === "number" && Number.isFinite(item.asset.width) ? item.asset.width : null;
+  const height = typeof item.asset.height === "number" && Number.isFinite(item.asset.height) ? item.asset.height : null;
+  return width && height ? `${width} x ${height}` : "- x -";
+}
+
+function getAssetFormatLabel(item: InfringementListItem) {
+  return item.asset.format?.trim() ? item.asset.format.trim().toUpperCase() : "UNKNOWN";
+}
+
+function referenceTerms(item: ReferenceLibraryItemRow) {
+  return Array.isArray(item.terms) ? item.terms.filter((term): term is string => typeof term === "string" && term.trim().length > 0) : [];
+}
+
+function referenceTitle(item: ReferenceLibraryItemRow) {
+  return item.title?.trim() || "Untitled reference";
+}
+
+function referenceCategory(item: ReferenceLibraryItemRow): InfringementRuleCategory {
+  return item.category && item.category in ruleCategoryLabels ? item.category : "visual_review";
 }
 
 const checkStatusLabels: Record<CheckStatus, { en: string; zh: string }> = {
@@ -357,10 +386,12 @@ function getScoreBreakdownForMatch(evidence: DetectionEvidence | null, match: Ru
 
 function formatDate(value: string | null, locale: string) {
   if (!value) return "-";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "-";
   return new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function shortId(id: string) {
@@ -380,8 +411,8 @@ function getRiskLevel(check: InfringementCheckRow | null): RiskLevel {
   return check?.risk_level && isRiskLevel(check.risk_level) ? check.risk_level : "unknown";
 }
 
-function getCopyrightStatus(value: string): CopyrightStatus {
-  return isCopyrightStatus(value) ? value : "unknown";
+function getCopyrightStatus(value: string | null | undefined): CopyrightStatus {
+  return value && isCopyrightStatus(value) ? value : "unknown";
 }
 
 function isVisualReviewMatch(match: RuleMatch) {
@@ -408,6 +439,7 @@ export function InfringementChecksManager({
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(initialError);
   const [message, setMessage] = useState<string | null>(null);
+  const [hasLoadedDashboard, setHasLoadedDashboard] = useState(initialItems.length > 0 || Boolean(initialError));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmittingChecks, setIsSubmittingChecks] = useState(false);
   const [checkingAssetIds, setCheckingAssetIds] = useState<Set<string>>(new Set());
@@ -448,10 +480,10 @@ export function InfringementChecksManager({
 
       const matches = parseRuleMatches(item.latest_check?.matched_rules);
       const searchable = [
-        item.asset.filename,
-        item.asset.original_url,
-        item.asset.source,
-        item.asset.copyright_status,
+        getAssetFilename(item),
+        item.asset.original_url ?? "",
+        item.asset.source ?? "",
+        item.asset.copyright_status ?? "",
         item.latest_check?.recommendation ?? "",
         ...matches.map((match) => `${match.label ?? ""} ${match.matched ?? ""} ${match.field ?? ""}`),
       ]
@@ -551,11 +583,11 @@ export function InfringementChecksManager({
       .filter((item) => {
         if (!referenceKeyword) return true;
         return [
-          item.title,
+          referenceTitle(item),
           item.description,
           item.category,
           item.sourceLabel,
-          ...item.terms,
+          ...referenceTerms(item),
         ]
           .join(" ")
           .toLowerCase()
@@ -566,7 +598,7 @@ export function InfringementChecksManager({
         if (!left.imageHash && right.imageHash) return 1;
         if (left.category === "celebrity" && right.category !== "celebrity") return -1;
         if (left.category !== "celebrity" && right.category === "celebrity") return 1;
-        return left.title.localeCompare(right.title);
+        return referenceTitle(left).localeCompare(referenceTitle(right));
       })
       .slice(0, 80);
   }, [builtInReferenceItems, referenceKeyword]);
@@ -575,11 +607,11 @@ export function InfringementChecksManager({
       .filter((item) => {
         if (!referenceKeyword) return true;
         return [
-          item.title,
+          referenceTitle(item),
           item.category,
           item.sourceLabel,
           item.imageUrl,
-          ...item.terms,
+          ...referenceTerms(item),
         ]
           .join(" ")
           .toLowerCase()
@@ -636,6 +668,15 @@ export function InfringementChecksManager({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [referenceSearchQuery]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void refreshDashboard({ silent: initialItems.length > 0 });
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function refreshDashboard(options: { silent?: boolean } = {}) {
     if (!options.silent) {
       setIsRefreshing(true);
@@ -653,6 +694,7 @@ export function InfringementChecksManager({
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("读取侵权检测数据失败", "Failed to load infringement checks"));
     } finally {
+      setHasLoadedDashboard(true);
       if (!options.silent) {
         setIsRefreshing(false);
       }
@@ -1481,17 +1523,17 @@ export function InfringementChecksManager({
                 {displayedHighRiskReferences.map((item) => (
                   <div key={item.id} className="grid gap-3 px-4 py-3 text-sm text-zinc-700 md:grid-cols-[1fr_130px_1.3fr]">
                     <div>
-                      <p className="font-semibold text-zinc-950">{item.title}</p>
+                      <p className="font-semibold text-zinc-950">{referenceTitle(item)}</p>
                       <p className="mt-1 text-xs text-zinc-500">
                         {item.imageHash ? t("含图片 hash 样例", "Image hash sample included") : item.sourceLabel}
                       </p>
                     </div>
                     <span className="h-fit rounded-md bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
-                      {t(ruleCategoryLabels[item.category].zh, ruleCategoryLabels[item.category].en)}
+                      {t(ruleCategoryLabels[referenceCategory(item)].zh, ruleCategoryLabels[referenceCategory(item)].en)}
                     </span>
                     <div>
                       <p className="line-clamp-2 text-xs leading-5 text-zinc-600">
-                        {item.terms.slice(0, 8).join(", ")}
+                        {referenceTerms(item).slice(0, 8).join(", ")}
                       </p>
                       {item.sourceUrl ? (
                         <a
@@ -1631,7 +1673,7 @@ export function InfringementChecksManager({
               displayedDatabaseReferences.map((item) => (
                 <div key={item.id} className="grid gap-3 px-4 py-3 text-sm text-zinc-700 md:grid-cols-[1fr_120px_1.5fr]">
                   <div>
-                    <p className="font-semibold text-zinc-950">{item.title}</p>
+                    <p className="font-semibold text-zinc-950">{referenceTitle(item)}</p>
                     <p className="mt-1 text-xs text-zinc-500">{item.imageHash ? t("已保存图片 hash", "Image hash stored") : t("仅关键词", "Terms only")}</p>
                   </div>
                   <span className={[
@@ -1641,7 +1683,7 @@ export function InfringementChecksManager({
                     {item.libraryType === "allowlist" ? t("白名单", "Allowlist") : t("高风险", "High-Risk")}
                   </span>
                   <p className="line-clamp-2 text-xs leading-5 text-zinc-600">
-                    {[...item.terms.slice(0, 8), item.imageUrl ? t("含图片 URL", "image URL") : ""].filter(Boolean).join(", ")}
+                    {[...referenceTerms(item).slice(0, 8), item.imageUrl ? t("含图片 URL", "image URL") : ""].filter(Boolean).join(", ")}
                   </p>
                 </div>
               ))
@@ -1666,7 +1708,15 @@ export function InfringementChecksManager({
         </div>
       ) : null}
 
-      {visibleItems.length === 0 ? (
+      {!hasLoadedDashboard || (isRefreshing && items.length === 0) ? (
+        <div className="ui-enter rounded-md border border-zinc-200 bg-white p-8">
+          <div className="flex items-center gap-3 text-sm font-medium text-zinc-950">
+            <span className="ui-spinner ui-spinner-md text-cyan-500" aria-hidden="true" />
+            {t("正在加载侵权检测素材...", "Loading infringement check assets...")}
+          </div>
+          <p className="mt-2 text-sm text-zinc-600">{t("正在读取最近素材和检测记录，请稍候。", "Reading recent assets and check records.")}</p>
+        </div>
+      ) : visibleItems.length === 0 ? (
         <div className="rounded-md border border-dashed border-zinc-300 bg-white p-8">
           <p className="text-sm font-medium text-zinc-950">{t("没有匹配的素材", "No matching assets")}</p>
           <p className="mt-2 text-sm text-zinc-600">{t("请调整筛选条件或先上传素材。", "Adjust filters or upload assets first.")}</p>
@@ -1685,6 +1735,7 @@ export function InfringementChecksManager({
           const actionableMatches = matches.filter((match) => !isVisualReviewMatch(match));
           const displayRiskLabel = getDisplayRiskLabel(riskLevel, evidence);
           const previewUrl = getAssetPreviewUrl(item);
+          const filename = getAssetFilename(item);
           const isSelected = selectedIds.has(item.asset.id);
           const isChecking = checkingAssetIds.has(item.asset.id);
 
@@ -1699,12 +1750,12 @@ export function InfringementChecksManager({
             >
               <div className="grid gap-0 md:grid-cols-[220px_1fr]">
                 <div className="relative min-h-[210px] bg-zinc-100">
-                  <Image
+                  <img
                     src={getDisplayImageSrc(previewUrl)}
-                    alt={item.asset.filename}
-                    fill
-                    sizes="220px"
-                    className="object-contain"
+                    alt={filename}
+                    loading="lazy"
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full object-contain"
                   />
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
                     <input
@@ -1727,9 +1778,9 @@ export function InfringementChecksManager({
                 <div className="space-y-4 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate text-sm font-semibold text-zinc-950">{item.asset.filename}</h3>
+                      <h3 className="truncate text-sm font-semibold text-zinc-950">{filename}</h3>
                       <p className="mt-1 text-xs text-zinc-500">
-                        {item.asset.width} x {item.asset.height} · {item.asset.format.toUpperCase()} · {shortId(item.asset.id)}
+                        {getAssetDimensionLabel(item)} · {getAssetFormatLabel(item)} · {shortId(item.asset.id)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -1846,7 +1897,7 @@ export function InfringementChecksManager({
             <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-4">
               <div>
                 <h3 className="text-base font-semibold text-zinc-950">{t("人工复核", "Manual Review")}</h3>
-                <p className="mt-1 text-sm text-zinc-500">{selectedItem.asset.filename}</p>
+                <p className="mt-1 text-sm text-zinc-500">{getAssetFilename(selectedItem)}</p>
               </div>
               <button
                 type="button"
@@ -1860,12 +1911,12 @@ export function InfringementChecksManager({
             <div className="grid gap-6 p-6 lg:grid-cols-[1fr_1fr]">
               <div>
                 <div className="relative min-h-[360px] overflow-hidden rounded-md bg-zinc-100">
-                  <Image
+                  <img
                     src={getDisplayImageSrc(getAssetPreviewUrl(selectedItem))}
-                    alt={selectedItem.asset.filename}
-                    fill
-                    sizes="(min-width: 1024px) 480px, 90vw"
-                    className="object-contain"
+                    alt={getAssetFilename(selectedItem)}
+                    loading="lazy"
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full object-contain"
                   />
                 </div>
                 <a
