@@ -87,24 +87,24 @@ export function Sidebar() {
   return (
     <aside
       className={[
-        "ui-sidebar relative z-20 flex h-screen w-[240px] shrink-0 flex-col",
+        "ui-sidebar relative z-20 flex h-screen w-[256px] shrink-0 flex-col",
         isDark
           ? "border-r border-white/[0.08] bg-[#07090b]/96"
           : "border-r border-black/[0.08] bg-white/92",
       ].join(" ")}
     >
-      <div className={`flex h-14 shrink-0 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
-        <BrandLogo size={28} />
+      <div className={`flex h-16 shrink-0 items-center gap-3 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+        <BrandLogo size={32} />
         <div className="min-w-0">
-          <h1 className={`truncate text-[13px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
+          <h1 className={`ui-sidebar-title truncate text-[15px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
             <span className="pod-wordmark bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
             {t(" 批处理", " Batch")}
           </h1>
-          <p className={`text-[10px] leading-tight ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Internal</p>
+          <p className={`ui-sidebar-subtitle text-[11px] leading-tight ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Internal</p>
         </div>
       </div>
 
-      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
+      <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3.5">
         {navGroups.map((group) => {
           const groupItems = group.hrefs
             .map((href) => navItems.find((item) => item.href === href))
@@ -114,11 +114,11 @@ export function Sidebar() {
           if (groupItems.length === 0) return null;
 
           return (
-            <div key={group.labelZh} className="mb-3">
-              <p className={`px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+            <div key={group.labelZh} className="mb-3.5">
+              <p className={`ui-sidebar-section-label px-3 pb-1.5 pt-1.5 text-[11px] font-semibold ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
                 {t(group.labelZh, group.labelEn)}
               </p>
-              <ul className="flex flex-col gap-px">
+              <ul className="flex flex-col gap-1">
                 {groupItems.map((item) => {
                   const isActive = pathname === item.href;
 
@@ -128,7 +128,7 @@ export function Sidebar() {
                         href={item.href}
                         aria-current={isActive ? "page" : undefined}
                         className={[
-                          "ui-press group flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-[background-color,color,transform] duration-150 hover:translate-x-0.5",
+                          "ui-sidebar-link ui-press group flex h-9 items-center gap-3 rounded-lg px-3 text-[14px] transition-[background-color,color,transform] duration-150 hover:translate-x-0.5",
                           isActive ? "ui-nav-current" : "",
                           isActive
                             ? isDark
@@ -140,7 +140,7 @@ export function Sidebar() {
                         ].join(" ")}
                       >
                         <svg
-                          className="h-4 w-4 shrink-0 transition-colors duration-150"
+                          className="h-[18px] w-[18px] shrink-0 transition-colors duration-150"
                           style={{ color: isActive ? colors.primary : undefined }}
                           fill="none"
                           viewBox="0 0 24 24"
@@ -149,7 +149,7 @@ export function Sidebar() {
                         >
                           <path strokeLinecap="round" strokeLinejoin="round" d={item.icon} />
                         </svg>
-                        <span className="truncate">{t(item.titleZh, item.titleEn)}</span>
+                        <span className="ui-sidebar-link-label truncate">{t(item.titleZh, item.titleEn)}</span>
                       </Link>
                     </li>
                   );
@@ -160,24 +160,24 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className={`shrink-0 border-t px-4 py-3 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
+      <div className={`shrink-0 border-t px-4 py-3.5 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>
         <div className="flex items-center gap-2">
           <span className="relative flex h-1.5 w-1.5">
             <span className="animate-pulse-glow absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
           </span>
-          <p className={`text-[11px] font-medium ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
+          <p className={`text-[12px] font-medium ${isDark ? "text-zinc-300" : "text-zinc-600"}`}>
             {t("系统运行中", "All systems normal")}
           </p>
         </div>
 
         {isAdmin ? (
           <div className="mt-2">
-            <p className={`text-[10px] uppercase tracking-wider ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+            <p className={`text-[11px] font-medium ${isDark ? "text-zinc-500" : "text-zinc-500"}`}>
               {t("默认模型", "Default Model")}
             </p>
             <p
-              className={`mt-0.5 truncate font-mono text-[11px] ${
+              className={`mt-0.5 truncate font-mono text-[12px] ${
                 currentProvider
                   ? isDark ? "text-zinc-300" : "text-zinc-700"
                   : isDark ? "text-zinc-600" : "text-zinc-400"
@@ -266,10 +266,10 @@ export function Sidebar() {
                 {profileInitial}
               </div>
               <div className="min-w-0 flex-1">
-                <p className={`truncate text-[12px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
+                <p className={`truncate text-[13px] font-semibold ${isDark ? "text-zinc-200" : "text-zinc-800"}`}>
                   {profile.display_name || profile.email}
                 </p>
-                <p className={`truncate text-[10px] ${isDark ? "text-zinc-600" : "text-zinc-400"}`}>
+                <p className={`truncate text-[11px] ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>
                   {profile.role === "admin" ? t("管理员", "Admin") : t("员工", "Employee")}
                 </p>
               </div>

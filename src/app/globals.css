@@ -321,6 +321,12 @@ a {
   100% { opacity: 0; transform: scale(1.85); }
 }
 
+@keyframes ui-sidebar-text-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
 @keyframes toast-in {
   0% { opacity: 0; transform: translateX(20px); }
   100% { opacity: 1; transform: translateX(0); }
@@ -1093,6 +1099,78 @@ a {
 .ui-sidebar {
   box-shadow: 10px 0 36px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(18px);
+}
+
+.ui-sidebar-title {
+  text-shadow: 0 0 18px rgba(34, 211, 238, 0.18);
+}
+
+.ui-sidebar-subtitle {
+  position: relative;
+}
+
+.ui-sidebar-section-label {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  line-height: 1.2;
+}
+
+.ui-sidebar-section-label::before {
+  content: "";
+  display: inline-block;
+  width: 0.45rem;
+  height: 1px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.75), rgba(16, 185, 129, 0.2));
+  box-shadow: 0 0 10px rgba(34, 211, 238, 0.28);
+}
+
+.ui-sidebar-link {
+  font-weight: 520;
+  line-height: 1;
+}
+
+.ui-sidebar-link svg {
+  transition: transform 0.18s var(--motion-smooth), filter 0.18s var(--motion-smooth), color 0.18s var(--motion-smooth);
+}
+
+.ui-sidebar-link-label {
+  position: relative;
+  z-index: 1;
+  line-height: 1.15;
+  transition: filter 0.18s var(--motion-smooth), transform 0.18s var(--motion-smooth);
+}
+
+.ui-sidebar-link:hover svg,
+.ui-nav-current svg {
+  filter: drop-shadow(0 0 9px rgba(34, 211, 238, 0.42));
+  transform: translateX(1px) scale(1.04);
+}
+
+.ui-sidebar-link:hover .ui-sidebar-link-label,
+.ui-nav-current .ui-sidebar-link-label {
+  background: linear-gradient(90deg, #e0f2fe, #22d3ee, #34d399, #e0f2fe);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 10px rgba(34, 211, 238, 0.22));
+  animation: ui-sidebar-text-flow 3.2s var(--motion-smooth) infinite;
+}
+
+.ui-nav-current .ui-sidebar-link-label {
+  font-weight: 700;
+}
+
+[data-mode="day"] .ui-sidebar-link:hover .ui-sidebar-link-label,
+[data-mode="day"] .ui-nav-current .ui-sidebar-link-label {
+  background: linear-gradient(90deg, #0f172a, #0891b2, #059669, #0f172a);
+  background-size: 240% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
 }
 
 .ui-sidebar::after {
