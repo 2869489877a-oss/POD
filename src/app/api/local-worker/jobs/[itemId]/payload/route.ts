@@ -24,7 +24,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload = await getInfringementWorkerPayload(createSupabaseServiceRoleClient(), itemId);
+    const includeReferenceItems = new URL(request.url).searchParams.get("include_reference") !== "0";
+    const payload = await getInfringementWorkerPayload(createSupabaseServiceRoleClient(), itemId, {
+      includeReferenceItems,
+    });
 
     return NextResponse.json({
       ok: true,

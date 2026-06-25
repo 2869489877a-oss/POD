@@ -9,6 +9,7 @@ type StaleQueueTable =
   | "ai_apply_pattern_jobs"
   | "ai_image_jobs"
   | "ai_split_grid_jobs"
+  | "collector_operation_jobs"
   | "export_records";
 
 type RecoverStaleRowsOptions = {

@@ -249,10 +249,15 @@ export async function createInfringementCheckJob(
   return jobData;
 }
 
-export async function getInfringementWorkerPayload(supabase: SupabaseServiceClient, itemId: string) {
+export async function getInfringementWorkerPayload(
+  supabase: SupabaseServiceClient,
+  itemId: string,
+  options: { includeReferenceItems?: boolean } = {},
+) {
+  const includeReferenceItems = options.includeReferenceItems !== false;
   const [{ asset, item, job }, referenceItems] = await Promise.all([
     getWorkerItem(supabase, itemId),
-    fetchDatabaseReferenceItems(supabase),
+    includeReferenceItems ? fetchDatabaseReferenceItems(supabase) : Promise.resolve([]),
   ]);
   const { data: productData, error: productError } = await supabase
     .from("product_drafts")
@@ -285,7 +290,9 @@ export async function getInfringementWorkerPayload(supabase: SupabaseServiceClie
       title: product.title,
     })),
     reference_items: referenceItems,
+    reference_items_included: includeReferenceItems,
     should_compute_hash:
+      !includeReferenceItems ||
       referenceItems.some((item) => Boolean(item.imageHash)) ||
       builtInHighRiskReferenceItems.some((item) => Boolean(item.imageHash)),
   };

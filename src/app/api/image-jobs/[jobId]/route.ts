@@ -74,6 +74,29 @@ function getJobId(request: Request) {
   return decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) ?? "");
 }
 
+function wantsSummary(request: Request) {
+  const value = new URL(request.url).searchParams.get("summary");
+  return value === "1" || value === "true";
+}
+
+async function countItemsByStatus(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  jobId: string,
+  status: string,
+) {
+  const { count, error } = await supabase
+    .from("image_job_items")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", jobId)
+    .eq("status", status);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return count ?? 0;
+}
+
 export async function GET(request: Request) {
   const jobId = getJobId(request);
 
@@ -106,6 +129,28 @@ export async function GET(request: Request) {
       throw new Error(jobError.message);
     }
 
+    const jobRow = jobData as unknown as ImageJobDetailRow;
+
+    if (wantsSummary(request)) {
+      const processingCount = await countItemsByStatus(supabase, jobId, "processing");
+      const completedCount = jobRow.success_count;
+      const failedCount = jobRow.failed_count;
+      const pendingCount = Math.max(0, jobRow.total_count - completedCount - failedCount - processingCount);
+
+      return NextResponse.json({
+        job: {
+          ...jobRow,
+          item_status_counts: {
+            completed: completedCount,
+            failed: failedCount,
+            pending: pendingCount,
+            processing: processingCount,
+          },
+          items: [],
+        },
+      });
+    }
+
     const { data: itemData, error: itemError } = await supabase
       .from("image_job_items")
       .select(
@@ -128,7 +173,6 @@ export async function GET(request: Request) {
       throw new Error(itemError.message);
     }
 
-    const jobRow = jobData as unknown as ImageJobDetailRow;
     const items = (itemData ?? []) as unknown as ImageJobItemDetailRow[];
     const primaryDerivativeType = getPrimaryDerivativeType(jobRow.job_type);
     const derivativeByItemId = new Map<string, ImageDerivativeDetailRow>();

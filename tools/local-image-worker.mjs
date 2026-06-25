@@ -23,12 +23,13 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 3);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
+const JOB_TYPES = (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES || "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
 const ASSET_DELETE_JOB_TYPE = "asset_delete";
+const COLLECTOR_OPERATION_JOB_TYPE = "collector_operation";
 const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
 const AI_SPLIT_GRID_JOB_TYPE = "ai_split_grid";
 const AI_APPLY_PATTERN_JOB_TYPE = "ai_apply_pattern";
@@ -48,6 +49,12 @@ const OCR_LANGS = process.env.OCR_LANGS?.trim() || "eng+chi_sim";
 const OCR_PSM = process.env.OCR_PSM?.trim() || "11";
 const OCR_TIMEOUT_MS = clampInt(process.env.OCR_TIMEOUT_MS, 5_000, 120_000, 25_000);
 const OCR_MAX_DIM = clampInt(process.env.OCR_MAX_DIM, 600, 4000, 2000);
+const INFRINGEMENT_REFERENCE_CACHE_MS = clampInt(
+  process.env.LOCAL_WORKER_INFRINGEMENT_REFERENCE_CACHE_MS,
+  0,
+  60 * 60_000,
+  5 * 60_000,
+);
 
 let stopping = false;
 const STARTED_AT = new Date().toISOString();
@@ -57,6 +64,7 @@ let infringementDetector = null;
 let aiImageWorker = null;
 let aiSplitGridWorker = null;
 let aiApplyPatternWorker = null;
+let infringementReferenceCache = null;
 
 process.on("SIGINT", () => {
   stopping = true;
@@ -1218,7 +1226,12 @@ async function processMockup(job) {
 }
 
 async function fetchInfringementPayload(job) {
-  const data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload`, {
+  const cacheFresh =
+    INFRINGEMENT_REFERENCE_CACHE_MS > 0 &&
+    infringementReferenceCache &&
+    infringementReferenceCache.expiresAt > Date.now();
+  const includeReference = cacheFresh ? "0" : "1";
+  const data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload?include_reference=${includeReference}`, {
     method: "GET",
   });
 
@@ -1226,7 +1239,18 @@ async function fetchInfringementPayload(job) {
     throw new Error("infringement payload is missing");
   }
 
-  return data.payload;
+  const payload = data.payload;
+  if (payload.reference_items_included && Array.isArray(payload.reference_items)) {
+    infringementReferenceCache = {
+      expiresAt: Date.now() + INFRINGEMENT_REFERENCE_CACHE_MS,
+      items: payload.reference_items,
+    };
+  }
+
+  return {
+    ...payload,
+    reference_items: cacheFresh ? infringementReferenceCache.items : Array.isArray(payload.reference_items) ? payload.reference_items : [],
+  };
 }
 
 async function processInfringementCheck(job) {
@@ -1237,7 +1261,11 @@ async function processInfringementCheck(job) {
   const ocrText = shouldRunOcr
     ? await extractTextFromImageBuffer(source)
     : (payload.asset?.ocr_text || null);
-  const imageHash = payload.should_compute_hash ? await computeAverageHash(source) : null;
+  const referenceItems = Array.isArray(payload.reference_items) ? payload.reference_items : [];
+  const shouldComputeHash =
+    payload.should_compute_hash ||
+    referenceItems.some((item) => typeof item?.imageHash === "string" && item.imageHash.length > 0);
+  const imageHash = shouldComputeHash ? await computeAverageHash(source) : null;
   const result = detector.runInfringementDetection({
     asset: {
       copyright_status: payload.asset?.copyright_status || "unknown",
@@ -1249,7 +1277,7 @@ async function processInfringementCheck(job) {
     },
     ocrText,
     productTexts: Array.isArray(payload.product_texts) ? payload.product_texts : [],
-    referenceItems: Array.isArray(payload.reference_items) ? payload.reference_items : [],
+    referenceItems,
   });
 
   return {
@@ -1435,6 +1463,16 @@ async function claimJob() {
     }
   }
 
+  if (JOB_TYPES.includes(COLLECTOR_OPERATION_JOB_TYPE)) {
+    const collectorData = await apiFetch("/api/local-worker/collector-operations/claim", {
+      method: "POST",
+    });
+
+    if (collectorData.job) {
+      return collectorData.job;
+    }
+  }
+
   if (JOB_TYPES.includes(EXPORT_IMAGES_ZIP_JOB_TYPE)) {
     const exportData = await apiFetch("/api/local-worker/exports/claim", {
       method: "POST",
@@ -1480,6 +1518,13 @@ async function completeJob(job, result) {
   if (job.job_type === ASSET_DELETE_JOB_TYPE) {
     const jobId = job.job_id || job.item_id;
     return apiFetch(`/api/local-worker/asset-delete/${encodeURIComponent(jobId)}/complete`, {
+      method: "POST",
+    });
+  }
+
+  if (job.job_type === COLLECTOR_OPERATION_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/collector-operations/${encodeURIComponent(jobId)}/complete`, {
       method: "POST",
     });
   }
@@ -1556,6 +1601,15 @@ async function failJob(job, error) {
     });
   }
 
+  if (job.job_type === COLLECTOR_OPERATION_JOB_TYPE) {
+    const jobId = job.job_id || job.item_id;
+    return apiFetch(`/api/local-worker/collector-operations/${encodeURIComponent(jobId)}/fail`, {
+      body: JSON.stringify({ error: getErrorMessage(error) }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    });
+  }
+
   if (job.job_type === AI_SPLIT_GRID_JOB_TYPE) {
     const jobId = job.job_id || job.item_id;
     return apiFetch(`/api/local-worker/ai-split-grid/${encodeURIComponent(jobId)}/fail`, {
@@ -1603,6 +1657,14 @@ async function processJob(job) {
   if (job.job_type === ASSET_DELETE_JOB_TYPE) {
     return {
       asset_delete: {
+        job_id: job.job_id || job.item_id,
+      },
+    };
+  }
+
+  if (job.job_type === COLLECTOR_OPERATION_JOB_TYPE) {
+    return {
+      collector_operation: {
         job_id: job.job_id || job.item_id,
       },
     };

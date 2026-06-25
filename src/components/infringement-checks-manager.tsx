@@ -5,6 +5,7 @@ import Image from "next/image";
 
 import {
   fetchInfringementDashboard,
+  fetchInfringementItemsByAssetIds,
   type InfringementCheckRow,
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
@@ -67,6 +68,12 @@ type ImageJobProgressResponse = {
   job?: {
     failed_count: number;
     id: string;
+    item_status_counts?: {
+      completed?: number;
+      failed?: number;
+      pending?: number;
+      processing?: number;
+    };
     items?: Array<{
       asset_id: string;
       id: string;
@@ -652,6 +659,17 @@ export function InfringementChecksManager({
     }
   }
 
+  async function refreshDashboardItems(assetIds: string[]) {
+    const data = await fetchInfringementItemsByAssetIds(assetIds);
+    if (data.error) throw new Error(data.error);
+    if (data.items.length === 0) return;
+
+    setItems((current) => {
+      const nextByAssetId = new Map(data.items.map((item) => [item.asset.id, item]));
+      return current.map((item) => nextByAssetId.get(item.asset.id) ?? item);
+    });
+  }
+
   function toggleAsset(assetId: string) {
     setSelectedIds((current) => {
       const next = new Set(current);
@@ -733,7 +751,11 @@ export function InfringementChecksManager({
       }
 
       setMessage(data.queued ? t("后台侵权检测已完成", "Background infringement check complete") : data.message ?? t("侵权检测已完成", "Infringement check complete"));
-      await refreshDashboard();
+      if (data.queued) {
+        await refreshDashboardItems(queuedAssetIds);
+      } else {
+        await refreshDashboard();
+      }
     } catch (requestError) {
       setMessage(null);
       setError(requestError instanceof Error ? requestError.message : t("侵权检测失败", "Infringement check failed"));
@@ -749,26 +771,51 @@ export function InfringementChecksManager({
 
   async function pollInfringementJob(jobId: string, fallbackTotal: number, jobAssetIds: string[]) {
     const deadline = Date.now() + 10 * 60_000;
-    let lastDashboardRefresh = 0;
+    let consecutiveFailures = 0;
+    let preserveStateOnExit = false;
 
     try {
       for (;;) {
         await sleep(1500);
 
-        const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
-        const data = (await response.json()) as ImageJobProgressResponse;
+        let data: ImageJobProgressResponse;
+        try {
+          const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}?summary=1`, { cache: "no-store" });
+          data = (await response.json()) as ImageJobProgressResponse;
 
-        if (!response.ok || data.error || !data.job) {
-          throw new Error(data.error ?? t("读取后台检测进度失败", "Failed to read background check progress"));
+          if (!response.ok || data.error || !data.job) {
+            throw new Error(data.error ?? t("读取后台检测进度失败", "Failed to read background check progress"));
+          }
+          consecutiveFailures = 0;
+        } catch (progressError) {
+          consecutiveFailures += 1;
+          if (consecutiveFailures < 3) {
+            setMessage(t(
+              `进度读取失败，正在重试 ${consecutiveFailures}/3...`,
+              `Progress read failed, retrying ${consecutiveFailures}/3...`,
+            ));
+            continue;
+          }
+
+          preserveStateOnExit = true;
+          throw new Error(
+            progressError instanceof Error
+              ? t(
+                  `连续 3 次读取进度失败，worker 可能仍在后台运行：${progressError.message}`,
+                  `Failed to read progress 3 times. Worker may still be running: ${progressError.message}`,
+                )
+              : t("连续 3 次读取进度失败，worker 可能仍在后台运行", "Failed to read progress 3 times. Worker may still be running."),
+          );
         }
 
         const total = data.job.total_count || fallbackTotal;
         const done = data.job.success_count + data.job.failed_count;
         const jobItems = data.job.items ?? [];
-        const processing = jobItems.filter((item) => item.status === "processing").length;
+        const statusCounts = data.job.item_status_counts;
+        const processing = statusCounts?.processing ?? jobItems.filter((item) => item.status === "processing").length;
         const pending = jobItems.length > 0
           ? jobItems.filter((item) => item.status === "pending").length
-          : Math.max(0, total - done);
+          : statusCounts?.pending ?? Math.max(0, total - done);
         const unfinishedAssetIds = jobItems.length > 0
           ? jobItems
               .filter((item) => item.status === "pending" || item.status === "processing")
@@ -800,26 +847,25 @@ export function InfringementChecksManager({
           `Worker queue processing: ${done}/${total}, running ${processing}, pending ${pending}, succeeded ${data.job.success_count}, failed ${data.job.failed_count}`,
         ));
 
-        if (Date.now() - lastDashboardRefresh > 5000 || data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
-          lastDashboardRefresh = Date.now();
-          await refreshDashboard({ silent: true });
-        }
-
         if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
+          await refreshDashboardItems(jobAssetIds);
           break;
         }
 
         if (Date.now() > deadline) {
+          preserveStateOnExit = true;
           throw new Error(t("后台检测仍在运行，请稍后刷新页面查看结果", "Background check is still running. Refresh later to see results."));
         }
       }
     } finally {
-      removeActiveCheckJob(jobId);
-      setCheckingAssetIds((current) => {
-        const next = new Set(current);
-        for (const assetId of jobAssetIds) next.delete(assetId);
-        return next;
-      });
+      if (!preserveStateOnExit) {
+        removeActiveCheckJob(jobId);
+        setCheckingAssetIds((current) => {
+          const next = new Set(current);
+          for (const assetId of jobAssetIds) next.delete(assetId);
+          return next;
+        });
+      }
     }
   }
 

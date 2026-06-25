@@ -113,6 +113,20 @@ async function fetchAllChecks(supabase: ReturnType<typeof createSupabaseServiceR
   return rows;
 }
 
+function latestItemsFromRows(assets: InfringementAssetRow[], checks: InfringementCheckRow[]) {
+  const latestCheckByAssetId = new Map<string, InfringementCheckRow>();
+  for (const check of checks) {
+    if (!latestCheckByAssetId.has(check.asset_id)) {
+      latestCheckByAssetId.set(check.asset_id, check);
+    }
+  }
+
+  return assets.map((asset) => ({
+    asset,
+    latest_check: latestCheckByAssetId.get(asset.id) ?? null,
+  }));
+}
+
 export async function fetchInfringementDashboard(): Promise<{
   error: string | null;
   items: InfringementListItem[];
@@ -124,19 +138,56 @@ export async function fetchInfringementDashboard(): Promise<{
       fetchAllChecks(supabase),
     ]);
 
-    const latestCheckByAssetId = new Map<string, InfringementCheckRow>();
-    for (const check of checks) {
-      if (!latestCheckByAssetId.has(check.asset_id)) {
-        latestCheckByAssetId.set(check.asset_id, check);
-      }
+    return {
+      error: null,
+      items: latestItemsFromRows(assets, checks),
+    };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : "读取侵权检测数据失败",
+      items: [],
+    };
+  }
+}
+
+export async function fetchInfringementItemsByAssetIds(assetIds: string[]): Promise<{
+  error: string | null;
+  items: InfringementListItem[];
+}> {
+  try {
+    const ids = Array.from(new Set(assetIds.filter(Boolean)));
+    if (ids.length === 0) {
+      return { error: null, items: [] };
+    }
+
+    const supabase = createSupabaseServiceRoleClient();
+    const [assetResult, checkResult] = await Promise.all([
+      supabase
+        .from("assets")
+        .select(assetColumns)
+        .in("id", ids)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("infringement_checks")
+        .select(checkColumns)
+        .in("asset_id", ids)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (assetResult.error) {
+      throw new Error(assetResult.error.message);
+    }
+
+    if (checkResult.error) {
+      throw new Error(checkResult.error.message);
     }
 
     return {
       error: null,
-      items: assets.map((asset) => ({
-        asset,
-        latest_check: latestCheckByAssetId.get(asset.id) ?? null,
-      })),
+      items: latestItemsFromRows(
+        (assetResult.data ?? []) as unknown as InfringementAssetRow[],
+        (checkResult.data ?? []) as unknown as InfringementCheckRow[],
+      ),
     };
   } catch (error) {
     return {

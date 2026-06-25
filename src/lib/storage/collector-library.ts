@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import sharp from "sharp";
@@ -19,6 +19,8 @@ const MAX_FILE_SIZE = 25 * 1024 * 1024;
 const ALLOWED_FORMATS = new Set(["jpeg", "png", "webp"]);
 const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 const COLLECTOR_MUTATION_CONCURRENCY = 5;
+const COLLECTOR_INDEX_FILENAME = ".collector-index.json";
+const COLLECTOR_INDEX_VERSION = 1;
 const RISK_LIBRARY_BATCH_SIZE = 100;
 const RISK_LIBRARY_PREPARE_CONCURRENCY = 8;
 
@@ -64,10 +66,17 @@ type SaveCollectorFileInput = {
 
 type ListCollectorItemsInput = {
   endDate?: string;
+  forceRebuildIndex?: boolean;
   limit?: number;
   offset?: number;
   request?: Request;
   startDate?: string;
+};
+
+type CollectorLibraryIndex = {
+  items: CollectorLibraryItem[];
+  updatedAt: string;
+  version: number;
 };
 
 type RiskLibraryCandidate = {
@@ -179,6 +188,10 @@ export function getCollectorLibraryRoot() {
   return resolveLocalDataPath(COLLECTOR_LIBRARY_DIR);
 }
 
+function getCollectorIndexPath() {
+  return path.join(getCollectorLibraryRoot(), COLLECTOR_INDEX_FILENAME);
+}
+
 export function resolveCollectorLibraryPath(relativePath: string) {
   return resolveLocalDataPath(COLLECTOR_LIBRARY_DIR + "/" + normalizeRelativePath(relativePath));
 }
@@ -281,20 +294,111 @@ async function walkCollectorFiles(directory: string, prefix = "", output: string
   return output;
 }
 
+function normalizeIndexedItem(item: CollectorLibraryItem, request?: Request): CollectorLibraryItem {
+  const uploadDate = item.uploadDate || item.date || uploadDateFromRelativePath(item.relativePath) || beijingDatePath(new Date(item.createdAt));
+
+  return {
+    ...item,
+    date: uploadDate,
+    filename: item.filename || path.basename(item.relativePath),
+    publicUrl: buildCollectorLibraryPublicUrl(item.relativePath, request),
+    uploadDate,
+  };
+}
+
+function isIndexedCollectorItem(value: unknown): value is CollectorLibraryItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<CollectorLibraryItem>;
+  return typeof item.relativePath === "string" && item.relativePath.length > 0 && typeof item.filename === "string";
+}
+
+async function readCollectorIndex(request?: Request): Promise<CollectorLibraryItem[] | null> {
+  try {
+    const raw = await readFile(getCollectorIndexPath(), "utf8");
+    const parsed = JSON.parse(raw) as Partial<CollectorLibraryIndex>;
+
+    if (parsed.version !== COLLECTOR_INDEX_VERSION || !Array.isArray(parsed.items)) {
+      return null;
+    }
+
+    return parsed.items
+      .filter(isIndexedCollectorItem)
+      .map((item) => normalizeIndexedItem(item, request));
+  } catch {
+    return null;
+  }
+}
+
+async function writeCollectorIndex(items: CollectorLibraryItem[]) {
+  const root = getCollectorLibraryRoot();
+  const indexPath = getCollectorIndexPath();
+  const tmpPath = `${indexPath}.${process.pid}.${randomUUID()}.tmp`;
+  const uniqueItems = Array.from(
+    new Map(items.map((item) => [item.relativePath, normalizeIndexedItem(item)])).values(),
+  );
+  const payload: CollectorLibraryIndex = {
+    items: uniqueItems,
+    updatedAt: new Date().toISOString(),
+    version: COLLECTOR_INDEX_VERSION,
+  };
+
+  await mkdir(root, { recursive: true });
+  await writeFile(tmpPath, JSON.stringify(payload, null, 2), "utf8");
+  await rename(tmpPath, indexPath);
+}
+
+async function rebuildCollectorIndex(request?: Request) {
+  const root = getCollectorLibraryRoot();
+  const relativePaths = await walkCollectorFiles(root);
+  const items: CollectorLibraryItem[] = [];
+
+  for (const relativePath of relativePaths) {
+    const item = await itemFromRelativePath(relativePath, request);
+    if (item) items.push(item);
+  }
+
+  await writeCollectorIndex(items);
+  return items.map((item) => normalizeIndexedItem(item, request));
+}
+
+async function getCollectorIndexedItems(request?: Request, forceRebuildIndex = false) {
+  if (!forceRebuildIndex) {
+    const indexed = await readCollectorIndex(request);
+    if (indexed) return indexed;
+  }
+
+  return rebuildCollectorIndex(request);
+}
+
+async function updateCollectorIndex(mutator: (items: CollectorLibraryItem[]) => CollectorLibraryItem[]) {
+  const indexed = await readCollectorIndex();
+  if (!indexed) return;
+  await writeCollectorIndex(mutator(indexed));
+}
+
+async function addCollectorItemToIndex(item: CollectorLibraryItem) {
+  await updateCollectorIndex((items) => [normalizeIndexedItem(item), ...items.filter((current) => current.relativePath !== item.relativePath)]);
+}
+
+async function removeCollectorPathsFromIndex(relativePaths: string[]) {
+  const removeSet = new Set(relativePaths);
+  await updateCollectorIndex((items) => items.filter((item) => !removeSet.has(item.relativePath)));
+}
+
 export async function listCollectorItemsPage({
   endDate,
+  forceRebuildIndex = false,
   limit = 120,
   offset = 0,
   request,
   startDate,
 }: ListCollectorItemsInput = {}) {
-  const root = getCollectorLibraryRoot();
-  const relativePaths = await walkCollectorFiles(root);
+  const indexedItems = await getCollectorIndexedItems(request, forceRebuildIndex);
   const normalizedStartDate = normalizeDateKey(startDate);
   const normalizedEndDate = normalizeDateKey(endDate);
   const dateCounts = new Map<string, number>();
-  const filteredPaths = relativePaths.filter((relativePath) => {
-    const uploadDate = uploadDateFromRelativePath(relativePath);
+  const filteredItems = indexedItems.filter((item) => {
+    const uploadDate = item.uploadDate || item.date || uploadDateFromRelativePath(item.relativePath);
 
     if (uploadDate) {
       dateCounts.set(uploadDate, (dateCounts.get(uploadDate) || 0) + 1);
@@ -304,22 +408,15 @@ export async function listCollectorItemsPage({
     if (normalizedEndDate && uploadDate && uploadDate > normalizedEndDate) return false;
     return true;
   });
-  const sortedPaths = filteredPaths.sort((a, b) => {
-    const dateCompare = uploadDateFromRelativePath(b).localeCompare(uploadDateFromRelativePath(a));
-    return dateCompare !== 0 ? dateCompare : b.localeCompare(a);
+  const sortedItems = filteredItems.sort((a, b) => {
+    const aDate = a.uploadDate || a.date || uploadDateFromRelativePath(a.relativePath);
+    const bDate = b.uploadDate || b.date || uploadDateFromRelativePath(b.relativePath);
+    const dateCompare = bDate.localeCompare(aDate);
+    return dateCompare !== 0 ? dateCompare : b.relativePath.localeCompare(a.relativePath);
   });
   const safeLimit = Math.max(1, Math.min(limit, 240));
   const safeOffset = Math.max(0, offset);
-  const pagePaths = sortedPaths.slice(safeOffset, safeOffset + safeLimit);
-  const items: CollectorLibraryItem[] = [];
-
-  for (const relativePath of pagePaths) {
-    const item = await itemFromRelativePath(relativePath, request);
-    if (!item) continue;
-    if (normalizedStartDate && item.uploadDate < normalizedStartDate) continue;
-    if (normalizedEndDate && item.uploadDate > normalizedEndDate) continue;
-    if (item) items.push(item);
-  }
+  const items = sortedItems.slice(safeOffset, safeOffset + safeLimit);
 
   return {
     dateBuckets: Array.from(dateCounts.entries())
@@ -328,23 +425,23 @@ export async function listCollectorItemsPage({
     items: items.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     limit: safeLimit,
     offset: safeOffset,
-    total: filteredPaths.length,
+    total: filteredItems.length,
   };
 }
 
 export async function listCollectorRelativePathsPage({
   endDate,
+  forceRebuildIndex = false,
   limit = 10000,
   offset = 0,
   startDate,
 }: ListCollectorItemsInput = {}) {
-  const root = getCollectorLibraryRoot();
-  const relativePaths = await walkCollectorFiles(root);
+  const indexedItems = await getCollectorIndexedItems(undefined, forceRebuildIndex);
   const normalizedStartDate = normalizeDateKey(startDate);
   const normalizedEndDate = normalizeDateKey(endDate);
   const dateCounts = new Map<string, number>();
-  const filteredPaths = relativePaths.filter((relativePath) => {
-    const uploadDate = uploadDateFromRelativePath(relativePath);
+  const filteredItems = indexedItems.filter((item) => {
+    const uploadDate = item.uploadDate || item.date || uploadDateFromRelativePath(item.relativePath);
 
     if (uploadDate) {
       dateCounts.set(uploadDate, (dateCounts.get(uploadDate) || 0) + 1);
@@ -354,9 +451,11 @@ export async function listCollectorRelativePathsPage({
     if (normalizedEndDate && uploadDate && uploadDate > normalizedEndDate) return false;
     return true;
   });
-  const sortedPaths = filteredPaths.sort((a, b) => {
-    const dateCompare = uploadDateFromRelativePath(b).localeCompare(uploadDateFromRelativePath(a));
-    return dateCompare !== 0 ? dateCompare : b.localeCompare(a);
+  const sortedItems = filteredItems.sort((a, b) => {
+    const aDate = a.uploadDate || a.date || uploadDateFromRelativePath(a.relativePath);
+    const bDate = b.uploadDate || b.date || uploadDateFromRelativePath(b.relativePath);
+    const dateCompare = bDate.localeCompare(aDate);
+    return dateCompare !== 0 ? dateCompare : b.relativePath.localeCompare(a.relativePath);
   });
   const safeLimit = Math.max(1, Math.min(limit, 20000));
   const safeOffset = Math.max(0, offset);
@@ -367,8 +466,8 @@ export async function listCollectorRelativePathsPage({
       .sort((a, b) => b.date.localeCompare(a.date)),
     limit: safeLimit,
     offset: safeOffset,
-    relativePaths: sortedPaths.slice(safeOffset, safeOffset + safeLimit),
-    total: filteredPaths.length,
+    relativePaths: sortedItems.slice(safeOffset, safeOffset + safeLimit).map((item) => item.relativePath),
+    total: filteredItems.length,
   };
 }
 
@@ -439,6 +538,8 @@ export async function saveCollectorFile({
     throw error;
   }
 
+  await addCollectorItemToIndex(item);
+
   return item;
 }
 
@@ -457,7 +558,7 @@ export function parseCollectorRelativePaths(value: unknown) {
 }
 
 export async function deleteCollectorItems(relativePaths: string[]): Promise<CollectorOperationResult[]> {
-  return mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
+  const results = await mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
     try {
       const diskPath = resolveCollectorLibraryPath(relativePath);
       const item = await itemFromRelativePath(relativePath);
@@ -476,12 +577,14 @@ export async function deleteCollectorItems(relativePaths: string[]): Promise<Col
       };
     }
   });
+  await removeCollectorPathsFromIndex(results.filter((result) => result.success).map((result) => result.relative_path));
+  return results;
 }
 
 export async function promoteCollectorItems(relativePaths: string[], request?: Request): Promise<CollectorOperationResult[]> {
   const supabase = createSupabaseServiceRoleClient();
 
-  return mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
+  const results = await mapWithConcurrency(relativePaths, COLLECTOR_MUTATION_CONCURRENCY, async (relativePath) => {
     let originalUrl: string | null = null;
 
     try {
@@ -551,6 +654,8 @@ export async function promoteCollectorItems(relativePaths: string[], request?: R
       };
     }
   });
+  await removeCollectorPathsFromIndex(results.filter((result) => result.success).map((result) => result.relative_path));
+  return results;
 }
 
 function stringMetadataValue(metadata: Record<string, unknown>, key: string) {

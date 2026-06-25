@@ -36,8 +36,11 @@ type CollectorResponse = {
   error?: string;
   failed_count?: number;
   items?: CollectorLibraryItem[];
+  job?: CollectorOperationJob;
+  job_id?: string;
   limit?: number;
   offset?: number;
+  queued?: boolean;
   relative_paths?: string[];
   results?: CollectorMutationResult[];
   success_count?: number;
@@ -46,11 +49,29 @@ type CollectorResponse = {
 
 type CollectorMutationMode = "delete" | "promote" | "risk-library";
 
+type CollectorOperationJob = {
+  failed_count: number;
+  id: string;
+  operation: "promote" | "add_to_risk_library" | "delete";
+  status: "pending" | "processing" | "completed" | "failed" | "partial_failed";
+  success_count: number;
+  total_count: number;
+};
+
+type CollectorJobResponse = {
+  error?: string;
+  job?: CollectorOperationJob;
+};
+
 const COLLECTOR_PAGE_SIZE = 120;
 const COLLECTOR_SELECT_ALL_LIMIT = 20000;
 
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function formatFileSize(size: number) {
@@ -226,7 +247,7 @@ export function CollectorLibraryManager() {
     return t("正在删除", "Deleting");
   }
 
-  async function loadItems(targetPage = page) {
+  async function loadItems(targetPage = page, forceRebuildIndex = false) {
     const normalizedPage = Math.max(1, targetPage);
     const offset = (normalizedPage - 1) * COLLECTOR_PAGE_SIZE;
     setIsLoading(true);
@@ -239,6 +260,7 @@ export function CollectorLibraryManager() {
       });
       if (activeStartDate) params.set("start_date", activeStartDate);
       if (activeEndDate) params.set("end_date", activeEndDate);
+      if (forceRebuildIndex) params.set("rebuild_index", "1");
 
       const response = await fetch(`/api/collector-library?${params.toString()}`, { cache: "no-store" });
       const data = (await response.json()) as CollectorResponse;
@@ -430,6 +452,54 @@ export function CollectorLibraryManager() {
     }
   }
 
+  async function pollCollectorOperationJob(jobId: string, mode: CollectorMutationMode) {
+    const deadline = Date.now() + 30 * 60_000;
+    let consecutiveFailures = 0;
+
+    for (;;) {
+      await sleep(1500);
+
+      let data: CollectorJobResponse;
+      try {
+        const response = await fetch(`/api/collector-library/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+        data = (await response.json()) as CollectorJobResponse;
+
+        if (!response.ok || data.error || !data.job) {
+          throw new Error(data.error || t("读取后台任务失败", "Failed to read background job"));
+        }
+        consecutiveFailures = 0;
+      } catch (pollError) {
+        consecutiveFailures += 1;
+        if (consecutiveFailures < 3) {
+          setMessage(t(
+            `后台任务进度读取失败，正在重试 ${consecutiveFailures}/3...`,
+            `Failed to read background progress, retrying ${consecutiveFailures}/3...`,
+          ));
+          continue;
+        }
+
+        throw pollError;
+      }
+
+      const done = data.job.success_count + data.job.failed_count;
+      setMessage(
+        mode === "promote"
+          ? t(`入素材库处理中：${done}/${data.job.total_count}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`, `Importing to assets: ${done}/${data.job.total_count}, ${data.job.success_count} succeeded, ${data.job.failed_count} failed`)
+          : mode === "risk-library"
+            ? t(`入风险库处理中：${done}/${data.job.total_count}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`, `Adding to risk library: ${done}/${data.job.total_count}, ${data.job.success_count} succeeded, ${data.job.failed_count} failed`)
+            : t(`删除处理中：${done}/${data.job.total_count}，成功 ${data.job.success_count}，失败 ${data.job.failed_count}`, `Deleting: ${done}/${data.job.total_count}, ${data.job.success_count} succeeded, ${data.job.failed_count} failed`),
+      );
+
+      if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
+        return data.job;
+      }
+
+      if (Date.now() > deadline) {
+        throw new Error(t("后台任务仍在运行，请稍后刷新页面查看结果", "Background job is still running. Refresh later to see results."));
+      }
+    }
+  }
+
   async function mutateSelected(paths: string[], mode: CollectorMutationMode) {
     if (paths.length === 0) {
       setError(t("请先选择图片", "Please select images first"));
@@ -457,6 +527,27 @@ export function CollectorLibraryManager() {
         method: mode === "delete" ? "DELETE" : "POST",
       });
       const data = (await response.json()) as CollectorResponse;
+
+      if (data.queued && data.job_id) {
+        setMessage(t(`已提交后台任务 ${data.job_id.slice(0, 8)}，worker 正在处理...`, `Queued background job ${data.job_id.slice(0, 8)}; worker is processing...`));
+        const job = await pollCollectorOperationJob(data.job_id, mode);
+        if (mode !== "risk-library") {
+          setSelected((current) => new Set(Array.from(current).filter((path) => !paths.includes(path))));
+          await loadItems(safePage);
+        }
+        setMessage(
+          mode === "promote"
+            ? t(`入素材库完成 ${job.success_count} 张，失败 ${job.failed_count} 张`, `${job.success_count} imported to assets, ${job.failed_count} failed`)
+            : mode === "risk-library"
+              ? t(`入风险库完成 ${job.success_count} 张，失败 ${job.failed_count} 张`, `${job.success_count} added to risk library, ${job.failed_count} failed`)
+              : t(`删除完成 ${job.success_count} 张，失败 ${job.failed_count} 张`, `${job.success_count} deleted, ${job.failed_count} failed`),
+        );
+        if (job.failed_count > 0) {
+          setError(t("部分采集库后台任务失败，请查看服务器 worker 日志", "Some background collector tasks failed. Check worker logs."));
+        }
+        return;
+      }
+
       const results = data.results || [];
       const successPaths = new Set(
         results.filter((result) => result.success && result.relative_path).map((result) => result.relative_path as string),
@@ -535,7 +626,7 @@ export function CollectorLibraryManager() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadItems()} disabled={isLoading || isMutating} className={neutralButtonClass + " self-end"}>
+          <button type="button" onClick={() => void loadItems(page, true)} disabled={isLoading || isMutating} className={neutralButtonClass + " self-end"}>
             {isLoading ? t("刷新中", "Refreshing") : t("刷新", "Refresh")}
           </button>
         </div>

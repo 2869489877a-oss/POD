@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { elapsedMs, logActivity } from "@/lib/observability/activity-log";
+import { createCollectorOperationJob } from "@/lib/storage/collector-operation-jobs";
 import {
   addCollectorItemsToRiskLibrary,
   deleteCollectorItems,
@@ -10,6 +11,7 @@ import {
   promoteCollectorItems,
   saveCollectorFile,
 } from "@/lib/storage/collector-library";
+import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -17,6 +19,11 @@ type CollectorBody = {
   action?: unknown;
   relative_paths?: unknown;
 };
+
+function isMissingCollectorJobTableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /collector_operation_jobs|collector_operation_job_items|does not exist|schema cache/i.test(message);
+}
 
 function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -109,11 +116,12 @@ export async function GET(request: Request) {
     const limit = Number(url.searchParams.get("limit") || 120);
     const offset = Number(url.searchParams.get("offset") || 0);
     const endDate = url.searchParams.get("end_date") || undefined;
+    const forceRebuildIndex = url.searchParams.get("rebuild_index") === "1" || url.searchParams.get("rebuild_index") === "true";
     const startDate = url.searchParams.get("start_date") || undefined;
     const pathsOnly = url.searchParams.get("paths_only") === "1" || url.searchParams.get("paths_only") === "true";
 
     if (pathsOnly) {
-      const page = await listCollectorRelativePathsPage({ endDate, limit, offset, startDate });
+      const page = await listCollectorRelativePathsPage({ endDate, forceRebuildIndex, limit, offset, startDate });
       return NextResponse.json({
         dateBuckets: page.dateBuckets,
         limit: page.limit,
@@ -123,7 +131,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const page = await listCollectorItemsPage({ endDate, limit, offset, request, startDate });
+    const page = await listCollectorItemsPage({ endDate, forceRebuildIndex, limit, offset, request, startDate });
     return NextResponse.json(page);
   } catch (error) {
     return NextResponse.json(
@@ -160,6 +168,38 @@ export async function POST(request: Request) {
   }
 
   const isRiskLibraryAction = body.action === "add_to_risk_library";
+  const operation = isRiskLibraryAction ? "add_to_risk_library" : "promote";
+
+  try {
+    const job = await createCollectorOperationJob(createSupabaseServiceRoleClient(), operation, relativePaths);
+
+    await logActivity({
+      action: isRiskLibraryAction ? "collector_library.add_to_risk_library.queued" : "collector_library.promote.queued",
+      durationMs: elapsedMs(startedAt),
+      entityId: job.id,
+      entityType: isRiskLibraryAction ? "infringement_reference_library" : "collector_library",
+      metadata: {
+        file_count: relativePaths.length,
+      },
+      request,
+      status: "success",
+    });
+
+    return NextResponse.json({
+      job,
+      job_id: job.id,
+      ok: true,
+      queued: true,
+    });
+  } catch (error) {
+    if (!isMissingCollectorJobTableError(error)) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Failed to queue collector operation", results: [] },
+        { status: 500 },
+      );
+    }
+  }
+
   const results = isRiskLibraryAction
     ? await addCollectorItemsToRiskLibrary(relativePaths, request)
     : await promoteCollectorItems(relativePaths, request);
@@ -204,6 +244,36 @@ export async function DELETE(request: Request) {
 
   if (relativePaths.length === 0) {
     return NextResponse.json({ error: "Please select images to delete", results: [] }, { status: 400 });
+  }
+
+  try {
+    const job = await createCollectorOperationJob(createSupabaseServiceRoleClient(), "delete", relativePaths);
+
+    await logActivity({
+      action: "collector_library.delete.queued",
+      durationMs: elapsedMs(startedAt),
+      entityId: job.id,
+      entityType: "collector_library",
+      metadata: {
+        file_count: relativePaths.length,
+      },
+      request,
+      status: "success",
+    });
+
+    return NextResponse.json({
+      job,
+      job_id: job.id,
+      ok: true,
+      queued: true,
+    });
+  } catch (error) {
+    if (!isMissingCollectorJobTableError(error)) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Failed to queue collector delete", results: [] },
+        { status: 500 },
+      );
+    }
   }
 
   const results = await deleteCollectorItems(relativePaths);
