@@ -737,6 +737,233 @@ a {
   opacity: 1;
 }
 
+.ui-status-console {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 18px 50px rgba(0, 0, 0, 0.18);
+}
+
+.ui-console-toolbar {
+  position: relative;
+}
+
+.ui-console-toolbar::after {
+  content: "";
+  position: absolute;
+  inset-inline: 1.25rem;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.65), rgba(16, 185, 129, 0.42), transparent);
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.22);
+}
+
+.ui-metric-tile {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid transparent;
+  transition: transform 0.16s var(--motion-smooth), border-color 0.16s var(--motion-smooth), background 0.16s var(--motion-smooth);
+}
+
+.ui-metric-tile::before {
+  content: "";
+  position: absolute;
+  inset-block: 18%;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.8);
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.45);
+}
+
+.ui-metric-tile:hover {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, 0.28);
+}
+
+.ui-queue-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.16s var(--motion-smooth), border-color 0.16s var(--motion-smooth), box-shadow 0.16s var(--motion-smooth);
+}
+
+.ui-queue-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 0%, rgba(34, 211, 238, 0.13) 45%, transparent 62%);
+  background-size: 220% 100%;
+  opacity: 0;
+}
+
+.ui-queue-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(34, 211, 238, 0.32) !important;
+  box-shadow: 0 12px 30px rgba(34, 211, 238, 0.08);
+}
+
+.ui-queue-card:hover::after {
+  opacity: 1;
+  animation: ui-surface-flow 1.8s var(--motion-smooth) both;
+}
+
+.ui-console-bg {
+  position: relative;
+  isolation: isolate;
+  overflow-x: hidden;
+}
+
+.ui-console-bg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(34, 211, 238, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(6, 182, 212, 0.08), transparent 34%, rgba(16, 185, 129, 0.035));
+  background-size: 44px 44px, 44px 44px, 100% 100%;
+  mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+}
+
+.ui-console-bg::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(34, 211, 238, 0.05) 48%, transparent 52%),
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 5px);
+  opacity: 0.58;
+  animation: ui-surface-flow 9s linear infinite;
+}
+
+[data-mode="day"] .ui-console-bg::before {
+  background:
+    linear-gradient(rgba(8, 145, 178, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 145, 178, 0.06) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(8, 145, 178, 0.07), transparent 36%, rgba(16, 185, 129, 0.045));
+}
+
+[data-mode="day"] .ui-console-bg::after {
+  opacity: 0.35;
+  background:
+    linear-gradient(180deg, transparent 0%, rgba(8, 145, 178, 0.08) 48%, transparent 52%),
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.018) 0 1px, transparent 1px 5px);
+}
+
+.ui-sidebar {
+  box-shadow: 10px 0 36px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(18px);
+}
+
+.ui-sidebar::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  right: -1px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(34, 211, 238, 0.55), rgba(16, 185, 129, 0.22), transparent);
+  opacity: 0.9;
+}
+
+.ui-holo-header {
+  padding-inline: 0.25rem;
+}
+
+.ui-holo-header::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 5.5rem;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08), transparent 34%),
+    repeating-linear-gradient(90deg, rgba(34, 211, 238, 0.12) 0 1px, transparent 1px 12px);
+  mask-image: linear-gradient(180deg, transparent, black 28%, transparent);
+  opacity: 0.65;
+}
+
+.ui-live-chip {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.ui-live-chip::after {
+  content: "";
+  position: absolute;
+  inset: -120% -45%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.22), transparent);
+  transform: translateX(-120%) rotate(12deg);
+  animation: ui-sheen-pass 3.8s var(--motion-smooth) infinite;
+}
+
+.ui-tech-surface,
+.pod-content :is(section, article, aside, form).rounded-md.border,
+.pod-content :is(section, article, aside, form).rounded-lg.border,
+.pod-content :is(section, article, aside, form).rounded-xl.border {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.pod-content :is(section, article, aside, form).rounded-md.border > *,
+.pod-content :is(section, article, aside, form).rounded-lg.border > *,
+.pod-content :is(section, article, aside, form).rounded-xl.border > * {
+  position: relative;
+  z-index: 1;
+}
+
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-md.border,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-lg.border,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-xl.border {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+    rgba(10, 12, 15, 0.84) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 16px 42px rgba(0, 0, 0, 0.22);
+}
+
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-md.border::after,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-lg.border::after,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-xl.border::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(120deg, rgba(34, 211, 238, 0.13), transparent 26%, transparent 72%, rgba(16, 185, 129, 0.09)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 24%);
+  opacity: 0.45;
+  transition: opacity 0.22s var(--motion-smooth);
+}
+
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-md.border:hover::after,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-lg.border:hover::after,
+[data-mode="night"] .pod-content :is(section, article, aside, form).rounded-xl.border:hover::after {
+  opacity: 0.72;
+}
+
+.pod-content :is(button, a).ui-press:not(:disabled) {
+  will-change: transform;
+}
+
+[data-mode="night"] .pod-content :is(button, a).ui-press:not(:disabled):hover {
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.2), 0 10px 28px rgba(34, 211, 238, 0.08);
+}
+
+[data-mode="night"] .pod-content :is(input, select, textarea):focus {
+  border-color: rgba(34, 211, 238, 0.48) !important;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12) !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

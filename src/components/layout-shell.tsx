@@ -24,8 +24,8 @@ export function LayoutShell({ children }: { children: ReactNode }) {
     <div
       className={
         isDark
-          ? "flex min-h-screen bg-[#0a0a0a] text-[#ededed]"
-          : "flex min-h-screen bg-[#fafafa] text-zinc-900"
+          ? "ui-console-bg flex min-h-screen bg-[#07090b] text-[#ededed]"
+          : "ui-console-bg flex min-h-screen bg-[#f6f8fb] text-zinc-900"
       }
     >
       <Sidebar />

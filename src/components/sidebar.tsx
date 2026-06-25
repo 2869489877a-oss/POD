@@ -87,10 +87,10 @@ export function Sidebar() {
   return (
     <aside
       className={[
-        "sticky top-0 flex h-screen w-[240px] shrink-0 flex-col",
+        "ui-sidebar sticky top-0 z-20 flex h-screen w-[240px] shrink-0 flex-col",
         isDark
-          ? "border-r border-white/[0.08] bg-[#0a0a0a]"
-          : "border-r border-black/[0.08] bg-[#fafafa]",
+          ? "border-r border-white/[0.08] bg-[#07090b]/96"
+          : "border-r border-black/[0.08] bg-white/92",
       ].join(" ")}
     >
       <div className={`flex h-14 items-center gap-2.5 border-b px-4 ${isDark ? "border-white/[0.08]" : "border-black/[0.08]"}`}>

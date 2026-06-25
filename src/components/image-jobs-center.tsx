@@ -525,8 +525,8 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
 
   return (
     <div className="space-y-6">
-      <section className="rounded-md border border-zinc-200 bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+      <section className="ui-status-console rounded-md border border-zinc-200 bg-white">
+        <div className="ui-console-toolbar flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
           <div>
             <h3 className="text-base font-semibold text-zinc-950">{t("本地 Worker 状态", "Local Worker Status")}</h3>
             <p className="mt-1 text-sm text-zinc-500">
@@ -555,25 +555,32 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
               type="button"
               onClick={() => void refreshWorkerStatus(true)}
               disabled={isWorkerStatusRefreshing}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+              className="ui-press inline-flex items-center gap-2 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
             >
-              {isWorkerStatusRefreshing ? t("刷新中...", "Refreshing...") : t("刷新 Worker", "Refresh Worker")}
+              {isWorkerStatusRefreshing ? (
+                <>
+                  <span className="ui-spinner ui-spinner-sm text-cyan-300" aria-hidden="true" />
+                  <span>{t("刷新中...", "Refreshing...")}</span>
+                </>
+              ) : (
+                t("刷新 Worker", "Refresh Worker")
+              )}
             </button>
             <button
               type="button"
               onClick={() => void maintainWorkerQueue("recover_stale")}
               disabled={isMaintainingWorkerQueue}
-              className="rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:text-amber-300"
+              className="ui-press rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:text-amber-300"
             >
-              {isMaintainingWorkerQueue ? t("Processing...", "Processing...") : t("Recover Stale", "Recover Stale")}
+              {isMaintainingWorkerQueue ? t("处理中...", "Processing...") : t("恢复卡住任务", "Recover Stale")}
             </button>
             <button
               type="button"
               onClick={() => void maintainWorkerQueue("requeue_failed")}
               disabled={isMaintainingWorkerQueue || (workerStatus?.queue?.failed ?? 0) === 0}
-              className="rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-red-300"
+              className="ui-press rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:text-red-300"
             >
-              {t("Requeue Failed", "Requeue Failed")}
+              {t("重排失败任务", "Requeue Failed")}
             </button>
           </div>
         </div>
@@ -607,22 +614,22 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
         ) : null}
 
         <div className="grid gap-3 border-b border-zinc-200 px-5 py-4 text-sm text-zinc-600 sm:grid-cols-2 xl:grid-cols-6">
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("并发：", "Concurrency: ")}<span className="font-semibold text-zinc-950">{workerStatus?.worker?.concurrency ?? "-"}</span>
           </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("等待：", "Pending: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.pending ?? 0}</span>
           </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("处理中：", "Processing: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.processing ?? 0}</span>
           </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("失败待处理：", "Failed: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.failed ?? 0}</span>
           </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("活跃任务：", "Active Jobs: ")}<span className="font-semibold text-zinc-950">{workerStatus?.queue?.active_jobs ?? 0}</span>
           </div>
-          <div className="rounded-md bg-zinc-50 px-3 py-2">
+          <div className="ui-metric-tile rounded-md bg-zinc-50 px-3 py-2">
             {t("任务类型：", "Job Types: ")}
             <span className="font-semibold text-zinc-950">
               {formatJobTypeList(workerStatus?.worker?.job_types ?? [], t)}
@@ -647,7 +654,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
                   <div
                     key={jobType}
                     className={[
-                      "rounded-md border px-3 py-2 text-sm",
+                      "ui-queue-card rounded-md border px-3 py-2 text-sm",
                       isBlocked
                         ? "border-red-200 bg-red-50"
                         : isMissing

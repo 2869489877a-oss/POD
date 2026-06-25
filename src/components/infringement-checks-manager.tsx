@@ -465,6 +465,7 @@ export function InfringementChecksManager({
   const [hasLoadedDashboard, setHasLoadedDashboard] = useState(initialItems.length > 0 || Boolean(initialError));
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSubmittingChecks, setIsSubmittingChecks] = useState(false);
+  const [preparingCheckKey, setPreparingCheckKey] = useState<string | null>(null);
   const [checkingAssetIds, setCheckingAssetIds] = useState<Set<string>>(new Set());
   const [activeCheckJobs, setActiveCheckJobs] = useState<ActiveCheckJobProgress[]>([]);
   const [selectedItem, setSelectedItem] = useState<InfringementListItem | null>(null);
@@ -738,7 +739,7 @@ export function InfringementChecksManager({
     setActiveCheckJobs((current) => current.filter((job) => job.jobId !== jobId));
   }
 
-  async function runChecks(assetIds: string[]) {
+  async function runChecks(assetIds: string[], checkKey = "custom") {
     const queuedAssetIds = Array.from(new Set(assetIds)).filter((assetId) => !checkingAssetIds.has(assetId));
 
     if (queuedAssetIds.length === 0) {
@@ -751,6 +752,7 @@ export function InfringementChecksManager({
     }
 
     setIsSubmittingChecks(true);
+    setPreparingCheckKey(checkKey);
     setCheckingAssetIds((current) => new Set([...Array.from(current), ...queuedAssetIds]));
     setError(null);
     setMessage(t(`已提交 ${queuedAssetIds.length} 张素材，正在进入 worker 队列...`, `${queuedAssetIds.length} asset(s) queued for worker processing...`));
@@ -779,6 +781,7 @@ export function InfringementChecksManager({
           total: queuedAssetIds.length,
         });
         setIsSubmittingChecks(false);
+        setPreparingCheckKey(null);
         await pollInfringementJob(data.job_id, queuedAssetIds.length, queuedAssetIds);
       } else {
         setCheckingAssetIds((current) => {
@@ -802,12 +805,14 @@ export function InfringementChecksManager({
       });
     } finally {
       setIsSubmittingChecks(false);
+      setPreparingCheckKey(null);
     }
   }
 
   async function runAllUncheckedInDashboard() {
     let delegatedToRunChecks = false;
     setIsSubmittingChecks(true);
+    setPreparingCheckKey("all-unchecked");
     setError(null);
     setMessage(t("正在读取全部未检测素材...", "Reading all unchecked assets..."));
 
@@ -833,13 +838,14 @@ export function InfringementChecksManager({
       }
 
       delegatedToRunChecks = true;
-      await runChecks(assetIds);
+      await runChecks(assetIds, "all-unchecked");
     } catch (requestError) {
       setMessage(null);
       setError(requestError instanceof Error ? requestError.message : t("读取未检测素材失败", "Failed to read unchecked assets"));
     } finally {
       if (!delegatedToRunChecks) {
         setIsSubmittingChecks(false);
+        setPreparingCheckKey(null);
       }
     }
   }
@@ -1233,11 +1239,11 @@ export function InfringementChecksManager({
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="button"
-            onClick={() => void runChecks(Array.from(selectedIds))}
-            disabled={selectedCount === 0 || isSubmittingChecks}
+            onClick={() => void runChecks(Array.from(selectedIds), "selected")}
+            disabled={selectedCount === 0 || preparingCheckKey === "selected"}
             className="ui-press inline-flex items-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-300"
           >
-            {isSubmittingChecks ? (
+            {preparingCheckKey === "selected" ? (
               <>
                 <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                 <span>{t("提交中...", "Submitting...")}</span>
@@ -1248,8 +1254,8 @@ export function InfringementChecksManager({
           </button>
           <button
             type="button"
-            onClick={() => void runChecks(visibleUncheckedIds)}
-            disabled={isSubmittingChecks || visibleUncheckedIds.length === 0}
+            onClick={() => void runChecks(visibleUncheckedIds, "filtered")}
+            disabled={preparingCheckKey === "filtered" || visibleUncheckedIds.length === 0}
             className="ui-press rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
             {t(`检测当前筛选未检测 ${visibleUncheckedIds.length} 张`, `Check Filtered Unchecked (${visibleUncheckedIds.length})`)}
@@ -1257,7 +1263,7 @@ export function InfringementChecksManager({
           <button
             type="button"
             onClick={() => void runAllUncheckedInDashboard()}
-            disabled={isSubmittingChecks || uncheckedTotalCount === 0}
+            disabled={preparingCheckKey === "all-unchecked" || uncheckedTotalCount === 0}
             className="ui-press rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {t(`一键检测全部未检测 ${uncheckedTotalCount} 张`, `Check All Unchecked (${uncheckedTotalCount})`)}
@@ -1771,11 +1777,12 @@ export function InfringementChecksManager({
           const filename = getAssetFilename(item);
           const isSelected = selectedIds.has(item.asset.id);
           const isChecking = checkingAssetIds.has(item.asset.id);
+          const isPreparingThisCheck = preparingCheckKey === item.asset.id;
 
           return (
             <article
               key={item.asset.id}
-              data-task-active={isChecking}
+              data-task-active={isChecking || isPreparingThisCheck}
               className={[
                 "ui-enter ui-lift ui-task-card overflow-hidden rounded-md border bg-white transition",
                 isSelected ? "border-zinc-950 ring-2 ring-zinc-950/10" : "border-zinc-200",
@@ -1800,7 +1807,7 @@ export function InfringementChecksManager({
                     />
                     {t("选择", "Select")}
                   </label>
-                  {isChecking ? (
+                  {isChecking || isPreparingThisCheck ? (
                     <div className="ui-task-overlay z-20">
                       <span className="ui-spinner ui-spinner-md text-cyan-300" aria-hidden="true" />
                       <span className="ui-task-label">{t("检测中", "Checking")}</span>
@@ -1883,11 +1890,11 @@ export function InfringementChecksManager({
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => void runChecks([item.asset.id])}
-                      disabled={isChecking || isSubmittingChecks}
+                      onClick={() => void runChecks([item.asset.id], item.asset.id)}
+                      disabled={isChecking || isPreparingThisCheck}
                       className="ui-press rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
                     >
-                      {isChecking ? t("检测中", "Checking") : t("重新检测", "Re-check")}
+                      {isChecking || isPreparingThisCheck ? t("检测中", "Checking") : t("重新检测", "Re-check")}
                     </button>
                     <button
                       type="button"
