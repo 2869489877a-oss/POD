@@ -2,12 +2,14 @@
 
 /* eslint-disable @next/next/no-img-element -- Infringement previews can come from local storage, Supabase, or arbitrary source URLs. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchInfringementDashboard,
-  fetchInfringementItemsByAssetIds,
+  fetchInfringementDashboardAssetIds,
   type InfringementCheckRow,
+  type InfringementDashboardStatus,
+  type InfringementDashboardStatusCounts,
   type InfringementListItem,
 } from "@/lib/actions/infringement-checks";
 import { infringementRuleEntries, infringementRuleStats, RULE_ENGINE_VERSION } from "@/lib/infringement/rules";
@@ -277,9 +279,10 @@ const ruleCategoryOptions: Array<{ value: "all" | InfringementRuleCategory; en: 
   })),
 ];
 
-const filterOptions: Array<{ en: string; value: "all" | CheckStatus | "unchecked"; zh: string }> = [
+const filterOptions: Array<{ en: string; value: InfringementDashboardStatus; zh: string }> = [
   { en: "All", value: "all", zh: "全部" },
   { en: "Unchecked", value: "unchecked", zh: "未检测" },
+  { en: "Pending", value: "pending", zh: "待处理" },
   { en: "Clear", value: "clear", zh: "未命中" },
   { en: "Need Review", value: "review", zh: "待复核" },
   { en: "Risky", value: "risky", zh: "高风险" },
@@ -407,6 +410,23 @@ function getLatestStatus(item: InfringementListItem): CheckStatus | "unchecked" 
   return status && isCheckStatus(status) ? status : "unchecked";
 }
 
+function dashboardStatusCountsFromItems(items: InfringementListItem[]): InfringementDashboardStatusCounts {
+  return items.reduce(
+    (current, item) => {
+      const status = getLatestStatus(item);
+      current.total += 1;
+      if (status === "unchecked") current.unchecked += 1;
+      if (status === "pending") current.pending += 1;
+      if (status === "review") current.review += 1;
+      if (status === "risky") current.risky += 1;
+      if (status === "blocked") current.blocked += 1;
+      if (status === "clear") current.clear += 1;
+      return current;
+    },
+    { blocked: 0, clear: 0, pending: 0, review: 0, risky: 0, total: 0, unchecked: 0 },
+  );
+}
+
 function getRiskLevel(check: InfringementCheckRow | null): RiskLevel {
   return check?.risk_level && isRiskLevel(check.risk_level) ? check.risk_level : "unknown";
 }
@@ -433,8 +453,11 @@ export function InfringementChecksManager({
 }: InfringementChecksManagerProps) {
   const { language, t } = useSettings();
   const [items, setItems] = useState<InfringementListItem[]>(initialItems);
+  const [dashboardTotal, setDashboardTotal] = useState(initialItems.length);
+  const [dashboardStatusCounts, setDashboardStatusCounts] =
+    useState<InfringementDashboardStatusCounts>(() => dashboardStatusCountsFromItems(initialItems));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [filter, setFilter] = useState<"all" | CheckStatus | "unchecked">("all");
+  const [filter, setFilter] = useState<InfringementDashboardStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(initialError);
@@ -468,38 +491,12 @@ export function InfringementChecksManager({
   const [bulkImportMessage, setBulkImportMessage] = useState<string | null>(null);
   const [isSeedingBuiltIn, setIsSeedingBuiltIn] = useState(false);
   const [seedBuiltInMessage, setSeedBuiltInMessage] = useState<string | null>(null);
+  const dashboardRequestIdRef = useRef(0);
 
-  const visibleItems = useMemo(() => {
-    const keyword = searchQuery.trim().toLowerCase();
-
-    return items.filter((item) => {
-      const status = getLatestStatus(item);
-      if (filter !== "all" && status !== filter) return false;
-
-      if (!keyword) return true;
-
-      const matches = parseRuleMatches(item.latest_check?.matched_rules);
-      const searchable = [
-        getAssetFilename(item),
-        item.asset.original_url ?? "",
-        item.asset.source ?? "",
-        item.asset.copyright_status ?? "",
-        item.latest_check?.recommendation ?? "",
-        ...matches.map((match) => `${match.label ?? ""} ${match.matched ?? ""} ${match.field ?? ""}`),
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return searchable.includes(keyword);
-    });
-  }, [filter, items, searchQuery]);
-
-  const checksTotalPages = Math.max(1, Math.ceil(visibleItems.length / CHECKS_PER_PAGE));
+  const visibleItems = items;
+  const checksTotalPages = Math.max(1, Math.ceil(Math.max(dashboardTotal, visibleItems.length) / CHECKS_PER_PAGE));
   const currentPage = Math.min(page, checksTotalPages);
-  const pagedItems = useMemo(
-    () => visibleItems.slice((currentPage - 1) * CHECKS_PER_PAGE, currentPage * CHECKS_PER_PAGE),
-    [visibleItems, currentPage],
-  );
+  const pagedItems = visibleItems;
 
   const visibleRuleEntries = useMemo(() => {
     const keyword = ruleSearchQuery.trim().toLowerCase();
@@ -532,12 +529,7 @@ export function InfringementChecksManager({
       .map((item) => item.asset.id),
     [checkingAssetIds, visibleItems],
   );
-  const allUncheckedIds = useMemo(
-    () => items
-      .filter((item) => getLatestStatus(item) === "unchecked" && !checkingAssetIds.has(item.asset.id))
-      .map((item) => item.asset.id),
-    [checkingAssetIds, items],
-  );
+  const uncheckedTotalCount = Math.max(dashboardStatusCounts.unchecked, visibleUncheckedIds.length);
   const activeCheckJob = useMemo(() => {
     if (activeCheckJobs.length === 0) return null;
 
@@ -560,21 +552,7 @@ export function InfringementChecksManager({
     };
   }, [activeCheckJobs]);
   const isRunning = isSubmittingChecks || activeCheckJobs.length > 0;
-  const stats = useMemo(() => {
-    return items.reduce(
-      (current, item) => {
-        const status = getLatestStatus(item);
-        current.total += 1;
-        if (status === "unchecked") current.unchecked += 1;
-        if (status === "review") current.review += 1;
-        if (status === "risky") current.risky += 1;
-        if (status === "blocked") current.blocked += 1;
-        if (status === "clear") current.clear += 1;
-        return current;
-      },
-      { blocked: 0, clear: 0, review: 0, risky: 0, total: 0, unchecked: 0 },
-    );
-  }, [items]);
+  const stats = dashboardStatusCounts;
   const numberFormatter = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const displayedRuleEntries = visibleRuleEntries.slice(0, 80);
   const referenceKeyword = referenceSearchQuery.trim().toLowerCase();
@@ -669,47 +647,65 @@ export function InfringementChecksManager({
   }, [referenceSearchQuery]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void refreshDashboard({ silent: initialItems.length > 0 });
-    }, 0);
+    const timer = window.setTimeout(
+      () => {
+        void refreshDashboard({
+          page,
+          search: searchQuery,
+          silent: dashboardRequestIdRef.current > 0 || initialItems.length > 0,
+          status: filter,
+        });
+      },
+      searchQuery.trim() ? 300 : 0,
+    );
 
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [filter, page, searchQuery]);
 
-  async function refreshDashboard(options: { silent?: boolean } = {}) {
+  async function refreshDashboard(options: {
+    page?: number;
+    search?: string;
+    silent?: boolean;
+    status?: InfringementDashboardStatus;
+  } = {}) {
+    const requestId = dashboardRequestIdRef.current + 1;
+    dashboardRequestIdRef.current = requestId;
+    const targetPage = options.page ?? page;
+    const targetSearch = options.search ?? searchQuery;
+    const targetStatus = options.status ?? filter;
+
     if (!options.silent) {
       setIsRefreshing(true);
     }
     setError(null);
 
     try {
-      const data = await fetchInfringementDashboard();
+      const data = await fetchInfringementDashboard({
+        page: targetPage,
+        pageSize: CHECKS_PER_PAGE,
+        search: targetSearch,
+        status: targetStatus,
+      });
+      if (requestId !== dashboardRequestIdRef.current) return;
       if (data.error) throw new Error(data.error);
       setItems(data.items);
+      setDashboardTotal(data.total_count ?? data.items.length);
+      setDashboardStatusCounts(data.status_counts ?? dashboardStatusCountsFromItems(data.items));
       setSelectedIds((current) => {
         const nextIds = new Set(data.items.map((item) => item.asset.id));
         return new Set(Array.from(current).filter((id) => nextIds.has(id)));
       });
     } catch (requestError) {
+      if (requestId !== dashboardRequestIdRef.current) return;
       setError(requestError instanceof Error ? requestError.message : t("读取侵权检测数据失败", "Failed to load infringement checks"));
     } finally {
+      if (requestId !== dashboardRequestIdRef.current) return;
       setHasLoadedDashboard(true);
       if (!options.silent) {
         setIsRefreshing(false);
       }
     }
-  }
-
-  async function refreshDashboardItems(assetIds: string[]) {
-    const data = await fetchInfringementItemsByAssetIds(assetIds);
-    if (data.error) throw new Error(data.error);
-    if (data.items.length === 0) return;
-
-    setItems((current) => {
-      const nextByAssetId = new Map(data.items.map((item) => [item.asset.id, item]));
-      return current.map((item) => nextByAssetId.get(item.asset.id) ?? item);
-    });
   }
 
   function toggleAsset(assetId: string) {
@@ -793,10 +789,8 @@ export function InfringementChecksManager({
       }
 
       setMessage(data.queued ? t("后台侵权检测已完成", "Background infringement check complete") : data.message ?? t("侵权检测已完成", "Infringement check complete"));
-      if (data.queued) {
-        await refreshDashboardItems(queuedAssetIds);
-      } else {
-        await refreshDashboard();
+      if (!data.queued) {
+        await refreshDashboard({ silent: true });
       }
     } catch (requestError) {
       setMessage(null);
@@ -808,6 +802,45 @@ export function InfringementChecksManager({
       });
     } finally {
       setIsSubmittingChecks(false);
+    }
+  }
+
+  async function runAllUncheckedInDashboard() {
+    let delegatedToRunChecks = false;
+    setIsSubmittingChecks(true);
+    setError(null);
+    setMessage(t("正在读取全部未检测素材...", "Reading all unchecked assets..."));
+
+    try {
+      const data = await fetchInfringementDashboardAssetIds({
+        limit: 2000,
+        search: searchQuery,
+        status: "unchecked",
+      });
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const assetIds = data.asset_ids.filter((assetId) => !checkingAssetIds.has(assetId));
+      if (assetIds.length === 0) {
+        setMessage(t("当前条件下没有可提交的未检测素材", "No unchecked assets available for the current filter"));
+        return;
+      }
+
+      if (data.limited) {
+        setMessage(t("本次最多提交前 2000 张未检测素材，剩余素材可完成后继续提交。", "Submitting the first 2000 unchecked assets. Run again after completion for the rest."));
+      }
+
+      delegatedToRunChecks = true;
+      await runChecks(assetIds);
+    } catch (requestError) {
+      setMessage(null);
+      setError(requestError instanceof Error ? requestError.message : t("读取未检测素材失败", "Failed to read unchecked assets"));
+    } finally {
+      if (!delegatedToRunChecks) {
+        setIsSubmittingChecks(false);
+      }
     }
   }
 
@@ -890,7 +923,7 @@ export function InfringementChecksManager({
         ));
 
         if (data.job.status === "completed" || data.job.status === "failed" || data.job.status === "partial_failed") {
-          await refreshDashboardItems(jobAssetIds);
+          await refreshDashboard({ silent: true });
           break;
         }
 
@@ -944,7 +977,7 @@ export function InfringementChecksManager({
 
       setSelectedItem(null);
       setMessage(t("复核结果已保存", "Review result saved"));
-      await refreshDashboard();
+      await refreshDashboard({ silent: true });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("保存复核结果失败", "Failed to save review result"));
     } finally {
@@ -1181,7 +1214,7 @@ export function InfringementChecksManager({
 
           <button
             type="button"
-            onClick={() => void refreshDashboard()}
+            onClick={() => void refreshDashboard({ page, search: searchQuery, status: filter })}
             disabled={isRefreshing}
             className="ui-press self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
           >
@@ -1190,10 +1223,10 @@ export function InfringementChecksManager({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-600">
-          <span>{t(`当前显示 ${visibleItems.length} 张`, `${visibleItems.length} visible`)}</span>
+          <span>{t(`当前页 ${visibleItems.length} 张 / 共 ${dashboardTotal} 张`, `${visibleItems.length} on this page / ${dashboardTotal} total`)}</span>
           <span>{t(`已选择 ${selectedCount} 张`, `${selectedCount} selected`)}</span>
-          <span>{t(`当前筛选未检测 ${visibleUncheckedIds.length} 张`, `${visibleUncheckedIds.length} unchecked in filter`)}</span>
-          <span>{t(`全部未检测 ${allUncheckedIds.length} 张`, `${allUncheckedIds.length} unchecked total`)}</span>
+          <span>{t(`当前页未检测 ${visibleUncheckedIds.length} 张`, `${visibleUncheckedIds.length} unchecked on page`)}</span>
+          <span>{t(`当前搜索未检测 ${uncheckedTotalCount} 张`, `${uncheckedTotalCount} unchecked in result`)}</span>
           <span>{t("自动检测会读取文件名、URL 和商品草稿文案；图片视觉识别可后续接入豆包/即梦/千问视觉模型。", "Auto checks scan filenames, URLs and product draft text. Visual AI can be added later.")}</span>
         </div>
 
@@ -1223,11 +1256,11 @@ export function InfringementChecksManager({
           </button>
           <button
             type="button"
-            onClick={() => void runChecks(allUncheckedIds)}
-            disabled={isSubmittingChecks || allUncheckedIds.length === 0}
+            onClick={() => void runAllUncheckedInDashboard()}
+            disabled={isSubmittingChecks || uncheckedTotalCount === 0}
             className="ui-press rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-800 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {t(`一键检测全部未检测 ${allUncheckedIds.length} 张`, `Check All Unchecked (${allUncheckedIds.length})`)}
+            {t(`一键检测全部未检测 ${uncheckedTotalCount} 张`, `Check All Unchecked (${uncheckedTotalCount})`)}
           </button>
         </div>
 
@@ -1884,7 +1917,7 @@ export function InfringementChecksManager({
         <Pagination
           page={currentPage}
           totalPages={checksTotalPages}
-          total={visibleItems.length}
+          total={dashboardTotal}
           unitZh="张"
           unitEn="assets"
           onChange={setPage}
