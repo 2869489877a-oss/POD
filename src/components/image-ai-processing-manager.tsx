@@ -268,7 +268,7 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
     for (let poll = 0; poll < QUEUED_JOB_MAX_POLLS; poll += 1) {
       await wait(QUEUED_JOB_POLL_INTERVAL_MS);
 
-      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, {
+      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}?summary=1`, {
         cache: "no-store",
       });
       const data = (await response.json()) as QueuedJobResponse;
@@ -286,7 +286,16 @@ export function ImageAiProcessingManager({ initialError = null, kind }: ImageAiP
       );
 
       if (TERMINAL_JOB_STATUSES.has(job.status)) {
-        return buildSummaryFromQueuedJob(job, assetMap);
+        const finalResponse = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, {
+          cache: "no-store",
+        });
+        const finalData = (await finalResponse.json()) as QueuedJobResponse;
+
+        if (!finalResponse.ok || finalData.error || !finalData.job) {
+          throw new Error(finalData.error ?? t("璇诲彇鍚庡彴浠诲姟澶辫触", "Failed to read background job"));
+        }
+
+        return buildSummaryFromQueuedJob(finalData.job, assetMap);
       }
     }
 

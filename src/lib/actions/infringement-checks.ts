@@ -71,43 +71,60 @@ const checkColumns = [
   "updated_at",
 ].join(",");
 
-async function fetchAllAssets(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
-  const rows: InfringementAssetRow[] = [];
+const DEFAULT_DASHBOARD_LIMIT = Math.max(
+  1,
+  Math.min(1000, Number(process.env.INFRINGEMENT_DASHBOARD_LIMIT ?? 500) || 500),
+);
 
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("assets")
-      .select(assetColumns)
-      .order("created_at", { ascending: false })
-      .range(from, from + 999);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    rows.push(...((data ?? []) as unknown as InfringementAssetRow[]));
-    if ((data ?? []).length < 1000) break;
+function chunkArray<T>(items: T[], size: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
   }
-
-  return rows;
+  return chunks;
 }
 
-async function fetchAllChecks(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
+async function fetchDashboardAssets(supabase: ReturnType<typeof createSupabaseServiceRoleClient>) {
+  const { data, error, count } = await supabase
+    .from("assets")
+    .select(assetColumns, { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(0, DEFAULT_DASHBOARD_LIMIT - 1);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return {
+    assets: (data ?? []) as unknown as InfringementAssetRow[],
+    totalCount: count ?? (data ?? []).length,
+  };
+}
+
+async function fetchChecksForAssetIds(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  assetIds: string[],
+) {
+  if (assetIds.length === 0) return [];
+
   const rows: InfringementCheckRow[] = [];
 
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("infringement_checks")
-      .select(checkColumns)
-      .order("created_at", { ascending: false })
-      .range(from, from + 999);
+  for (const chunk of chunkArray(assetIds, 500)) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await supabase
+        .from("infringement_checks")
+        .select(checkColumns)
+        .in("asset_id", chunk)
+        .order("created_at", { ascending: false })
+        .range(from, from + 999);
 
-    if (error) {
-      throw new Error(error.message);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      rows.push(...((data ?? []) as unknown as InfringementCheckRow[]));
+      if ((data ?? []).length < 1000) break;
     }
-
-    rows.push(...((data ?? []) as unknown as InfringementCheckRow[]));
-    if ((data ?? []).length < 1000) break;
   }
 
   return rows;
@@ -130,17 +147,17 @@ function latestItemsFromRows(assets: InfringementAssetRow[], checks: Infringemen
 export async function fetchInfringementDashboard(): Promise<{
   error: string | null;
   items: InfringementListItem[];
+  total_count?: number;
 }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
-    const [assets, checks] = await Promise.all([
-      fetchAllAssets(supabase),
-      fetchAllChecks(supabase),
-    ]);
+    const { assets, totalCount } = await fetchDashboardAssets(supabase);
+    const checks = await fetchChecksForAssetIds(supabase, assets.map((asset) => asset.id));
 
     return {
       error: null,
       items: latestItemsFromRows(assets, checks),
+      total_count: totalCount,
     };
   } catch (error) {
     return {

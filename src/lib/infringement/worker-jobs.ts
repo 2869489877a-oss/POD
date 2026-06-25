@@ -94,7 +94,7 @@ const checkColumns = [
 ].join(",");
 
 const REFERENCE_CACHE_TTL_MS = Math.max(0, Number(process.env.INFRINGEMENT_REFERENCE_CACHE_MS ?? 60_000) || 0);
-let referenceItemsCache: { expiresAt: number; items: InfringementReferenceItem[] } | null = null;
+let referenceItemsCache: { expiresAt: number; items: InfringementReferenceItem[]; version: string } | null = null;
 
 function asSingle<T>(value: T | T[] | null | undefined): T | null {
   if (!value) {
@@ -111,7 +111,14 @@ function arrayOrEmpty(value: string[] | null) {
 export async function fetchDatabaseReferenceItems(
   supabase: SupabaseServiceClient,
 ): Promise<InfringementReferenceItem[]> {
-  if (REFERENCE_CACHE_TTL_MS > 0 && referenceItemsCache && referenceItemsCache.expiresAt > Date.now()) {
+  const version = await fetchDatabaseReferenceVersion(supabase);
+
+  if (
+    REFERENCE_CACHE_TTL_MS > 0 &&
+    referenceItemsCache &&
+    referenceItemsCache.expiresAt > Date.now() &&
+    referenceItemsCache.version === version
+  ) {
     return referenceItemsCache.items;
   }
 
@@ -144,10 +151,33 @@ export async function fetchDatabaseReferenceItems(
     referenceItemsCache = {
       expiresAt: Date.now() + REFERENCE_CACHE_TTL_MS,
       items,
+      version,
     };
   }
 
   return items;
+}
+
+export async function fetchDatabaseReferenceVersion(supabase: SupabaseServiceClient) {
+  const { data, error } = await supabase
+    .from("infringement_reference_items")
+    .select("updated_at")
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (error.code === "42P01" || message.includes("infringement_reference_items")) {
+      return "missing";
+    }
+
+    throw new Error(error.message);
+  }
+
+  const updatedAt = (data as { updated_at?: unknown } | null)?.updated_at;
+  return typeof updatedAt === "string" && updatedAt.length > 0 ? updatedAt : "empty";
 }
 
 async function getWorkerItem(supabase: SupabaseServiceClient, itemId: string) {
@@ -255,8 +285,9 @@ export async function getInfringementWorkerPayload(
   options: { includeReferenceItems?: boolean } = {},
 ) {
   const includeReferenceItems = options.includeReferenceItems !== false;
-  const [{ asset, item, job }, referenceItems] = await Promise.all([
+  const [{ asset, item, job }, referenceVersion, referenceItems] = await Promise.all([
     getWorkerItem(supabase, itemId),
+    fetchDatabaseReferenceVersion(supabase),
     includeReferenceItems ? fetchDatabaseReferenceItems(supabase) : Promise.resolve([]),
   ]);
   const { data: productData, error: productError } = await supabase
@@ -291,6 +322,7 @@ export async function getInfringementWorkerPayload(
     })),
     reference_items: referenceItems,
     reference_items_included: includeReferenceItems,
+    reference_version: referenceVersion,
     should_compute_hash:
       !includeReferenceItems ||
       referenceItems.some((item) => Boolean(item.imageHash)) ||

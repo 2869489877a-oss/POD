@@ -735,14 +735,6 @@ async function cropPngByBBox(png, bbox) {
     .toBuffer();
 }
 
-function alphaMaskFromRgba(data, width, height) {
-  const mask = new Uint8Array(width * height);
-  for (let index = 0; index < width * height; index += 1) {
-    mask[index] = data[index * 4 + 3] ?? 255;
-  }
-  return mask;
-}
-
 async function processCutout(job) {
   const source = await readImageBuffer(job.input_url);
   const options = asRecord(job.options?.options);
@@ -1226,12 +1218,12 @@ async function processMockup(job) {
 }
 
 async function fetchInfringementPayload(job) {
-  const cacheFresh =
+  const cacheAvailable =
     INFRINGEMENT_REFERENCE_CACHE_MS > 0 &&
     infringementReferenceCache &&
     infringementReferenceCache.expiresAt > Date.now();
-  const includeReference = cacheFresh ? "0" : "1";
-  const data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload?include_reference=${includeReference}`, {
+  const includeReference = cacheAvailable ? "0" : "1";
+  let data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload?include_reference=${includeReference}`, {
     method: "GET",
   });
 
@@ -1239,17 +1231,38 @@ async function fetchInfringementPayload(job) {
     throw new Error("infringement payload is missing");
   }
 
-  const payload = data.payload;
+  let payload = data.payload;
+  let cacheFresh =
+    cacheAvailable &&
+    infringementReferenceCache &&
+    typeof payload.reference_version === "string" &&
+    payload.reference_version === infringementReferenceCache.version;
+
+  if (cacheAvailable && !cacheFresh) {
+    data = await apiFetch(`/api/local-worker/jobs/${encodeURIComponent(job.item_id)}/payload?include_reference=1`, {
+      method: "GET",
+    });
+
+    if (!data.payload) {
+      throw new Error("infringement payload is missing");
+    }
+
+    payload = data.payload;
+    cacheFresh = false;
+  }
+
   if (payload.reference_items_included && Array.isArray(payload.reference_items)) {
     infringementReferenceCache = {
       expiresAt: Date.now() + INFRINGEMENT_REFERENCE_CACHE_MS,
       items: payload.reference_items,
+      version: typeof payload.reference_version === "string" ? payload.reference_version : "unknown",
     };
+    cacheFresh = true;
   }
 
   return {
     ...payload,
-    reference_items: cacheFresh ? infringementReferenceCache.items : Array.isArray(payload.reference_items) ? payload.reference_items : [],
+    reference_items: cacheFresh && infringementReferenceCache ? infringementReferenceCache.items : Array.isArray(payload.reference_items) ? payload.reference_items : [],
   };
 }
 

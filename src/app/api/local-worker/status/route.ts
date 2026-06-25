@@ -10,6 +10,8 @@ const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize"
 const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "asset_delete", "collector_operation", "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
+type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
+type QueueStatus = "pending" | "processing" | "failed";
 
 type WorkerState = {
   concurrency?: number;
@@ -19,37 +21,6 @@ type WorkerState = {
   started_at?: string;
   updated_at?: string;
   worker?: string;
-};
-
-type QueueRow = {
-  status?: string | null;
-  image_jobs?: {
-    job_type?: string | null;
-  } | null;
-};
-
-type ExportQueueRow = {
-  status?: string | null;
-};
-
-type AssetDeleteQueueRow = {
-  status?: string | null;
-};
-
-type CollectorOperationQueueRow = {
-  status?: string | null;
-};
-
-type AiImageQueueRow = {
-  status?: string | null;
-};
-
-type AiSplitGridQueueRow = {
-  status?: string | null;
-};
-
-type AiApplyPatternQueueRow = {
-  status?: string | null;
 };
 
 function emptyQueueCounts() {
@@ -126,17 +97,75 @@ async function readWorkerState() {
   }
 }
 
-async function readQueueState() {
-  const supabase = createSupabaseServiceRoleClient();
-  const { data: itemRows, error: itemError } = await supabase
+async function countImageItemsByTypeAndStatus(
+  supabase: SupabaseServiceClient,
+  jobType: (typeof IMAGE_WORKER_JOB_TYPES)[number],
+  status: QueueStatus,
+) {
+  const { count, error } = await supabase
     .from("image_job_items")
-    .select("status,image_jobs!inner(job_type)")
-    .in("status", ["pending", "processing", "failed"])
-    .in("image_jobs.job_type", IMAGE_WORKER_JOB_TYPES);
+    .select("id,image_jobs!inner(job_type)", { count: "exact", head: true })
+    .eq("status", status)
+    .eq("image_jobs.job_type", jobType);
 
-  if (itemError) {
-    throw new Error(itemError.message);
+  if (error) {
+    throw new Error(error.message);
   }
+
+  return count ?? 0;
+}
+
+async function countRowsByStatus(
+  supabase: SupabaseServiceClient,
+  table: "asset_delete_jobs" | "collector_operation_jobs" | "export_records" | "ai_image_jobs" | "ai_split_grid_jobs" | "ai_apply_pattern_jobs",
+  status: QueueStatus,
+  options: { allowMissing?: boolean; exportType?: "images_zip" } = {},
+) {
+  let query = supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .eq("status", status);
+
+  if (options.exportType) {
+    query = query.eq("export_type", options.exportType);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    if (options.allowMissing && isMissingRelationError(error)) {
+      return 0;
+    }
+    throw new Error(error.message);
+  }
+
+  return count ?? 0;
+}
+
+function addQueueCount(
+  queue: ReturnType<typeof emptyQueueCounts>,
+  queueByType: Record<LocalWorkerJobType, ReturnType<typeof emptyQueueCounts>>,
+  jobType: LocalWorkerJobType,
+  status: QueueStatus,
+  count: number,
+) {
+  queue[status] += count;
+  queueByType[jobType][status] += count;
+}
+
+async function readQueueStateByCounts() {
+  const supabase = createSupabaseServiceRoleClient();
+  const queue = {
+    active_jobs: 0,
+    failed: 0,
+    pending: 0,
+    processing: 0,
+  };
+  const queueByType = Object.fromEntries(LOCAL_WORKER_JOB_TYPES.map((type) => [type, emptyQueueCounts()])) as Record<
+    LocalWorkerJobType,
+    ReturnType<typeof emptyQueueCounts>
+  >;
+  const statuses: QueueStatus[] = ["pending", "processing", "failed"];
 
   const { data: activeJobRows, error: activeJobError } = await supabase
     .from("image_jobs")
@@ -150,159 +179,71 @@ async function readQueueState() {
     throw new Error(activeJobError.message);
   }
 
-  const { data: rawAssetDeleteRows, error: assetDeleteError } = await supabase
-    .from("asset_delete_jobs")
-    .select("status")
-    .in("status", ["pending", "processing"]);
+  const imageCounts = await Promise.all(
+    IMAGE_WORKER_JOB_TYPES.flatMap((jobType) =>
+      statuses.map(async (status) => ({
+        count: await countImageItemsByTypeAndStatus(supabase, jobType, status),
+        jobType,
+        status,
+      })),
+    ),
+  );
 
-  if (assetDeleteError && !isMissingRelationError(assetDeleteError)) {
-    throw new Error(assetDeleteError.message);
-  }
-  const assetDeleteRows = assetDeleteError ? [] : rawAssetDeleteRows;
-
-  const { data: rawCollectorOperationRows, error: collectorOperationError } = await supabase
-    .from("collector_operation_jobs")
-    .select("status")
-    .in("status", ["pending", "processing"]);
-
-  if (collectorOperationError && !isMissingRelationError(collectorOperationError)) {
-    throw new Error(collectorOperationError.message);
-  }
-  const collectorOperationRows = collectorOperationError ? [] : rawCollectorOperationRows;
-
-  const { data: exportRows, error: exportError } = await supabase
-    .from("export_records")
-    .select("status")
-    .eq("export_type", "images_zip")
-    .in("status", ["pending", "processing"]);
-
-  if (exportError) {
-    throw new Error(exportError.message);
+  for (const item of imageCounts) {
+    addQueueCount(queue, queueByType, item.jobType, item.status, item.count);
   }
 
-  const { data: aiRows, error: aiError } = await supabase
-    .from("ai_image_jobs")
-    .select("status")
-    .in("status", ["pending", "processing"]);
+  const extraCounts = await Promise.all([
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "asset_delete_jobs", status, { allowMissing: true }),
+      jobType: "asset_delete" as const,
+      status,
+    })),
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "collector_operation_jobs", status, { allowMissing: true }),
+      jobType: "collector_operation" as const,
+      status,
+    })),
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "export_records", status, { allowMissing: true, exportType: "images_zip" }),
+      jobType: "export_images_zip" as const,
+      status,
+    })),
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "ai_image_jobs", status, { allowMissing: true }),
+      jobType: "ai_generate_image" as const,
+      status,
+    })),
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "ai_split_grid_jobs", status, { allowMissing: true }),
+      jobType: "ai_split_grid" as const,
+      status,
+    })),
+    ...statuses.map(async (status) => ({
+      count: await countRowsByStatus(supabase, "ai_apply_pattern_jobs", status, { allowMissing: true }),
+      jobType: "ai_apply_pattern" as const,
+      status,
+    })),
+  ]);
 
-  if (aiError) {
-    throw new Error(aiError.message);
+  for (const item of extraCounts) {
+    addQueueCount(queue, queueByType, item.jobType, item.status, item.count);
   }
 
-  const { data: splitRows, error: splitError } = await supabase
-    .from("ai_split_grid_jobs")
-    .select("status")
-    .in("status", ["pending", "processing"]);
-
-  if (splitError) {
-    throw new Error(splitError.message);
-  }
-
-  const { data: applyRows, error: applyError } = await supabase
-    .from("ai_apply_pattern_jobs")
-    .select("status")
-    .in("status", ["pending", "processing"]);
-
-  if (applyError) {
-    throw new Error(applyError.message);
-  }
-
-  const queue = {
-    active_jobs:
-      (activeJobRows?.length ?? 0) +
-      ((assetDeleteRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((collectorOperationRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((exportRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((aiRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((splitRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length) +
-      ((applyRows ?? []).filter((row) => row.status === "pending" || row.status === "processing").length),
-    failed: 0,
-    pending: 0,
-    processing: 0,
-  };
-  const queueByType = Object.fromEntries(LOCAL_WORKER_JOB_TYPES.map((type) => [type, emptyQueueCounts()])) as Record<
-    LocalWorkerJobType,
-    ReturnType<typeof emptyQueueCounts>
-  >;
-
-  for (const row of (itemRows ?? []) as QueueRow[]) {
-    if (row.status === "pending") queue.pending += 1;
-    if (row.status === "processing") queue.processing += 1;
-    if (row.status === "failed") queue.failed += 1;
-
-    const jobType = row.image_jobs?.job_type;
-    if (jobType && jobType in queueByType) {
-      if (row.status === "pending") queueByType[jobType as LocalWorkerJobType].pending += 1;
-      if (row.status === "processing") queueByType[jobType as LocalWorkerJobType].processing += 1;
-      if (row.status === "failed") queueByType[jobType as LocalWorkerJobType].failed += 1;
-    }
-  }
-
-  for (const row of (assetDeleteRows ?? []) as AssetDeleteQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.asset_delete.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.asset_delete.processing += 1;
-    }
-  }
-
-  for (const row of (collectorOperationRows ?? []) as CollectorOperationQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.collector_operation.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.collector_operation.processing += 1;
-    }
-  }
-
-  for (const row of (exportRows ?? []) as ExportQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.export_images_zip.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.export_images_zip.processing += 1;
-    }
-  }
-
-  for (const row of (aiRows ?? []) as AiImageQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.ai_generate_image.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.ai_generate_image.processing += 1;
-    }
-  }
-
-  for (const row of (splitRows ?? []) as AiSplitGridQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.ai_split_grid.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.ai_split_grid.processing += 1;
-    }
-  }
-
-  for (const row of (applyRows ?? []) as AiApplyPatternQueueRow[]) {
-    if (row.status === "pending") {
-      queue.pending += 1;
-      queueByType.ai_apply_pattern.pending += 1;
-    }
-    if (row.status === "processing") {
-      queue.processing += 1;
-      queueByType.ai_apply_pattern.processing += 1;
-    }
-  }
+  queue.active_jobs =
+    queue.pending +
+    queue.processing -
+    queueByType.cutout.pending -
+    queueByType.cutout.processing -
+    queueByType.print_extraction.pending -
+    queueByType.print_extraction.processing -
+    queueByType.mockup.pending -
+    queueByType.mockup.processing -
+    queueByType.resize.pending -
+    queueByType.resize.processing -
+    queueByType.infringement_check.pending -
+    queueByType.infringement_check.processing +
+    (activeJobRows?.length ?? 0);
 
   return {
     active_jobs: activeJobRows ?? [],
@@ -311,6 +252,9 @@ async function readQueueState() {
   };
 }
 
+async function readQueueState() {
+  return readQueueStateByCounts();
+}
 export async function GET() {
   try {
     const [workerState, queueState] = await Promise.all([readWorkerState(), readQueueState()]);

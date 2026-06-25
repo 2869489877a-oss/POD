@@ -278,7 +278,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const showInitialLoading = isLoading && assets.length === 0;
 
   useEffect(() => {
-    setIsMounted(true);
+    const timer = window.setTimeout(() => setIsMounted(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {

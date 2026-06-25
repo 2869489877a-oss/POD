@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 
-import { fetchImageJobs, fetchImageJobDetail, retryImageJob } from "@/lib/actions/image-jobs";
+import { fetchImageJobs, fetchImageJobDetail, fetchImageJobSummary, retryImageJob } from "@/lib/actions/image-jobs";
 import { Pagination } from "@/components/pagination";
 import { useSettings } from "@/lib/settings/context";
 import { getDisplayImageSrc } from "@/lib/local-asset-url";
@@ -44,6 +44,15 @@ type ImageJobItem = {
 
 type ImageJobDetail = ImageJob & {
   items: ImageJobItem[];
+};
+
+type ImageJobSummary = ImageJob & {
+  item_status_counts?: {
+    completed: number;
+    failed: number;
+    pending: number;
+    processing: number;
+  };
 };
 
 type WorkerJobType = Exclude<ImageJob["job_type"], "enhance"> | "export_images_zip" | "ai_generate_image" | "ai_split_grid" | "ai_apply_pattern";
@@ -150,11 +159,6 @@ function formatDate(value: string, locale: string) {
 
 function shortId(id: string) {
   return `${id.slice(0, 8)}...${id.slice(-6)}`;
-}
-
-function completionPercent(successCount: number, totalCount: number) {
-  if (totalCount <= 0) return 0;
-  return Math.min(100, Math.round((successCount / totalCount) * 100));
 }
 
 function doneCount(job: Pick<ImageJob, "failed_count" | "success_count">) {
@@ -336,7 +340,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       setJobs(data.jobs as ImageJob[]);
 
       if (selectedJob) {
-        await loadJobDetail(selectedJob.id, false, false);
+        await loadJobSummary(selectedJob.id);
       }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : t("读取任务列表失败", "Failed to load jobs"));
@@ -366,6 +370,19 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       if (showLoading) {
         setIsDetailLoading(false);
       }
+    }
+  }
+
+  async function loadJobSummary(jobId: string) {
+    const data = await fetchImageJobSummary(jobId);
+    if (data.error || !data.job) throw new Error(data.error ?? t("璇诲彇浠诲姟杩涘害澶辫触", "Failed to load job progress"));
+
+    const summary = data.job as ImageJobSummary;
+    setJobs((current) => current.map((job) => (job.id === jobId ? { ...job, ...summary } : job)));
+    setSelectedJob((current) => (current?.id === jobId ? { ...current, ...summary } : current));
+
+    if (!isActiveJobStatus(summary.status)) {
+      await loadJobDetail(jobId, false, false);
     }
   }
 
@@ -406,7 +423,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
     );
 
     const pollTimer = window.setInterval(() => {
-      void loadJobDetail(selectedJob.id, false, false).catch(() => undefined);
+      void loadJobSummary(selectedJob.id).catch(() => undefined);
     }, 1000);
 
     try {
@@ -426,14 +443,14 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
   }
 
   useEffect(() => {
-    void refreshWorkerStatus();
+    const initialTimer = window.setTimeout(() => {
+      void refreshWorkerStatus();
+    }, 0);
     const timer = window.setInterval(() => {
       void refreshWorkerStatus();
 
       const hasActiveJobs = jobs.some((job) => isActiveJobStatus(job.status));
-      const hasActiveSelectedJob = selectedJob
-        ? isActiveJobStatus(selectedJob.status) || selectedJob.items.some((item) => isActiveJobStatus(item.status))
-        : false;
+      const hasActiveSelectedJob = selectedJob ? isActiveJobStatus(selectedJob.status) : false;
       const hasWorkerQueue = Boolean((workerStatus?.queue?.pending ?? 0) + (workerStatus?.queue?.processing ?? 0));
 
       if (hasActiveJobs || hasActiveSelectedJob || hasWorkerQueue || isRetrying) {
@@ -441,7 +458,11 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       }
     }, 3000);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, selectedJob, workerStatus?.queue?.pending, workerStatus?.queue?.processing, isRetrying]);
 
   return (

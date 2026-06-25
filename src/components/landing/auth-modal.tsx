@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { BrandLogo } from "@/components/brand-logo";
@@ -21,7 +20,6 @@ type AuthModalProps = {
 };
 
 export function AuthModal({ open, initialMode = "login", onClose }: AuthModalProps) {
-  const router = useRouter();
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,9 +33,12 @@ export function AuthModal({ open, initialMode = "login", onClose }: AuthModalPro
 
   useEffect(() => {
     if (open) {
-      setMode(initialMode);
-      setNotice(null);
-      setStatus({ state: "idle" });
+      const timer = window.setTimeout(() => {
+        setMode(initialMode);
+        setNotice(null);
+        setStatus({ state: "idle" });
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [open, initialMode]);
 

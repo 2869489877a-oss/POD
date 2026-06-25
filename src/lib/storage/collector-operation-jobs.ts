@@ -34,8 +34,18 @@ type CollectorOperationJobItemRow = {
   status: "pending" | "processing" | "completed" | "failed";
 };
 
-function terminalStatus(successCount: number, failedCount: number, totalCount: number): CollectorOperationJobStatus {
-  if (successCount + failedCount < totalCount) return "processing";
+const COLLECTOR_OPERATION_BATCH_SIZE = Math.max(
+  1,
+  Math.min(100, Number(process.env.COLLECTOR_OPERATION_BATCH_SIZE ?? 25) || 25),
+);
+
+function terminalStatus(
+  successCount: number,
+  failedCount: number,
+  totalCount: number,
+  options: { queueRemaining?: boolean } = {},
+): CollectorOperationJobStatus {
+  if (successCount + failedCount < totalCount) return options.queueRemaining ? "pending" : "processing";
   if (failedCount === 0) return "completed";
   if (successCount === 0) return "failed";
   return "partial_failed";
@@ -123,6 +133,15 @@ export async function claimCollectorOperationJob(supabase: SupabaseServiceClient
       status: "pending",
     },
   });
+  await recoverStaleProcessingRows(supabase, {
+    defaultMinutes: 45,
+    envName: "LOCAL_WORKER_STALE_COLLECTOR_OPERATION_ITEM_MINUTES",
+    table: "collector_operation_job_items",
+    update: {
+      error_message: null,
+      status: "pending",
+    },
+  });
 
   const { data, error } = await supabase
     .from("collector_operation_jobs")
@@ -172,33 +191,64 @@ export async function getCollectorOperationJob(supabase: SupabaseServiceClient, 
   return data as unknown as CollectorOperationJobView;
 }
 
-async function updateCollectorOperationJobCounts(
+async function countCollectorOperationJobItems(
   supabase: SupabaseServiceClient,
   jobId: string,
-  errorMessage: string | null = null,
+  status?: CollectorOperationJobItemRow["status"],
 ) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("collector_operation_job_items")
-    .select("status,error_message")
+    .select("id", { count: "exact", head: true })
     .eq("job_id", jobId);
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { count, error } = await query;
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const rows = (data ?? []) as Array<{ error_message: string | null; status: string }>;
-  const successCount = rows.filter((row) => row.status === "completed").length;
-  const failedCount = rows.filter((row) => row.status === "failed").length;
-  const totalCount = rows.length;
-  const status = terminalStatus(successCount, failedCount, totalCount);
-  const firstError =
-    errorMessage ||
-    rows
-      .filter((row) => row.status === "failed" && row.error_message)
-      .slice(0, 3)
+  return count ?? 0;
+}
+
+async function getCollectorOperationErrorSummary(supabase: SupabaseServiceClient, jobId: string) {
+  const { data, error } = await supabase
+    .from("collector_operation_job_items")
+    .select("error_message")
+    .eq("job_id", jobId)
+    .eq("status", "failed")
+    .not("error_message", "is", null)
+    .limit(3);
+
+  if (error) {
+    return error.message;
+  }
+
+  return (
+    ((data ?? []) as Array<{ error_message: string | null }>)
       .map((row) => row.error_message)
-      .join("; ") ||
-    null;
+      .filter((message): message is string => Boolean(message))
+      .join("; ") || null
+  );
+}
+
+async function updateCollectorOperationJobCounts(
+  supabase: SupabaseServiceClient,
+  jobId: string,
+  errorMessage: string | null = null,
+  options: { queueRemaining?: boolean } = {},
+) {
+  const [totalCount, successCount, failedCount] = await Promise.all([
+    countCollectorOperationJobItems(supabase, jobId),
+    countCollectorOperationJobItems(supabase, jobId, "completed"),
+    countCollectorOperationJobItems(supabase, jobId, "failed"),
+  ]);
+
+  const status = terminalStatus(successCount, failedCount, totalCount, options);
+  const firstError = errorMessage || (failedCount > 0 ? await getCollectorOperationErrorSummary(supabase, jobId) : null);
 
   const { data: job, error: jobError } = await supabase
     .from("collector_operation_jobs")
@@ -225,7 +275,9 @@ export async function executeCollectorOperationJob(supabase: SupabaseServiceClie
     .from("collector_operation_job_items")
     .select("id,relative_path,filename,status,error_message")
     .eq("job_id", jobId)
-    .in("status", ["pending", "processing"]);
+    .eq("status", "pending")
+    .order("created_at", { ascending: true })
+    .limit(COLLECTOR_OPERATION_BATCH_SIZE);
 
   if (itemError) {
     throw new Error(itemError.message);
@@ -269,7 +321,7 @@ export async function executeCollectorOperationJob(supabase: SupabaseServiceClie
       .eq("id", item.id);
   }
 
-  return updateCollectorOperationJobCounts(supabase, jobId);
+  return updateCollectorOperationJobCounts(supabase, jobId, null, { queueRemaining: true });
 }
 
 export async function failCollectorOperationJob(

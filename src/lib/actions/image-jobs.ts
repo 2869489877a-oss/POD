@@ -3,13 +3,39 @@
 import { retryFailedImageJobItems } from "@/lib/image-jobs/retry-failed";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
+type ImageJobItemStatus = "pending" | "processing" | "completed" | "failed";
+
+async function countImageJobItems(
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  jobId: string,
+  status?: ImageJobItemStatus,
+) {
+  let query = supabase
+    .from("image_job_items")
+    .select("id", { count: "exact", head: true })
+    .eq("job_id", jobId);
+
+  if (status) {
+    query = query.eq("status", status);
+  }
+
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return count ?? 0;
+}
+
 export async function fetchImageJobs(): Promise<{ error: string | null; jobs: unknown[] }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
     const { data, error } = await supabase
       .from("image_jobs")
       .select("id, job_type, status, total_count, success_count, failed_count, error_message, created_at, updated_at")
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(120);
 
     if (error) return { error: error.message, jobs: [] };
     return { error: null, jobs: data ?? [] };
@@ -38,6 +64,39 @@ export async function fetchImageJobDetail(jobId: string): Promise<{ error: strin
     return { error: null, job: { ...job, items: items ?? [] } };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "读取任务详情失败", job: null };
+  }
+}
+
+export async function fetchImageJobSummary(jobId: string): Promise<{ error: string | null; job: unknown | null }> {
+  try {
+    const supabase = createSupabaseServiceRoleClient();
+    const { data: job, error: jobError } = await supabase
+      .from("image_jobs")
+      .select("id, job_type, status, total_count, success_count, failed_count, options, error_message, created_at, updated_at")
+      .eq("id", jobId)
+      .single();
+
+    if (jobError) return { error: jobError.message, job: null };
+
+    const [pending, processing, completed, failed] = await Promise.all([
+      countImageJobItems(supabase, jobId, "pending"),
+      countImageJobItems(supabase, jobId, "processing"),
+      countImageJobItems(supabase, jobId, "completed"),
+      countImageJobItems(supabase, jobId, "failed"),
+    ]);
+
+    return {
+      error: null,
+      job: {
+        ...job,
+        failed_count: failed,
+        item_status_counts: { completed, failed, pending, processing },
+        success_count: completed,
+        total_count: pending + processing + completed + failed,
+      },
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "读取任务进度失败", job: null };
   }
 }
 

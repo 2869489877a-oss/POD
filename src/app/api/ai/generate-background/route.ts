@@ -90,8 +90,8 @@ export async function POST(request: Request) {
     const compositePath = `derivatives/${datePath}/${id}-ai-composite.png`;
 
     const [bgUrl, compositeUrl] = await Promise.all([
-      uploadToStorage(supabase, bgPath, bgBuffer, "image/png"),
-      uploadToStorage(supabase, compositePath, composited, "image/png"),
+      uploadToStorage(supabase, bgPath, bgBuffer),
+      uploadToStorage(supabase, compositePath, composited),
     ]);
 
     if (assetId) {
@@ -135,7 +135,6 @@ async function uploadToStorage(
   _supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
   path: string,
   buffer: Buffer,
-  _contentType: string,
 ) {
   return (await saveLocalAssetAtPath({
     buffer,

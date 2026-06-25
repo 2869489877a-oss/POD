@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- Collector images are local/proxied user files and are intentionally rendered as lazy previews. */
+
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -139,11 +141,6 @@ function buildCalendarDays(monthKey: string) {
   });
 }
 
-function monthTitle(monthKey: string) {
-  const [year, month] = monthKey.split("-");
-  return year + "年" + Number(month) + "月";
-}
-
 function calendarMonthTitle(monthKey: string) {
   const [year, month] = monthKey.split("-");
   return `${year}年 ${Number(month)}月`;
@@ -281,23 +278,32 @@ export function CollectorLibraryManager() {
   }
 
   useEffect(() => {
-    void loadItems(safePage);
+    const timer = window.setTimeout(() => {
+      void loadItems(safePage);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEndDate, activeStartDate, safePage]);
 
   useEffect(() => {
-    setIsMounted(true);
+    const timer = window.setTimeout(() => setIsMounted(true), 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     if (dateBuckets.length > 0 && !startDate && !endDate) {
-      setCalendarMonth(dateBuckets[0].date.slice(0, 7));
+      const timer = window.setTimeout(() => setCalendarMonth(dateBuckets[0].date.slice(0, 7)), 0);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
   }, [dateBuckets, endDate, startDate]);
 
   useEffect(() => {
     if (previewPath && !previewItem) {
-      setPreviewPath(null);
+      const timer = window.setTimeout(() => setPreviewPath(null), 0);
+      return () => window.clearTimeout(timer);
     }
+    return undefined;
   }, [previewItem, previewPath]);
 
   function applyRecentDays(days: number) {

@@ -50,7 +50,8 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => {
-    setUserMenuOpen(false);
+    const timer = window.setTimeout(() => setUserMenuOpen(false), 0);
+    return () => window.clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {

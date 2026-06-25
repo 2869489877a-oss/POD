@@ -302,27 +302,34 @@ async function insertInfringementChecks(
   return inserted;
 }
 
-async function fetchAllChecks(
+async function fetchChecksPage(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
+  {
+    limit = 500,
+    offset = 0,
+  }: {
+    limit?: number;
+    offset?: number;
+  } = {},
 ) {
-  const rows: unknown[] = [];
+  const safeLimit = Math.max(1, Math.min(1000, limit));
+  const safeOffset = Math.max(0, offset);
+  const { data, error, count } = await supabase
+    .from("infringement_checks")
+    .select(checkColumns, { count: "exact" })
+    .order("created_at", { ascending: false })
+    .range(safeOffset, safeOffset + safeLimit - 1);
 
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabase
-      .from("infringement_checks")
-      .select(checkColumns)
-      .order("created_at", { ascending: false })
-      .range(from, from + 999);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    rows.push(...(data ?? []));
-    if ((data ?? []).length < 1000) break;
+  if (error) {
+    throw new Error(error.message);
   }
 
-  return rows;
+  return {
+    checks: data ?? [],
+    limit: safeLimit,
+    offset: safeOffset,
+    total: count ?? (data ?? []).length,
+  };
 }
 
 async function resolveOcrText(
@@ -365,12 +372,15 @@ async function resolveOcrText(
   return resolved;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = createSupabaseServiceRoleClient();
 
   try {
-    const checks = await fetchAllChecks(supabase);
-    return NextResponse.json({ checks });
+    const url = new URL(request.url);
+    const limit = Number(url.searchParams.get("limit") ?? 500);
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const page = await fetchChecksPage(supabase, { limit, offset });
+    return NextResponse.json(page);
   } catch (error) {
     return NextResponse.json(
       { checks: [], error: error instanceof Error ? error.message : "Failed to load infringement checks" },

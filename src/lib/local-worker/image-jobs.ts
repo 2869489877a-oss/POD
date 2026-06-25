@@ -218,19 +218,37 @@ async function getImageSize(output: WorkerFileInput, width: number | null, heigh
 }
 
 export async function updateJobCounts(supabase: SupabaseServiceClient, jobId: string) {
-  const { data, error } = await supabase
+  return updateJobCountsFromDatabase(supabase, jobId);
+}
+async function countJobItems(
+  supabase: SupabaseServiceClient,
+  jobId: string,
+  status?: "pending" | "processing" | "completed" | "failed",
+) {
+  let query = supabase
     .from("image_job_items")
-    .select("status")
+    .select("id", { count: "exact", head: true })
     .eq("job_id", jobId);
 
-  if (error) {
-    throw new Error(`刷新任务统计失败：${error.message}`);
+  if (status) {
+    query = query.eq("status", status);
   }
 
-  const items = (data ?? []) as Array<{ status: string }>;
-  const totalCount = items.length;
-  const successCount = items.filter((item) => item.status === "completed").length;
-  const failedCount = items.filter((item) => item.status === "failed").length;
+  const { count, error } = await query;
+
+  if (error) {
+    throw new Error(`鍒锋柊浠诲姟缁熻澶辫触锛?{error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+async function updateJobCountsFromDatabase(supabase: SupabaseServiceClient, jobId: string) {
+  const [totalCount, successCount, failedCount] = await Promise.all([
+    countJobItems(supabase, jobId),
+    countJobItems(supabase, jobId, "completed"),
+    countJobItems(supabase, jobId, "failed"),
+  ]);
   const doneCount = successCount + failedCount;
   const status: ImageJobStatus =
     doneCount < totalCount
@@ -252,7 +270,7 @@ export async function updateJobCounts(supabase: SupabaseServiceClient, jobId: st
     .eq("id", jobId);
 
   if (updateError) {
-    throw new Error(`更新任务统计失败：${updateError.message}`);
+    throw new Error(`鏇存柊浠诲姟缁熻澶辫触锛?{updateError.message}`);
   }
 
   return {
@@ -280,7 +298,7 @@ async function getWorkerItem(supabase: SupabaseServiceClient, itemId: string) {
     .single();
 
   if (error) {
-    throw new Error(`读取 worker 子任务失败：${error.message}`);
+    throw new Error(`璇诲彇 worker 瀛愪换鍔″け璐ワ細${error.message}`);
   }
 
   const row = data as unknown as JoinedWorkerItemRow;
@@ -288,7 +306,7 @@ async function getWorkerItem(supabase: SupabaseServiceClient, itemId: string) {
   const asset = asSingle(row.assets);
 
   if (!job || !asset) {
-    throw new Error("worker 子任务缺少任务或素材记录");
+    throw new Error("worker 瀛愪换鍔＄己灏戜换鍔℃垨绱犳潗璁板綍");
   }
 
   return { asset, item: row, job };
@@ -304,17 +322,17 @@ export async function createLocalWorkerImageJob(
     .in("id", input.assetIds);
 
   if (assetError) {
-    throw new Error(`读取素材失败：${assetError.message}`);
+    throw new Error(`璇诲彇绱犳潗澶辫触锛?{assetError.message}`);
   }
 
   const assets = (assetData ?? []) as unknown as AssetForWorker[];
   if (assets.length !== input.assetIds.length) {
-    throw new Error("部分素材不存在，请刷新后重试");
+    throw new Error("閮ㄥ垎绱犳潗涓嶅瓨鍦紝璇峰埛鏂板悗閲嶈瘯");
   }
 
   const missingOriginal = assets.find((asset) => !asset.original_url);
   if (missingOriginal) {
-    throw new Error(`素材缺少原图地址：${missingOriginal.filename}`);
+    throw new Error(`绱犳潗缂哄皯鍘熷浘鍦板潃锛?{missingOriginal.filename}`);
   }
 
   const options = buildOptions(input);
@@ -332,7 +350,7 @@ export async function createLocalWorkerImageJob(
     .single();
 
   if (jobError) {
-    throw new Error(`本地 worker 任务创建失败：${jobError.message}`);
+    throw new Error(`鏈湴 worker 浠诲姟鍒涘缓澶辫触锛?{jobError.message}`);
   }
 
   const jobId = (jobData as unknown as { id: string }).id;
@@ -354,7 +372,7 @@ export async function createLocalWorkerImageJob(
         status: "failed",
       })
       .eq("id", jobId);
-    throw new Error(`本地 worker 子任务创建失败：${itemError.message}`);
+    throw new Error(`鏈湴 worker 瀛愪换鍔″垱寤哄け璐ワ細${itemError.message}`);
   }
 
   await supabase.from("assets").update({ status: "processing" }).in(
@@ -390,7 +408,7 @@ export async function claimLocalWorkerItem(
     .limit(10);
 
   if (error) {
-    throw new Error(`领取本地 worker 任务失败：${error.message}`);
+    throw new Error(`棰嗗彇鏈湴 worker 浠诲姟澶辫触锛?{error.message}`);
   }
 
   for (const row of (data ?? []) as unknown as JoinedWorkerItemRow[]) {
@@ -629,7 +647,7 @@ export async function completeLocalWorkerItem(
     });
 
     if (rawDerivativeError) {
-      throw new Error(`粗提取结果保存失败：${rawDerivativeError.message}`);
+      throw new Error(`绮楁彁鍙栫粨鏋滀繚瀛樺け璐ワ細${rawDerivativeError.message}`);
     }
   }
 
@@ -656,7 +674,7 @@ export async function completeLocalWorkerItem(
     .single();
 
   if (derivativeError) {
-    throw new Error(`处理结果保存失败：${derivativeError.message}`);
+    throw new Error(`澶勭悊缁撴灉淇濆瓨澶辫触锛?{derivativeError.message}`);
   }
 
   const setPreferred = options.set_preferred === true;
@@ -675,7 +693,7 @@ export async function completeLocalWorkerItem(
 
   const { error: assetUpdateError } = await supabase.from("assets").update(assetUpdate).eq("id", asset.id);
   if (assetUpdateError) {
-    throw new Error(`素材更新失败：${assetUpdateError.message}`);
+    throw new Error(`绱犳潗鏇存柊澶辫触锛?{assetUpdateError.message}`);
   }
 
   const { error: itemUpdateError } = await supabase
@@ -688,7 +706,7 @@ export async function completeLocalWorkerItem(
     .eq("id", item.id);
 
   if (itemUpdateError) {
-    throw new Error(`子任务更新失败：${itemUpdateError.message}`);
+    throw new Error(`瀛愪换鍔℃洿鏂板け璐ワ細${itemUpdateError.message}`);
   }
 
   const jobCounts = await updateJobCounts(supabase, item.job_id);
@@ -804,7 +822,7 @@ export async function failLocalWorkerItem(
     .eq("id", item.id);
 
   if (itemUpdateError) {
-    throw new Error(`子任务失败状态更新失败：${itemUpdateError.message}`);
+    throw new Error(`瀛愪换鍔″け璐ョ姸鎬佹洿鏂板け璐ワ細${itemUpdateError.message}`);
   }
 
   await supabase.from("assets").update({ status: "failed" }).eq("id", asset.id);

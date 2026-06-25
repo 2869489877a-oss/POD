@@ -128,8 +128,11 @@ export function LandingPage() {
   useEffect(() => {
     const auth = searchParams.get("auth");
     if (auth === "login" || auth === "register") {
-      setModalMode(auth);
-      setModalOpen(true);
+      const timer = window.setTimeout(() => {
+        setModalMode(auth);
+        setModalOpen(true);
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [searchParams]);
 

@@ -268,61 +268,6 @@ async function canvasToFile(canvas: HTMLCanvasElement, baseName: string, options
   return new File([webpBlob], `${baseName}.webp`, { type: "image/webp" });
 }
 
-async function buildGridImage(items: GridSourceItem[], autoCrop: boolean, gridSize: number): Promise<BuiltGridImage> {
-  const totalCells = gridSize * gridSize;
-
-  if (items.length !== totalCells) {
-    throw new Error(`需要刚好 ${totalCells} 张图片才能生成 ${gridSize}x${gridSize} 拼图`);
-  }
-
-  const bitmaps = await Promise.all(items.map((item) => createImageBitmap(item.file)));
-  try {
-    const crops = bitmaps.map((bitmap) => (autoCrop ? getPrintCrop(bitmap.width, bitmap.height) : fullCrop(bitmap.width, bitmap.height)));
-    const cellWidth = Math.max(...crops.map((crop) => crop.width));
-    const cellHeight = Math.max(...crops.map((crop) => crop.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = cellWidth * gridSize;
-    canvas.height = cellHeight * gridSize;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("无法创建拼图画布");
-    }
-
-    context.imageSmoothingEnabled = false;
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-
-    bitmaps.forEach((bitmap, index) => {
-      const crop = crops[index];
-      const column = index % gridSize;
-      const row = Math.floor(index / gridSize);
-      const dx = column * cellWidth + Math.floor((cellWidth - crop.width) / 2);
-      const dy = row * cellHeight + Math.floor((cellHeight - crop.height) / 2);
-      context.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, dx, dy, crop.width, crop.height);
-    });
-
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = Math.max(8, Math.round(Math.min(cellWidth, cellHeight) * 0.008));
-    context.beginPath();
-    for (let line = 1; line < gridSize; line += 1) {
-      context.moveTo(cellWidth * line, 0);
-      context.lineTo(cellWidth * line, canvas.height);
-      context.moveTo(0, cellHeight * line);
-      context.lineTo(canvas.width, cellHeight * line);
-    }
-    context.stroke();
-
-    return {
-      file: await canvasToFile(canvas, `ai-print-grid-${Date.now()}`),
-      height: canvas.height,
-      width: canvas.width,
-    };
-  } finally {
-    bitmaps.forEach((bitmap) => bitmap.close());
-  }
-}
-
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -628,9 +573,12 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     let cancelled = false;
 
     if (items.length === 0) {
-      setPreviewImages([]);
+      const timer = window.setTimeout(() => {
+        if (!cancelled) setPreviewImages([]);
+      }, 0);
       return () => {
         cancelled = true;
+        window.clearTimeout(timer);
       };
     }
 
@@ -659,7 +607,9 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
     try {
       drawGridCanvas(gridCanvasRef.current, previewImages, draft, gridSize, selectedCellIndex);
     } catch (previewError) {
-      setError(previewError instanceof Error ? previewError.message : "Failed to draw grid preview");
+      window.setTimeout(() => {
+        setError(previewError instanceof Error ? previewError.message : "Failed to draw grid preview");
+      }, 0);
     }
   }, [gridDraft, gridSize, previewImages, selectedCellIndex, totalCells]);
 
@@ -685,12 +635,19 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       uploading: 13,
     };
 
-    setProgressPercent((current) => Math.max(current, progressFloors[status]));
+    const initialTimer = window.setTimeout(() => {
+      setProgressPercent((current) => Math.max(current, progressFloors[status]));
+    }, 0);
 
     if (!running) {
-      if (status === "idle") setProgressPercent(0);
-      if (status === "completed") setProgressPercent(100);
-      return;
+      const finalTimer = window.setTimeout(() => {
+        if (status === "idle") setProgressPercent(0);
+        if (status === "completed") setProgressPercent(100);
+      }, 0);
+      return () => {
+        window.clearTimeout(initialTimer);
+        window.clearTimeout(finalTimer);
+      };
     }
 
     const intervalMs = status === "generating" ? (gridSize === 3 ? 1800 : 1200) : 450;
@@ -699,7 +656,10 @@ export function AiGridPrintGenerator({ gridSize = 2 }: AiGridPrintGeneratorProps
       setProgressPercent((current) => Math.min(progressCeilings[status], Math.max(progressFloors[status], current + step)));
     }, intervalMs);
 
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
   }, [gridSize, progressPercent, running, status]);
 
   function resetGeneratedState(options: { clearDraft?: boolean } = {}) {

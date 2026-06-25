@@ -81,7 +81,7 @@ type QueuedMockupJobItem = {
 type QueuedMockupJob = {
   failed_count: number;
   id: string;
-  items: QueuedMockupJobItem[];
+  items?: QueuedMockupJobItem[];
   status: string;
   success_count: number;
   total_count: number;
@@ -168,7 +168,7 @@ function buildMockupResultFromQueuedJob(
   return {
     failed_count: job.failed_count,
     id: job.id,
-    outputs: job.items.map((item) => {
+    outputs: (job.items ?? []).map((item) => {
       const asset = assetById.get(item.asset_id);
       const outputImages =
         Array.isArray(item.output_images) && item.output_images.length > 0
@@ -257,7 +257,7 @@ export function MockupJobsManager({
     for (let attempt = 0; attempt < MOCKUP_MAX_POLLS; attempt += 1) {
       await sleep(MOCKUP_POLL_INTERVAL_MS);
 
-      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, {
+      const response = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}?summary=1`, {
         cache: "no-store",
       });
       const data = (await response.json()) as QueuedMockupJobResponse;
@@ -279,7 +279,18 @@ export function MockupJobsManager({
       );
 
       if (TERMINAL_MOCKUP_STATUSES.has(result.status)) {
-        return result;
+        const finalResponse = await fetch(`/api/image-jobs/${encodeURIComponent(jobId)}`, {
+          cache: "no-store",
+        });
+        const finalData = (await finalResponse.json()) as QueuedMockupJobResponse;
+
+        if (!finalResponse.ok || !finalData.job) {
+          throw new Error(finalData.error ?? t("璇诲彇濂楀浘浠诲姟杩涘害澶辫触", "Failed to read mockup job progress"));
+        }
+
+        const finalResult = buildMockupResultFromQueuedJob(finalData.job, assetById);
+        setJobResult(finalResult);
+        return finalResult;
       }
     }
 

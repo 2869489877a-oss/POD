@@ -6,7 +6,7 @@ import Link from "next/link";
 import { type DragEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ImageCropDialog } from "@/components/image-crop-dialog";
-import { readAiGenerateImageResult, type AiGenerateImageClientResult } from "@/lib/ai-image/client-jobs";
+import { readAiGenerateImageResult } from "@/lib/ai-image/client-jobs";
 import { ACCENT_COLORS, useSettings } from "@/lib/settings/context";
 import { getUploadedImageUrl, type UploadApiResult } from "@/lib/upload-result";
 
@@ -35,8 +35,6 @@ type BatchItem = {
   status: BatchStatus;
   uploadUrl?: string;
 };
-
-type GenerateResult = AiGenerateImageClientResult;
 
 type GenerationJob = {
   asset_id?: string | null;

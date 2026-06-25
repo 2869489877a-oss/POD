@@ -105,7 +105,6 @@ async function uploadFile(
   _supabase: SupabaseServiceClient,
   path: string,
   content: Buffer,
-  _contentType: string,
 ) {
   return (await saveLocalAssetAtPath({
     buffer: content,
@@ -210,19 +209,16 @@ async function insertCutoutDerivative(
     supabase,
     buildDerivativePath(asset.filename, "cutout", "png"),
     result.cutoutPng,
-    "image/png",
   );
   const previewUrl = await uploadFile(
     supabase,
     buildDerivativePath(asset.filename, "preview", "jpg"),
     result.previewJpg,
-    "image/jpeg",
   );
   const maskUrl = await uploadFile(
     supabase,
     buildDerivativePath(asset.filename, "mask", "png"),
     result.maskPng,
-    "image/png",
   );
 
   const { data: derivativeData, error: derivativeError } = await supabase
@@ -289,25 +285,21 @@ async function insertPrintExtractionDerivatives(
     supabase,
     buildDerivativePath(asset.filename, "raw", "png"),
     result.rawPng,
-    "image/png",
   );
   const finalUrl = await uploadFile(
     supabase,
     buildDerivativePath(asset.filename, "final", "png"),
     result.finalPng,
-    "image/png",
   );
   const previewUrl = await uploadFile(
     supabase,
     buildDerivativePath(asset.filename, "preview", "jpg"),
     result.previewJpg,
-    "image/jpeg",
   );
   const maskUrl = await uploadFile(
     supabase,
     buildDerivativePath(asset.filename, "mask", "png"),
     result.maskPng,
-    "image/png",
   );
 
   const { error: rawDerivativeError } = await supabase.from("image_derivatives").insert({

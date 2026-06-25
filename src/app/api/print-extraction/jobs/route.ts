@@ -131,7 +131,6 @@ async function uploadImage(
   _supabase: SupabaseServiceClient,
   path: string,
   buffer: Buffer,
-  _contentType: string,
 ): Promise<string> {
   return (await saveLocalAssetAtPath({
     buffer,
@@ -178,10 +177,10 @@ async function processAsset(
     const previewPath = `derivatives/${folder}/${id}-preview.jpg`;
     const maskPath = `derivatives/${folder}/${id}-mask.png`;
     const [rawUrl, finalUrl, previewUrl, maskUrl] = await Promise.all([
-      uploadImage(supabase, rawPath, result.rawPng, "image/png"),
-      uploadImage(supabase, finalPath, result.finalPng, "image/png"),
-      uploadImage(supabase, previewPath, result.previewJpg, "image/jpeg"),
-      uploadImage(supabase, maskPath, result.maskPng, "image/png"),
+      uploadImage(supabase, rawPath, result.rawPng),
+      uploadImage(supabase, finalPath, result.finalPng),
+      uploadImage(supabase, previewPath, result.previewJpg),
+      uploadImage(supabase, maskPath, result.maskPng),
     ]);
 
     const { data: derivativeRows, error: derivativeError } = await supabase

@@ -68,7 +68,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    loadProfile();
+    const timer = window.setTimeout(() => {
+      void loadProfile();
+    }, 0);
 
     const supabase = createSupabaseBrowserClient();
     const {
@@ -77,7 +79,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loadProfile();
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      window.clearTimeout(timer);
+      subscription.unsubscribe();
+    };
   }, [loadProfile]);
 
   const signOut = useCallback(async () => {
