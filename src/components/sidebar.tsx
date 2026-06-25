@@ -97,7 +97,7 @@ export function Sidebar() {
         <BrandLogo size={28} />
         <div className="min-w-0">
           <h1 className={`truncate text-[13px] font-semibold leading-tight ${isDark ? "text-white" : "text-zinc-900"}`}>
-            <span className="bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
+            <span className="pod-wordmark bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 bg-clip-text font-bold text-transparent">POD</span>
             {t(" 批处理", " Batch")}
           </h1>
           <p className={`text-[10px] leading-tight ${isDark ? "text-zinc-500" : "text-zinc-400"}`}>Internal</p>
