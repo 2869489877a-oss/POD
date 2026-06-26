@@ -3,7 +3,10 @@ export type ImageDerivativeType =
   | "print_extract_final"
   | "cutout"
   | "mask"
-  | "preview";
+  | "preview"
+  | "ai_background"
+  | "ai_pattern"
+  | "ai_applied_pattern";
 
 export type ImageDerivativeStatus = "pending" | "processing" | "completed" | "failed";
 

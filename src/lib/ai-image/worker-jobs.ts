@@ -31,7 +31,7 @@ export type AiGenerateImageJobInput = {
 
 type AiImageJobRow = {
   id: string;
-  provider_id: string;
+  provider_id: string | null;
   provider_type: string;
   model_id: string;
   prompt: string;
@@ -90,7 +90,7 @@ function inputFromJobRow(row: AiImageJobRow): AiGenerateImageJobInput {
     height: row.height,
     productDraftId: optionalString(options.product_draft_id) ?? null,
     prompt: row.prompt,
-    providerId: row.provider_id,
+    providerId: row.provider_id ?? undefined,
     referenceUrl: optionalString(options.reference_url),
     routingProfile: optionalString(options.routing_profile),
     saveToAssets: boolValue(options.save_to_assets, true),
