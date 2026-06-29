@@ -444,10 +444,10 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 入口：
 
 ```text
-/assets
+/image-fission
 ```
 
-在素材库选择多张图片后，点击“批量裂变”创建处理任务。当前支持五种本地裂变效果：
+也可以在 `/assets` 素材库选择多张图片后，点击“批量裂变”创建处理任务。当前支持五种本地裂变效果：
 
 - 镜像矩阵：生成 2x2 镜像组合。
 - 万花筒：通过镜像和旋转生成中心对称图案。
