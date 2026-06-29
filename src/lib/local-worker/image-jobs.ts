@@ -10,7 +10,7 @@ import type { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
-export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup" | "resize" | "infringement_check";
+export type LocalWorkerJobType = "cutout" | "print_extraction" | "mockup" | "resize" | "fission" | "infringement_check";
 type ImageJobStatus = "pending" | "processing" | "completed" | "failed" | "partial_failed";
 
 type AssetForWorker = {
@@ -112,11 +112,17 @@ function buildMockupOutputPath(jobId: string, itemId: string, filename: string, 
   return `mockup-outputs/${datePath}/${jobId}/${itemId}/${randomUUID()}-${safeName}-${paddedIndex}.png`;
 }
 
-function buildResizeOutputPath(jobId: string, itemId: string, filename: string, extension: "jpg" | "png") {
+function buildProcessedOutputPath(
+  jobType: "resize" | "fission",
+  jobId: string,
+  itemId: string,
+  filename: string,
+  extension: "jpg" | "png",
+) {
   const datePath = new Date().toISOString().slice(0, 10);
   const safeName = sanitizeFilename(filename).replace(/\.[^.]+$/, "");
 
-  return `processed/resize/${datePath}/${jobId}/${itemId}-${randomUUID()}-${safeName}.${extension}`;
+  return `processed/${jobType}/${datePath}/${jobId}/${itemId}-${randomUUID()}-${safeName}.${extension}`;
 }
 
 function outputExtension(options: unknown, file: WorkerFileInput): "jpg" | "png" {
@@ -492,10 +498,10 @@ export async function completeLocalWorkerItem(
   const { asset, item, job } = await getWorkerItem(supabase, itemId);
   const options = job.options ?? {};
 
-  if (job.job_type === "resize") {
+  if (job.job_type === "resize" || job.job_type === "fission") {
     const outputUrl = await uploadFile(
       supabase,
-      buildResizeOutputPath(item.job_id, item.id, asset.filename, outputExtension(options, input.output)),
+      buildProcessedOutputPath(job.job_type, item.job_id, item.id, asset.filename, outputExtension(options, input.output)),
       input.output,
     );
 
@@ -508,7 +514,7 @@ export async function completeLocalWorkerItem(
       .eq("id", asset.id);
 
     if (assetUpdateError) {
-      throw new Error(`resize asset update failed: ${assetUpdateError.message}`);
+      throw new Error(`${job.job_type} asset update failed: ${assetUpdateError.message}`);
     }
 
     const { error: itemUpdateError } = await supabase
@@ -521,7 +527,7 @@ export async function completeLocalWorkerItem(
       .eq("id", item.id);
 
     if (itemUpdateError) {
-      throw new Error(`resize item update failed: ${itemUpdateError.message}`);
+      throw new Error(`${job.job_type} item update failed: ${itemUpdateError.message}`);
     }
 
     const jobCounts = await updateJobCounts(supabase, item.job_id);
@@ -746,7 +752,7 @@ export async function failLocalWorkerItem(
     return updateJobCounts(supabase, item.job_id);
   }
 
-  if (job.job_type === "resize") {
+  if (job.job_type === "resize" || job.job_type === "fission") {
     const { error: itemUpdateError } = await supabase
       .from("image_job_items")
       .update({
@@ -756,10 +762,12 @@ export async function failLocalWorkerItem(
       .eq("id", item.id);
 
     if (itemUpdateError) {
-      throw new Error(`resize item fail update failed: ${itemUpdateError.message}`);
+      throw new Error(`${job.job_type} item fail update failed: ${itemUpdateError.message}`);
     }
 
-    await supabase.from("assets").update({ status: "failed" }).eq("id", asset.id);
+    if (job.job_type === "resize") {
+      await supabase.from("assets").update({ status: "failed" }).eq("id", asset.id);
+    }
 
     const jobCounts = await updateJobCounts(supabase, item.job_id);
     if (jobCounts.status === "completed" || jobCounts.status === "failed" || jobCounts.status === "partial_failed") {

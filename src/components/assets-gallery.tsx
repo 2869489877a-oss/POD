@@ -14,6 +14,13 @@ import {
   resizePresets,
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
+import {
+  fissionEffects,
+  fissionOutputSizes,
+  type FissionEffectKey,
+  type FissionOutputFormat,
+  type FissionOutputSizeKey,
+} from "@/lib/image-processing/fission-effects";
 
 type AssetStatus = "uploaded" | "processing" | "processed" | "failed";
 type CopyrightStatus = "unknown" | "owned" | "commercial_ok" | "risky" | "forbidden";
@@ -110,6 +117,9 @@ type CreateResizeJobResponse = {
   };
 };
 
+type FissionJobProgress = ResizeJobProgress;
+type CreateFissionJobResponse = CreateResizeJobResponse;
+
 type AssetsGalleryProps = {
   initialAssets: Asset[];
   initialError?: string | null;
@@ -184,6 +194,9 @@ const statusStyles: Record<AssetStatus, string> = {
 };
 
 const resizePresetOptions: ResizePresetKey[] = ["tshirt-print", "square-product"];
+const fissionEffectOptions = Object.keys(fissionEffects) as FissionEffectKey[];
+const fissionOutputSizeOptions = Object.keys(fissionOutputSizes) as FissionOutputSizeKey[];
+const fissionOutputFormatOptions: FissionOutputFormat[] = ["png", "jpg"];
 
 const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }> = {
   completed: { zh: "已完成", en: "Completed" },
@@ -235,12 +248,22 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [resizeError, setResizeError] = useState<string | null>(null);
   const [resizeMessage, setResizeMessage] = useState<string | null>(null);
   const [isResizeRunning, setIsResizeRunning] = useState(false);
+  const [isFissionDialogOpen, setIsFissionDialogOpen] = useState(false);
+  const [fissionEffectKey, setFissionEffectKey] = useState<FissionEffectKey>("mirror_grid");
+  const [fissionOutputSize, setFissionOutputSize] = useState<FissionOutputSizeKey>("square_2048");
+  const [fissionOutputFormat, setFissionOutputFormat] = useState<FissionOutputFormat>("png");
+  const [fissionStrength, setFissionStrength] = useState(70);
+  const [fissionJob, setFissionJob] = useState<FissionJobProgress | null>(null);
+  const [fissionError, setFissionError] = useState<string | null>(null);
+  const [fissionMessage, setFissionMessage] = useState<string | null>(null);
+  const [isFissionRunning, setIsFissionRunning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingAssetIds, setDeletingAssetIds] = useState<Set<string>>(new Set());
   const [deletePhase, setDeletePhase] = useState<"checking" | "deleting" | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const preloadedImageUrls = useRef<Set<string>>(new Set());
   const selectedCount = selectedIds.size;
+  const isBatchProcessing = isResizeRunning || isFissionRunning;
   const totalPages = Math.ceil(total / 24);
 
   const selectedAssets = useMemo(
@@ -259,6 +282,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       ? Math.round((resizeCompletedCount / resizeJob.total_count) * 100)
       : 0;
   const failedResizeItems = resizeJob?.items.filter((item) => item.status === "failed") ?? [];
+  const fissionCompletedCount = fissionJob
+    ? fissionJob.success_count + fissionJob.failed_count
+    : 0;
+  const fissionProgressPercent =
+    fissionJob && fissionJob.total_count > 0
+      ? Math.round((fissionCompletedCount / fissionJob.total_count) * 100)
+      : 0;
+  const failedFissionItems = fissionJob?.items.filter((item) => item.status === "failed") ?? [];
   const detailOverlayClass = isDark ? "bg-black/75" : "bg-zinc-950/60";
   const detailPanelClass = isDark
     ? "border border-white/[0.08] bg-[#0f0f10] text-zinc-100 shadow-2xl shadow-black/50"
@@ -333,6 +364,32 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isResizeDialogOpen, isResizeRunning]);
+
+  useEffect(() => {
+    if (!isFissionDialogOpen) {
+      return;
+    }
+
+    const mainScroll = document.getElementById("pod-main-scroll");
+    const originalOverflow = document.body.style.overflow;
+    const originalMainOverflow = mainScroll?.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (mainScroll) mainScroll.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !isFissionRunning) {
+        setIsFissionDialogOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      if (mainScroll) mainScroll.style.overflow = originalMainOverflow ?? "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFissionDialogOpen, isFissionRunning]);
 
   async function fetchAssets(
     nextStatus: "all" | AssetStatus = status,
@@ -617,6 +674,121 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     return null;
   }
 
+  async function ensureFissionWorkerReady() {
+    try {
+      const response = await fetch("/api/local-worker/status", { cache: "no-store" });
+      const data = (await response.json()) as WorkerStatusResponse;
+
+      if (!response.ok) {
+        return t("无法读取 worker 状态，裂变任务仍会进入队列。", "Could not read worker status. The fission job will still be queued.");
+      }
+
+      if (data.online === false) {
+        throw new Error(t("本地 worker 未在线，请先启动 pod-ai-worker。", "Local worker is offline. Start pod-ai-worker first."));
+      }
+
+      if (data.missing_job_types?.includes("fission") || data.blocked_job_types?.includes("fission")) {
+        throw new Error(t("本地 worker 当前没有启用 fission 任务类型，请检查 LOCAL_IMAGE_WORKER_JOB_TYPES。", "Local worker does not have fission enabled. Check LOCAL_IMAGE_WORKER_JOB_TYPES."));
+      }
+    } catch (workerError) {
+      if (
+        workerError instanceof Error
+        && (workerError.message.includes("pod-ai-worker") || workerError.message.includes("LOCAL_IMAGE_WORKER_JOB_TYPES"))
+      ) {
+        throw workerError;
+      }
+
+      return t("暂时无法读取 worker 状态，裂变任务仍会进入队列。", "Could not read worker status. The fission job will still be queued.");
+    }
+
+    return null;
+  }
+
+  async function fetchFissionJob(jobId: string) {
+    return fetchResizeJob(jobId) as Promise<FissionJobProgress>;
+  }
+
+  async function startFissionJob() {
+    const assetIds = Array.from(selectedIds);
+
+    if (assetIds.length === 0) {
+      setFissionError(t("请先选择要裂变的图片", "Please select images to create fission variants"));
+      return;
+    }
+
+    setIsFissionRunning(true);
+    setFissionError(null);
+    setFissionMessage(t("正在创建批量裂变任务...", "Creating batch fission job..."));
+    setFissionJob(null);
+
+    try {
+      const workerWarning = await ensureFissionWorkerReady();
+      if (workerWarning) {
+        setFissionMessage(workerWarning);
+      }
+
+      const createResponse = await fetch("/api/image-jobs/fission", {
+        body: JSON.stringify({
+          asset_ids: assetIds,
+          effect_key: fissionEffectKey,
+          output_format: fissionOutputFormat,
+          output_size: fissionOutputSize,
+          strength: fissionStrength,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+      const createData = (await createResponse.json()) as CreateFissionJobResponse;
+
+      if (!createResponse.ok || !createData.job) {
+        throw new Error(createData.error ?? t("裂变任务创建失败", "Failed to create fission job"));
+      }
+
+      const jobId = createData.job.id;
+      setFissionJob({
+        ...createData.job,
+        items: [],
+      });
+      setFissionMessage(t(`裂变任务已创建：${jobId}，等待 worker 处理...`, `Fission job created: ${jobId}. Waiting for the worker...`));
+      setIsFissionDialogOpen(false);
+
+      for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
+        await sleep(RESIZE_POLL_INTERVAL_MS);
+
+        const job = await fetchFissionJob(jobId);
+        const completedCount = job.success_count + job.failed_count;
+        const processingCount = job.items.filter((item) => item.status === "processing").length;
+        const pendingCount = job.items.filter((item) => item.status === "pending").length;
+        const percent = job.total_count > 0 ? Math.min(100, Math.round((completedCount / job.total_count) * 100)) : 0;
+
+        setFissionJob(job);
+        setFissionMessage(
+          TERMINAL_RESIZE_STATUSES.has(job.status)
+            ? t(`批量裂变完成：${completedCount}/${job.total_count}`, `Batch fission complete: ${completedCount}/${job.total_count}`)
+            : processingCount > 0
+              ? t(`worker 裂变处理中：完成 ${completedCount}/${job.total_count}，运行中 ${processingCount}，${percent}%`, `Worker fission processing: done ${completedCount}/${job.total_count}, running ${processingCount}, ${percent}%`)
+              : attempt >= 15 && completedCount === 0
+                ? t(`裂变任务已排队但 worker 暂未领取：待处理 ${pendingCount}/${job.total_count}。请检查 pod-ai-worker 日志。`, `Fission job is queued but worker has not claimed it yet: pending ${pendingCount}/${job.total_count}. Check pod-ai-worker logs.`)
+                : t(`裂变任务已排队：待处理 ${pendingCount}/${job.total_count}，等待 worker 领取...`, `Fission job queued: pending ${pendingCount}/${job.total_count}, waiting for worker...`),
+        );
+
+        if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
+          await fetchAssets(status, copyrightStatus, assetSource);
+          return;
+        }
+      }
+
+      setFissionMessage(t("批量裂变仍在后台处理，可稍后到图片任务页查看。", "Batch fission is still running. Check Image Jobs later."));
+    } catch (requestError) {
+      setFissionError(requestError instanceof Error ? requestError.message : t("裂变任务处理失败", "Fission job failed"));
+      setFissionMessage(null);
+    } finally {
+      setIsFissionRunning(false);
+    }
+  }
+
   async function startResizeJob() {
     const assetIds = Array.from(selectedIds);
 
@@ -793,15 +965,26 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               setResizeError(null);
               setIsResizeDialogOpen(true);
             }}
-            disabled={selectedCount === 0 || isResizeRunning}
+            disabled={selectedCount === 0 || isBatchProcessing}
             className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
             {t("批量改尺寸", "Batch Resize")}
           </button>
           <button
             type="button"
+            onClick={() => {
+              setFissionError(null);
+              setIsFissionDialogOpen(true);
+            }}
+            disabled={selectedCount === 0 || isBatchProcessing}
+            className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+          >
+            {t("批量裂变", "Batch Fission")}
+          </button>
+          <button
+            type="button"
             onClick={() => void deleteAssetIds(Array.from(selectedIds))}
-            disabled={selectedCount === 0 || isDeleting || isResizeRunning}
+            disabled={selectedCount === 0 || isDeleting || isBatchProcessing}
             className="rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
           >
             {isDeleting ? t("删除中...", "Deleting...") : t("批量删除", "Batch Delete")}
@@ -862,6 +1045,62 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
               </div>
               <div className="divide-y divide-red-100">
                 {failedResizeItems.map((item) => (
+                  <div key={item.id} className="px-4 py-2 text-sm text-red-700">
+                    {item.error_message ?? t("未知错误", "Unknown error")}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {fissionJob || fissionMessage || fissionError ? (
+        <section className="rounded-md border border-cyan-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-950">{t("裂变处理进度", "Fission Progress")}</h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                {fissionMessage ?? t("等待裂变任务结果", "Waiting for fission job result")}
+              </p>
+            </div>
+            {fissionJob ? (
+              <span className="rounded-md bg-cyan-50 px-3 py-1.5 text-sm font-medium text-cyan-700">
+                {t(resizeJobStatusLabels[fissionJob.status].zh, resizeJobStatusLabels[fissionJob.status].en)}
+              </span>
+            ) : null}
+          </div>
+
+          {fissionJob ? (
+            <div className="mt-4 space-y-3">
+              <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
+                <div
+                  className="h-full rounded-full bg-cyan-600 transition-all"
+                  style={{ width: `${fissionJob.status === "pending" || fissionJob.status === "processing" ? Math.max(2, fissionProgressPercent) : fissionProgressPercent}%` }}
+                />
+              </div>
+              <div className="grid gap-3 text-sm text-zinc-600 sm:grid-cols-4">
+                <span>{t("总数：", "Total: ")}{fissionJob.total_count}</span>
+                <span>{t("已完成：", "Done: ")}{fissionCompletedCount}</span>
+                <span>{t("成功：", "Success: ")}{fissionJob.success_count}</span>
+                <span>{t("失败：", "Failed: ")}{fissionJob.failed_count}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {fissionError ? (
+            <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {fissionError}
+            </div>
+          ) : null}
+
+          {failedFissionItems.length > 0 ? (
+            <div className="mt-4 rounded-md border border-red-200">
+              <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm font-medium text-red-700">
+                {t("裂变失败原因", "Fission Failure Reasons")}
+              </div>
+              <div className="divide-y divide-red-100">
+                {failedFissionItems.map((item) => (
                   <div key={item.id} className="px-4 py-2 text-sm text-red-700">
                     {item.error_message ?? t("未知错误", "Unknown error")}
                   </div>
@@ -1031,7 +1270,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([asset.id])}
-                    disabled={isDeleting || isResizeRunning}
+                    disabled={isDeleting || isBatchProcessing}
                     className="ui-press w-full rounded-md border border-red-300 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:text-zinc-400"
                   >
                     {t("删除素材", "Delete Asset")}
@@ -1179,6 +1418,226 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
       ), document.body) : null}
 
+      {isFissionDialogOpen && isMounted ? createPortal((
+        <div
+          className={[
+            "ui-modal-overlay fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6",
+            isDark ? "bg-black/75" : "bg-zinc-950/60",
+          ].join(" ")}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="fission-dialog-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isFissionRunning) {
+              setIsFissionDialogOpen(false);
+            }
+          }}
+        >
+          <div
+            className={[
+              "ui-modal-panel relative flex max-h-[calc(100vh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-md border shadow-2xl sm:max-h-[calc(100vh-3rem)]",
+              isDark
+                ? "border-white/[0.08] bg-[#0f0f10] text-zinc-100 shadow-black/50"
+                : "border-zinc-200 bg-white text-zinc-950 shadow-black/20",
+            ].join(" ")}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setIsFissionDialogOpen(false)}
+              disabled={isFissionRunning}
+              className={[
+                "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border text-lg font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
+                isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
+              ].join(" ")}
+              aria-label={t("关闭批量裂变", "Close batch fission")}
+            >
+              x
+            </button>
+
+            <div className={[
+              "shrink-0 border-b px-5 py-4 pr-16 sm:px-6",
+              isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
+            ].join(" ")}>
+              <h3 id="fission-dialog-title" className={["text-base font-semibold", isDark ? "text-white" : "text-zinc-950"].join(" ")}>
+                {t("批量裂变", "Batch Fission")}
+              </h3>
+              <p className={["mt-1 text-sm", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
+                {t(`已选择 ${selectedCount} 张图片，裂变结果会写入素材 processed_url。`, `${selectedCount} image(s) selected. Fission results will be written to processed_url.`)}
+              </p>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+              <div>
+                <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                  {t("裂变效果", "Fission Effect")}
+                </p>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {fissionEffectOptions.map((effectKey) => {
+                    const effect = fissionEffects[effectKey];
+                    const isSelected = fissionEffectKey === effectKey;
+
+                    return (
+                      <label
+                        key={effectKey}
+                        className={[
+                          "ui-hover-sheen flex cursor-pointer gap-3 rounded-md border p-4 transition",
+                          isSelected
+                            ? isDark
+                              ? "border-cyan-300/50 bg-cyan-400/10"
+                              : "border-cyan-700 bg-cyan-50"
+                            : isDark
+                              ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                              : "border-zinc-200 hover:bg-zinc-50",
+                        ].join(" ")}
+                      >
+                        <input
+                          type="radio"
+                          name="fission-effect"
+                          value={effectKey}
+                          checked={isSelected}
+                          onChange={() => setFissionEffectKey(effectKey)}
+                          className="mt-1 h-4 w-4 border-zinc-300"
+                        />
+                        <span>
+                          <span className={["block text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                            {t(effect.label, effect.labelEn)}
+                          </span>
+                          <span className={["mt-1 block text-sm", isDark ? "text-zinc-400" : "text-zinc-600"].join(" ")}>
+                            {t(effect.description, effect.descriptionEn)}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
+                <div>
+                  <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                    {t("输出尺寸", "Output Size")}
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {fissionOutputSizeOptions.map((sizeKey) => {
+                      const size = fissionOutputSizes[sizeKey];
+                      const isSelected = fissionOutputSize === sizeKey;
+
+                      return (
+                        <label
+                          key={sizeKey}
+                          className={[
+                            "flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition",
+                            isSelected
+                              ? isDark
+                                ? "border-cyan-300/50 bg-cyan-400/10 text-cyan-100"
+                                : "border-cyan-700 bg-cyan-50 text-cyan-900"
+                              : isDark
+                                ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                                : "border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                          ].join(" ")}
+                        >
+                          <input
+                            type="radio"
+                            name="fission-output-size"
+                            value={sizeKey}
+                            checked={isSelected}
+                            onChange={() => setFissionOutputSize(sizeKey)}
+                            className="h-4 w-4 border-zinc-300"
+                          />
+                          <span>{t(size.label, size.labelEn)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                      {t("输出格式", "Output Format")}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {fissionOutputFormatOptions.map((format) => (
+                        <button
+                          key={format}
+                          type="button"
+                          onClick={() => setFissionOutputFormat(format)}
+                          className={[
+                            "rounded-md border px-3 py-2 text-sm font-medium uppercase transition",
+                            fissionOutputFormat === format
+                              ? isDark
+                                ? "border-cyan-300/50 bg-cyan-400/10 text-cyan-100"
+                                : "border-cyan-700 bg-cyan-50 text-cyan-900"
+                              : isDark
+                                ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                                : "border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                          ].join(" ")}
+                        >
+                          {format}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                        {t("裂变强度", "Strength")}
+                      </p>
+                      <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
+                        {fissionStrength}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={fissionStrength}
+                      onChange={(event) => setFissionStrength(Number(event.target.value))}
+                      className="mt-3 w-full accent-cyan-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className={[
+                "rounded-md border p-4 text-sm leading-6",
+                isDark ? "border-cyan-300/15 bg-cyan-400/10 text-cyan-100" : "border-cyan-200 bg-cyan-50 text-cyan-800",
+              ].join(" ")}>
+                {t("裂变会基于当前优先图生成新的处理图，不覆盖原图；PNG 保留透明区域，JPG 会自动铺白底。", "Fission uses the current preferred image and keeps originals intact. PNG preserves transparency; JPG is flattened on white.")}
+              </div>
+            </div>
+
+            <div className={[
+              "flex shrink-0 justify-end gap-3 border-t px-5 py-4 sm:px-6",
+              isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
+            ].join(" ")}>
+              <button
+                type="button"
+                onClick={() => setIsFissionDialogOpen(false)}
+                disabled={isFissionRunning}
+                className={[
+                  "rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
+                  isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
+                ].join(" ")}
+              >
+                {t("取消", "Cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void startFissionJob()}
+                disabled={isFissionRunning || selectedCount === 0}
+                className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              >
+                {isFissionRunning ? t("裂变处理中...", "Processing...") : t("开始裂变", "Start Fission")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body) : null}
+
       {selectedAsset && isMounted ? createPortal((
         <div
           className={["animate-fade-in fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto px-3 py-4 sm:px-6 sm:py-6", detailOverlayClass].join(" ")}
@@ -1229,7 +1688,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([selectedAsset.id])}
-                    disabled={isDeleting || isResizeRunning}
+                    disabled={isDeleting || isBatchProcessing}
                     className={["rounded-md border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed", detailDangerButtonClass].join(" ")}
                   >
                     {isDeleting ? t("删除中...", "Deleting...") : t("删除", "Delete")}
@@ -1374,7 +1833,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([selectedAsset.id])}
-                    disabled={isDeleting || isResizeRunning}
+                    disabled={isDeleting || isBatchProcessing}
                     className={["rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed", detailDangerButtonClass].join(" ")}
                   >
                     {isDeleting ? t("删除中...", "Deleting...") : t("删除素材", "Delete Asset")}

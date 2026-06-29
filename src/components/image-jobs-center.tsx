@@ -30,7 +30,7 @@ export type ImageJob = {
   error_message: string | null;
   failed_count: number;
   id: string;
-  job_type: "resize" | "cutout" | "print_extraction" | "enhance" | "mockup" | "infringement_check";
+  job_type: "resize" | "fission" | "cutout" | "print_extraction" | "enhance" | "mockup" | "infringement_check";
   status: ImageJobStatus;
   success_count: number;
   total_count: number;
@@ -114,6 +114,7 @@ type ImageJobsCenterProps = {
 const jobTypeLabels: Record<ImageJob["job_type"], { zh: string; en: string }> = {
   cutout: { zh: "抠图", en: "Cutout" },
   enhance: { zh: "清晰化", en: "Enhance" },
+  fission: { zh: "裂变", en: "Fission" },
   infringement_check: { zh: "侵权检测", en: "IP Check" },
   mockup: { zh: "套图", en: "Mockup" },
   print_extraction: { zh: "印花提取", en: "Print Extract" },
@@ -126,6 +127,7 @@ const workerJobTypeLabels: Record<WorkerJobType, { zh: string; en: string }> = {
   ai_split_grid: { zh: "AI 拆图", en: "AI Split Grid" },
   cutout: jobTypeLabels.cutout,
   export_images_zip: { zh: "图片 ZIP 导出", en: "Image ZIP Export" },
+  fission: jobTypeLabels.fission,
   infringement_check: jobTypeLabels.infringement_check,
   mockup: jobTypeLabels.mockup,
   print_extraction: jobTypeLabels.print_extraction,
@@ -155,7 +157,7 @@ const statusStyles: Record<ImageJobStatus | ImageJobItem["status"], string> = {
   processing: "bg-sky-50 text-sky-700",
 };
 
-const jobTypeOptions: Array<"all" | ImageJob["job_type"]> = ["all", "infringement_check", "print_extraction", "cutout", "resize", "enhance", "mockup"];
+const jobTypeOptions: Array<"all" | ImageJob["job_type"]> = ["all", "infringement_check", "print_extraction", "cutout", "resize", "fission", "enhance", "mockup"];
 const jobStatusOptions: Array<"all" | ImageJobStatus> = ["all", "processing", "partial_failed", "failed", "completed", "pending"];
 
 function formatDate(value: string, locale: string) {

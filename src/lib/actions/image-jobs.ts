@@ -20,7 +20,7 @@ type QueueMaintenanceResult = {
   requeued?: number;
 };
 
-const WORKER_IMAGE_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
+const WORKER_IMAGE_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"] as const;
 const QUEUE_MAINTENANCE_LIMIT = 200;
 const STALE_JOB_MINUTES = 45;
 

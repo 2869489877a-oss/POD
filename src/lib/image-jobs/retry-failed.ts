@@ -6,7 +6,7 @@ type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 
 type ImageJobForRetry = {
   id: string;
-  job_type: "resize" | "mockup" | "cutout" | "print_extraction" | "enhance" | "infringement_check";
+  job_type: "resize" | "fission" | "mockup" | "cutout" | "print_extraction" | "enhance" | "infringement_check";
   options: unknown;
 };
 
@@ -172,6 +172,7 @@ export async function retryFailedImageJobItems(
 
   if (
     job.job_type !== "resize" &&
+    job.job_type !== "fission" &&
     job.job_type !== "mockup" &&
     job.job_type !== "cutout" &&
     job.job_type !== "print_extraction" &&

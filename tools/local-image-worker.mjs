@@ -23,7 +23,7 @@ const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || 
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 3);
 const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
-const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "infringement_check"]);
+const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"]);
 const ASSET_DELETE_JOB_TYPE = "asset_delete";
 const COLLECTOR_OPERATION_JOB_TYPE = "collector_operation";
 const EXPORT_IMAGES_ZIP_JOB_TYPE = "export_images_zip";
@@ -48,6 +48,7 @@ const DEFAULT_JOB_TYPE_LIMITS = {
   [COLLECTOR_OPERATION_JOB_TYPE]: 2,
   [EXPORT_IMAGES_ZIP_JOB_TYPE]: 1,
   cutout: 3,
+  fission: 2,
   infringement_check: 3,
   mockup: 2,
   print_extraction: 2,
@@ -55,7 +56,7 @@ const DEFAULT_JOB_TYPE_LIMITS = {
 };
 const JOB_TYPES = uniqueJobTypes(
   (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES ||
-    "cutout,print_extraction,mockup,resize,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
+    "cutout,print_extraction,mockup,resize,fission,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
     .split(",")
     .map((item) => item.trim())
     .filter((item) => item && ALL_JOB_TYPE_SET.has(item)),
@@ -1236,6 +1237,287 @@ async function processResize(job) {
   };
 }
 
+function getFissionConfig(job, metadata) {
+  const options = asRecord(job.options?.options || job.options);
+  const sourceWidth = metadata.width || 1024;
+  const sourceHeight = metadata.height || 1024;
+  const requestedWidth = Math.round(Number(options.output_width));
+  const requestedHeight = Math.round(Number(options.output_height));
+  const width = Number.isFinite(requestedWidth) && requestedWidth > 0 ? requestedWidth : sourceWidth;
+  const height = Number.isFinite(requestedHeight) && requestedHeight > 0 ? requestedHeight : sourceHeight;
+  const effect = typeof options.effect_key === "string" ? options.effect_key : job.options?.mode || "mirror_grid";
+  const outputFormat = options.output_format === "jpg" || options.output_format === "jpeg" ? "jpg" : "png";
+  const strength = clamp(numberOption(options, "strength", 70), 0, 100);
+
+  return {
+    contentType: outputFormat === "jpg" ? "image/jpeg" : "image/png",
+    effect,
+    extension: outputFormat,
+    height: Math.max(64, Math.min(5400, height)),
+    strength,
+    width: Math.max(64, Math.min(5400, width)),
+  };
+}
+
+function transparentBackground() {
+  return { alpha: 0, b: 0, g: 0, r: 0 };
+}
+
+async function normalizeFissionSource(source, width, height, fit = "cover") {
+  return sharp(source)
+    .rotate()
+    .resize(width, height, {
+      background: transparentBackground(),
+      fit,
+      position: "center",
+      withoutEnlargement: false,
+    })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+}
+
+async function setImageOpacity(buffer, opacity) {
+  const normalized = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const data = Buffer.from(normalized.data);
+  const factor = clamp(opacity, 0, 1);
+
+  for (let index = 3; index < data.length; index += 4) {
+    data[index] = Math.round((data[index] ?? 0) * factor);
+  }
+
+  return sharp(data, {
+    raw: {
+      channels: 4,
+      height: normalized.info.height,
+      width: normalized.info.width,
+    },
+  }).png().toBuffer();
+}
+
+async function renderMirrorGrid(source, config) {
+  const cellWidth = Math.ceil(config.width / 2);
+  const cellHeight = Math.ceil(config.height / 2);
+  const tile = await normalizeFissionSource(source, cellWidth, cellHeight, "cover");
+  const composites = [
+    { input: tile, left: 0, top: 0 },
+    { input: await sharp(tile).flop().png().toBuffer(), left: cellWidth, top: 0 },
+    { input: await sharp(tile).flip().png().toBuffer(), left: 0, top: cellHeight },
+    { input: await sharp(tile).flip().flop().png().toBuffer(), left: cellWidth, top: cellHeight },
+  ];
+
+  return sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: cellHeight * 2,
+      width: cellWidth * 2,
+    },
+  })
+    .composite(composites)
+    .resize(config.width, config.height, { fit: "fill" })
+    .png()
+    .toBuffer();
+}
+
+async function renderKaleidoscope(source, config) {
+  const cellWidth = Math.ceil(config.width / 2);
+  const cellHeight = Math.ceil(config.height / 2);
+  const tile = await sharp(source)
+    .rotate()
+    .resize(cellWidth, cellHeight, {
+      background: transparentBackground(),
+      fit: "cover",
+      position: "centre",
+    })
+    .modulate({
+      brightness: 1 + (config.strength / 100) * 0.04,
+      saturation: 1 + (config.strength / 100) * 0.18,
+    })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+  const diagonal = await setImageOpacity(
+    await sharp(tile).rotate(45, { background: transparentBackground() }).resize(cellWidth, cellHeight, { fit: "cover" }).png().toBuffer(),
+    0.22 + (config.strength / 100) * 0.18,
+  );
+
+  return sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: cellHeight * 2,
+      width: cellWidth * 2,
+    },
+  })
+    .composite([
+      { input: tile, left: 0, top: 0 },
+      { input: await sharp(tile).flop().png().toBuffer(), left: cellWidth, top: 0 },
+      { input: await sharp(tile).flip().png().toBuffer(), left: 0, top: cellHeight },
+      { input: await sharp(tile).flip().flop().png().toBuffer(), left: cellWidth, top: cellHeight },
+      { input: diagonal, left: Math.round(cellWidth / 2), top: Math.round(cellHeight / 2) },
+    ])
+    .resize(config.width, config.height, { fit: "fill" })
+    .png()
+    .toBuffer();
+}
+
+async function renderEchoSpread(source, config) {
+  const base = await normalizeFissionSource(source, config.width, config.height, "contain");
+  const shift = Math.round(Math.min(config.width, config.height) * (0.035 + config.strength / 2600));
+  const copies = [
+    { dx: -shift * 2, dy: shift * 2, opacity: 0.22 },
+    { dx: shift * 2, dy: -shift, opacity: 0.18 },
+    { dx: -shift, dy: -shift * 2, opacity: 0.14 },
+    { dx: shift, dy: shift, opacity: 0.28 },
+  ];
+  const composites = [];
+
+  for (const copy of copies) {
+    composites.push({
+      input: await setImageOpacity(base, copy.opacity + (config.strength / 100) * 0.12),
+      left: copy.dx,
+      top: copy.dy,
+    });
+  }
+  composites.push({ input: base, left: 0, top: 0 });
+
+  return sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite(composites)
+    .png()
+    .toBuffer();
+}
+
+async function renderSliceShift(source, config) {
+  const base = await normalizeFissionSource(source, config.width, config.height, "cover");
+  const sliceCount = Math.max(8, Math.min(28, Math.round(10 + config.strength / 5)));
+  const sliceHeight = Math.ceil(config.height / sliceCount);
+  const maxShift = Math.round(config.width * (0.03 + config.strength / 900));
+  const composites = [];
+
+  for (let index = 0; index < sliceCount; index += 1) {
+    const top = index * sliceHeight;
+    const height = Math.min(sliceHeight, config.height - top);
+    if (height <= 0) continue;
+
+    const slice = await sharp(base)
+      .extract({ height, left: 0, top, width: config.width })
+      .png()
+      .toBuffer();
+    const direction = index % 2 === 0 ? 1 : -1;
+    const wave = Math.sin(index * 1.7) * 0.55 + 0.45;
+    const left = Math.round(direction * maxShift * wave);
+
+    composites.push({ input: slice, left, top });
+    if (left > 0) composites.push({ input: slice, left: left - config.width, top });
+    if (left < 0) composites.push({ input: slice, left: left + config.width, top });
+  }
+
+  return sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite(composites)
+    .png()
+    .toBuffer();
+}
+
+async function renderTileBloom(source, config) {
+  const tileWidth = Math.ceil(config.width / 3);
+  const tileHeight = Math.ceil(config.height / 3);
+  const tile = await normalizeFissionSource(source, tileWidth, tileHeight, "cover");
+  const composites = [];
+  const angleStep = Math.round(6 + config.strength / 5);
+
+  for (let row = 0; row < 3; row += 1) {
+    for (let col = 0; col < 3; col += 1) {
+      const index = row * 3 + col;
+      const rotate = (index % 2 === 0 ? 1 : -1) * angleStep * (index % 3);
+      const input = rotate === 0
+        ? tile
+        : await sharp(tile)
+            .rotate(rotate, { background: transparentBackground() })
+            .resize(tileWidth, tileHeight, { fit: "cover" })
+            .png()
+            .toBuffer();
+      composites.push({ input, left: col * tileWidth, top: row * tileHeight });
+    }
+  }
+
+  return sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: tileHeight * 3,
+      width: tileWidth * 3,
+    },
+  })
+    .composite(composites)
+    .resize(config.width, config.height, { fit: "fill" })
+    .png()
+    .toBuffer();
+}
+
+async function encodeFissionOutput(buffer, config) {
+  if (config.extension === "jpg") {
+    return sharp(buffer).flatten({ background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer();
+  }
+
+  return sharp(buffer).png({ compressionLevel: 9 }).toBuffer();
+}
+
+async function processFission(job) {
+  const source = await readImageBuffer(job.input_url);
+  const metadata = await sharp(source).metadata();
+  const config = getFissionConfig(job, metadata);
+  let rendered;
+
+  if (config.effect === "kaleidoscope") {
+    rendered = await renderKaleidoscope(source, config);
+  } else if (config.effect === "echo") {
+    rendered = await renderEchoSpread(source, config);
+  } else if (config.effect === "slice_shift") {
+    rendered = await renderSliceShift(source, config);
+  } else if (config.effect === "tile_bloom") {
+    rendered = await renderTileBloom(source, config);
+  } else {
+    rendered = await renderMirrorGrid(source, config);
+  }
+
+  const output = await encodeFissionOutput(rendered, config);
+  const outputMeta = await sharp(output).metadata();
+
+  return {
+    bbox: { height: outputMeta.height ?? config.height, width: outputMeta.width ?? config.width, x: 0, y: 0 },
+    files: {
+      output: {
+        buffer: output,
+        contentType: config.contentType,
+        filename: `fission.${config.extension}`,
+      },
+    },
+    height: outputMeta.height ?? config.height,
+    metrics: {
+      effect: config.effect,
+      output_format: config.extension,
+      source: "local-image-worker",
+      strength: config.strength,
+    },
+    width: outputMeta.width ?? config.width,
+  };
+}
+
 function validateMockupScenes(value) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error("mockup task requires scenes");
@@ -1847,6 +2129,9 @@ async function processJob(job) {
   }
   if (job.job_type === "resize") {
     return processResize(job);
+  }
+  if (job.job_type === "fission") {
+    return processFission(job);
   }
   if (job.job_type === "cutout") {
     return processCutout(job);

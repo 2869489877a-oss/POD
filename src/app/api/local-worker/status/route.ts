@@ -6,7 +6,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
-const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "infringement_check"] as const;
+const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"] as const;
 const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "asset_delete", "collector_operation", "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
@@ -242,6 +242,8 @@ async function readQueueStateByCounts() {
     queueByType.mockup.processing -
     queueByType.resize.pending -
     queueByType.resize.processing -
+    queueByType.fission.pending -
+    queueByType.fission.processing -
     queueByType.infringement_check.pending -
     queueByType.infringement_check.processing +
     (activeJobRows?.length ?? 0);

@@ -16,6 +16,7 @@
 - 素材库列表、筛选、多选和详情弹窗
 - 侵权检测模块，支持基于规则的 IP / 品牌 / 名人 / 体育 / Logo 风险筛查、命中原因记录和人工复核
 - 素材库批量改尺寸，生成 POD 标准尺寸图片
+- 素材库批量裂变，基于本地 worker 生成镜像、万花筒、回声、切片和拼贴变体
 - 图片任务中心，查看任务列表和子任务明细
 - 印花提取和一键抠图 MVP，基于 Sharp + TypeScript 像素算法批量生成透明底结果
 - 简单版套图模板，支持 JSON 坐标配置和预览生成
@@ -163,7 +164,7 @@ Copy-Item E:\rembg-server\local-worker.env.example E:\rembg-server\local-worker.
 POD_API_URL=http://127.0.0.1:3000
 LOCAL_WORKER_SECRET=your-worker-secret
 LOCAL_WORKER_ID=bruce-local-worker
-LOCAL_WORKER_JOB_TYPES=cutout,print_extraction
+LOCAL_WORKER_JOB_TYPES=cutout,print_extraction,mockup,resize,fission,infringement_check
 POLL_INTERVAL_SECONDS=5
 LOCAL_WORKER_REQUEST_TIMEOUT_SECONDS=120
 LOCAL_WORKER_MAX_IMAGE_SIZE_MB=50
@@ -431,12 +432,38 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 
 1. 创建 `image_jobs` 任务记录。
 2. 为每张图片创建 `image_job_items` 子任务记录。
-3. 后端使用 Sharp 同步处理图片尺寸。
-4. 处理结果上传到 Supabase Storage 的 `assets` bucket。
+3. 本地 worker 领取 `resize` 子任务并使用 Sharp 处理图片尺寸。
+4. 处理结果保存到本地素材目录的 `processed/resize` 子目录。
 5. 更新 `assets.processed_url` 和任务成功、失败统计。
 6. 失败图片会在 `image_job_items.error_message` 记录失败原因。
 
-当前不做抠图、高清化和套图。任务执行代码已拆分到 `src/lib/image-processing`，后续可替换为队列消费。
+当前不做抠图、高清化和套图。任务执行代码已拆分到 worker，避免 Next.js 主进程直接执行批量图片 CPU 工作。
+
+## 批量裂变
+
+入口：
+
+```text
+/assets
+```
+
+在素材库选择多张图片后，点击“批量裂变”创建处理任务。当前支持五种本地裂变效果：
+
+- 镜像矩阵：生成 2x2 镜像组合。
+- 万花筒：通过镜像和旋转生成中心对称图案。
+- 回声扩散：叠加偏移图层，适合做动感变体。
+- 切片错位：按横向切片进行错位，生成故障风格。
+- 拼贴爆发：生成 3x3 拼贴扩散图。
+
+处理流程：
+
+1. 创建 `image_jobs` 任务记录，`job_type` 为 `fission`。
+2. 为每张图片创建 `image_job_items` 子任务记录。
+3. 本地 worker 领取 `fission` 子任务并使用 Sharp 生成裂变图。
+4. 处理结果保存到本地素材目录的 `processed/fission` 子目录。
+5. 更新 `assets.processed_url` 和任务成功、失败统计。
+
+如果服务器显式配置了 worker 任务类型，需要确保 `LOCAL_WORKER_JOB_TYPES` 或 `LOCAL_IMAGE_WORKER_JOB_TYPES` 包含 `fission`，否则裂变任务会进入队列但不会被 worker 领取。
 
 ## 图片任务中心
 
@@ -454,11 +481,11 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 - 明细展示原图、处理结果图、状态和失败原因
 - 刷新任务状态和当前任务明细
 - 只查看失败项
-- 重新执行失败项：对 resize 和 mockup 任务，可单项或批量重跑失败的 `image_job_items`
+- 重新执行失败项：对 resize、fission 和 mockup 任务，可单项或批量重跑失败的 `image_job_items`
 - 重试会沿用原 `image_jobs.options`，成功后更新原子任务的 `output_url` 和 `status`，失败后更新 `error_message`
 - 重试完成后会重新计算原任务的 `success_count` 和 `failed_count`
 
-当前不支持删除任务和队列系统；cutout、enhance 类型仍是预留任务类型，暂不支持重试执行。
+当前不支持删除任务；cutout、enhance 类型仍是预留任务类型，暂不支持重试执行。
 
 ## 印花提取与一键抠图
 
