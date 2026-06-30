@@ -70,7 +70,7 @@ export async function POST(request: Request) {
   const effect = getFissionEffect(body.effect_key);
   const background = getFissionBackground(body.background_key);
   const outputSize = getFissionOutputSize(body.output_size);
-  const outputFormat = normalizeFissionOutputFormat(body.output_format);
+  const outputFormat = background.color === "transparent" ? "png" : normalizeFissionOutputFormat(body.output_format);
   const rotation = normalizeFissionRotation(body.rotation);
   const spacing = normalizeFissionSpacing(body.spacing);
   const strength = normalizeFissionStrength(body.strength);

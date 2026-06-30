@@ -58,7 +58,7 @@ export default async function ImageFissionPage() {
       descriptionZh="从素材库选择图片，批量生成镜像、万花镜、残影、错位切片和满版平铺变体。"
       descriptionEn="Select assets and batch-generate mirror, kaleidoscope, echo, slice-shift and tile variants."
     >
-      <AssetsGallery initialAssets={assets} initialError={error} initialTotal={total} processedFirst />
+      <AssetsGallery initialAssets={assets} initialError={error} initialTotal={total} processedFirst showFissionComparison />
     </PageShell>
   );
 }

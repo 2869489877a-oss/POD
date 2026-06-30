@@ -152,7 +152,16 @@ function stringOption(options: unknown, key: string) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function pickInputUrl(asset: AssetForWorker) {
+function pickInputUrl(asset: AssetForWorker, jobType: LocalWorkerJobType) {
+  if (jobType === "fission") {
+    return (
+      asset.preferred_design_url ??
+      asset.print_extract_url ??
+      asset.cutout_url ??
+      asset.original_url
+    );
+  }
+
   return (
     asset.preferred_design_url ??
     asset.print_extract_url ??
@@ -363,7 +372,7 @@ export async function createLocalWorkerImageJob(
   const { error: itemError } = await supabase.from("image_job_items").insert(
     assets.map((asset) => ({
       asset_id: asset.id,
-      input_url: pickInputUrl(asset),
+      input_url: pickInputUrl(asset, input.jobType),
       job_id: jobId,
       status: "pending",
     })),

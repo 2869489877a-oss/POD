@@ -129,6 +129,7 @@ type AssetsGalleryProps = {
   initialError?: string | null;
   initialTotal?: number;
   processedFirst?: boolean;
+  showFissionComparison?: boolean;
 };
 
 const statusOptions: Array<{ zh: string; en: string; value: "all" | AssetStatus }> = [
@@ -244,6 +245,7 @@ export function AssetsGallery({
   initialError = null,
   initialTotal,
   processedFirst = false,
+  showFissionComparison = false,
 }: AssetsGalleryProps) {
   const { isDark, language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
@@ -623,6 +625,19 @@ export function AssetsGallery({
     );
   }
 
+  function getAssetResultUrl(asset: Asset) {
+    return asset.processed_url;
+  }
+
+  function getFissionInputUrl(asset: Asset) {
+    return (
+      asset.preferred_design_url ??
+      asset.print_extract_url ??
+      asset.cutout_url ??
+      asset.original_url
+    );
+  }
+
   function getAssetDownloadUrl(asset: Asset) {
     return getAssetPreviewUrl(asset);
   }
@@ -778,6 +793,7 @@ export function AssetsGallery({
 
   async function startFissionJob() {
     const assetIds = Array.from(selectedIds);
+    const outputFormat = fissionBackgroundKey === "transparent" ? "png" : fissionOutputFormat;
 
     if (assetIds.length === 0) {
       setFissionError(t("请先选择要裂变的图片", "Please select images to create fission variants"));
@@ -800,7 +816,7 @@ export function AssetsGallery({
           asset_ids: assetIds,
           background_key: fissionBackgroundKey,
           effect_key: fissionEffectKey,
-          output_format: fissionOutputFormat,
+          output_format: outputFormat,
           output_size: fissionOutputSize,
           preset_key: fissionPresetKey,
           rotation: fissionRotation,
@@ -1264,7 +1280,9 @@ export function AssetsGallery({
         <div
           aria-busy={isLoading}
           className={[
-            "grid gap-4 transition-opacity duration-200 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
+            showFissionComparison
+              ? "grid gap-4 transition-opacity duration-200 sm:grid-cols-2 2xl:grid-cols-3"
+              : "grid gap-4 transition-opacity duration-200 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4",
             isLoading ? "pointer-events-none opacity-60" : "opacity-100",
           ].join(" ")}
         >
@@ -1272,6 +1290,8 @@ export function AssetsGallery({
             const isSelected = selectedIds.has(asset.id);
             const isAssetDeleting = deletingAssetIds.has(asset.id);
             const previewUrl = getAssetPreviewUrl(asset);
+            const resultUrl = getAssetResultUrl(asset);
+            const fissionInputUrl = getFissionInputUrl(asset);
             const sourceLabel = getAssetSourceLabel(asset);
 
             return (
@@ -1284,6 +1304,58 @@ export function AssetsGallery({
                 ].join(" ")}
               >
                 <div className="relative aspect-[4/3] overflow-hidden bg-zinc-100">
+                  {showFissionComparison ? (
+                    <div className="grid h-full grid-cols-2">
+                      <button
+                        type="button"
+                        onClick={() => openAssetDetail(asset.id)}
+                        onMouseEnter={() => preloadAssetImage(asset)}
+                        onFocus={() => preloadAssetImage(asset)}
+                        className="group relative h-full w-full overflow-hidden border-r border-white/80 bg-zinc-100"
+                        aria-label={t(`\u67e5\u770b ${asset.filename} \u539f\u56fe`, `View ${asset.filename} original`)}
+                      >
+                        <Image
+                          src={getDisplayImageSrc(fissionInputUrl)}
+                          alt={asset.filename}
+                          fill
+                          sizes="(min-width: 1536px) 12vw, (min-width: 1280px) 16vw, (min-width: 640px) 25vw, 50vw"
+                          loading="lazy"
+                          quality={65}
+                          className="object-contain p-2 transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+                        />
+                        <span className="absolute bottom-2 left-2 rounded-md bg-black/65 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                          {t("\u539f\u56fe", "Original")}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openAssetDetail(asset.id)}
+                        onMouseEnter={() => preloadAssetImage(asset)}
+                        onFocus={() => preloadAssetImage(asset)}
+                        className="group relative h-full w-full overflow-hidden bg-white bg-[linear-gradient(45deg,#e5e7eb_25%,transparent_25%),linear-gradient(-45deg,#e5e7eb_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e7eb_75%),linear-gradient(-45deg,transparent_75%,#e5e7eb_75%)] bg-[length:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0]"
+                        aria-label={t(`\u67e5\u770b ${asset.filename} \u88c2\u53d8\u7ed3\u679c`, `View ${asset.filename} fission result`)}
+                      >
+                        {resultUrl ? (
+                          <Image
+                            src={getDisplayImageSrc(resultUrl)}
+                            alt={asset.filename}
+                            fill
+                            sizes="(min-width: 1536px) 12vw, (min-width: 1280px) 16vw, (min-width: 640px) 25vw, 50vw"
+                            loading="lazy"
+                            quality={70}
+                            className="object-contain p-2 transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+                          />
+                        ) : (
+                          <span className="flex h-full items-center justify-center px-3 text-center text-xs font-medium text-zinc-500">
+                            {t("\u6682\u65e0\u7ed3\u679c", "No result yet")}
+                          </span>
+                        )}
+                        <span className="absolute bottom-2 left-2 rounded-md bg-cyan-700/90 px-2 py-1 text-[11px] font-semibold text-white backdrop-blur">
+                          {t("\u7ed3\u679c\u56fe", "Result")}
+                        </span>
+                      </button>
+                    </div>
+                  ) : (
                   <button
                     type="button"
                     onClick={() => openAssetDetail(asset.id)}
@@ -1302,6 +1374,7 @@ export function AssetsGallery({
                       className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
                     />
                   </button>
+                  )}
                   <label className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-md bg-white/95 px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm">
                     <input
                       type="checkbox"
@@ -1328,7 +1401,7 @@ export function AssetsGallery({
                   </span>
                   <span
                     className={[
-                      "absolute bottom-3 left-3 rounded-md px-2.5 py-1 text-xs font-medium shadow-sm",
+                      showFissionComparison ? "absolute bottom-3 right-3 rounded-md px-2.5 py-1 text-xs font-medium shadow-sm" : "absolute bottom-3 left-3 rounded-md px-2.5 py-1 text-xs font-medium shadow-sm",
                       sourceStyles[asset.source] ?? "bg-zinc-100 text-zinc-700",
                     ].join(" ")}
                   >
@@ -1345,6 +1418,11 @@ export function AssetsGallery({
                       {asset.width} x {asset.height} · {asset.format.toUpperCase()} ·{" "}
                       {formatFileSize(asset.file_size)}
                     </p>
+                    {showFissionComparison ? (
+                      <p className={["mt-2 inline-flex rounded-md px-2 py-1 text-xs font-semibold", resultUrl ? "bg-cyan-50 text-cyan-700" : "bg-zinc-100 text-zinc-500"].join(" ")}>
+                        {resultUrl ? t("已生成裂变结果", "Fission result ready") : t("待生成裂变结果", "No fission result yet")}
+                      </p>
+                    ) : null}
                   </div>
 
                   <dl className="grid grid-cols-2 gap-3 text-xs">
@@ -1807,7 +1885,9 @@ export function AssetsGallery({
                         <button
                           key={format}
                           type="button"
+                          disabled={fissionBackgroundKey === "transparent" && format === "jpg"}
                           onClick={() => {
+                            if (fissionBackgroundKey === "transparent" && format === "jpg") return;
                             markFissionCustom();
                             setFissionOutputFormat(format);
                           }}
@@ -1820,6 +1900,7 @@ export function AssetsGallery({
                               : isDark
                                 ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
                                 : "border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                            fissionBackgroundKey === "transparent" && format === "jpg" ? "cursor-not-allowed opacity-40" : "",
                           ].join(" ")}
                         >
                           {format}
@@ -1844,6 +1925,7 @@ export function AssetsGallery({
                             onClick={() => {
                               markFissionCustom();
                               setFissionBackgroundKey(backgroundKey);
+                              if (backgroundKey === "transparent") setFissionOutputFormat("png");
                             }}
                             className={[
                               "flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition",
@@ -1947,7 +2029,7 @@ export function AssetsGallery({
                 "rounded-md border p-4 text-sm leading-6",
                 isDark ? "border-cyan-300/15 bg-cyan-400/10 text-cyan-100" : "border-cyan-200 bg-cyan-50 text-cyan-800",
               ].join(" ")}>
-                {t("裂变会基于当前优先图生成新的处理图，不覆盖原图；PNG 保留透明区域，JPG 会自动铺白底。", "Fission uses the current preferred image and keeps originals intact. PNG preserves transparency; JPG is flattened on white.")}
+                {t("裂变会基于原图/优先设计图生成新的结果图，不覆盖原图；透明底默认输出 PNG，只有选择非透明底色时才允许 JPG。", "Fission creates a new result from the original or preferred design without overwriting the source. Transparent backgrounds always output PNG; JPG is only available for non-transparent backgrounds.")}
               </div>
             </div>
 
@@ -2012,19 +2094,52 @@ export function AssetsGallery({
 
             <div className="grid gap-5 overflow-y-auto p-4 sm:p-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.75fr)]">
               <div className={["relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-md p-3 sm:min-h-[520px]", detailImageFrameClass].join(" ")}>
+                {showFissionComparison ? (
+                  <div className="grid h-full min-h-[260px] w-full gap-3 lg:grid-cols-2">
+                    <div className="relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-md bg-zinc-100">
+                      <img
+                        src={getDisplayImageSrc(getFissionInputUrl(selectedAsset))}
+                        alt={selectedAsset.filename}
+                        decoding="async"
+                        className="max-h-[70vh] w-full object-contain"
+                      />
+                      <span className="absolute left-3 top-3 rounded-md bg-black/65 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
+                        {t("\u539f\u56fe", "Original")}
+                      </span>
+                    </div>
+                    <div className="relative flex min-h-[260px] items-center justify-center overflow-hidden rounded-md bg-white bg-[linear-gradient(45deg,#e5e7eb_25%,transparent_25%),linear-gradient(-45deg,#e5e7eb_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#e5e7eb_75%),linear-gradient(-45deg,transparent_75%,#e5e7eb_75%)] bg-[length:18px_18px] bg-[position:0_0,0_9px,9px_-9px,-9px_0]">
+                      {selectedAsset.processed_url ? (
+                        <img
+                          src={getDisplayImageSrc(selectedAsset.processed_url)}
+                          alt={selectedAsset.filename}
+                          decoding="async"
+                          className="max-h-[70vh] w-full object-contain p-3"
+                        />
+                      ) : (
+                        <span className="px-4 text-center text-sm font-medium text-zinc-500">
+                          {t("\u6682\u65e0\u88c2\u53d8\u7ed3\u679c", "No fission result yet")}
+                        </span>
+                      )}
+                      <span className="absolute left-3 top-3 rounded-md bg-cyan-700/90 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
+                        {t("\u7ed3\u679c\u56fe", "Result")}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
                 <img
                   src={getDisplayImageSrc(getAssetPreviewUrl(selectedAsset))}
                   alt={selectedAsset.filename}
                   decoding="async"
                   className="max-h-[70vh] w-full object-contain"
                 />
+                )}
                 <div className={["absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-end gap-2 border-t p-3 backdrop-blur", isDark ? "border-white/[0.08] bg-black/60" : "border-zinc-200 bg-white/85"].join(" ")}>
                   <button
                     type="button"
                     onClick={() => void downloadAsset(selectedAsset)}
                     className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-800"
                   >
-                    {t("下载", "Download")}
+                    {showFissionComparison && selectedAsset.processed_url ? t("下载结果", "Download Result") : t("下载", "Download")}
                   </button>
                   <button
                     type="button"

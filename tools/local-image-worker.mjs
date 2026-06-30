@@ -1260,8 +1260,9 @@ function getFissionConfig(job, metadata) {
   const height = Number.isFinite(requestedHeight) && requestedHeight > 0 ? requestedHeight : sourceHeight;
   const requestedEffect = typeof options.effect_key === "string" ? options.effect_key : job.options?.mode || "pattern_half_drop";
   const effect = FISSION_EFFECTS.has(requestedEffect) ? requestedEffect : "pattern_half_drop";
-  const outputFormat = options.output_format === "jpg" || options.output_format === "jpeg" ? "jpg" : "png";
   const background = parseFissionBackgroundColor(options.background_color);
+  const requestedOutputFormat = options.output_format === "jpg" || options.output_format === "jpeg" ? "jpg" : "png";
+  const outputFormat = background.alpha === 0 ? "png" : requestedOutputFormat;
   const rotation = clamp(numberOption(options, "rotation", 0), -180, 180);
   const spacing = clamp(numberOption(options, "spacing", 12), 0, 80);
   const strength = clamp(numberOption(options, "strength", 70), 0, 100);
