@@ -12,11 +12,16 @@ const effects = [
   "pattern_half_drop",
   "pattern_reflect",
   "pattern_stripe",
+  "pattern_toss",
+  "pattern_diagonal",
   "echo",
   "kaleidoscope",
   "mirror_grid",
   "slice_shift",
   "tile_bloom",
+  "sticker_outline",
+  "vintage_distress",
+  "halftone_pop",
 ];
 
 const keepOutput = process.argv.includes("--keep");

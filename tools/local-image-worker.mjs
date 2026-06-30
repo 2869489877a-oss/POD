@@ -84,11 +84,16 @@ const FISSION_EFFECTS = new Set([
   "pattern_half_drop",
   "pattern_reflect",
   "pattern_stripe",
+  "pattern_toss",
+  "pattern_diagonal",
   "echo",
   "kaleidoscope",
   "mirror_grid",
   "slice_shift",
   "tile_bloom",
+  "sticker_outline",
+  "vintage_distress",
+  "halftone_pop",
 ]);
 const INFRINGEMENT_REFERENCE_CACHE_MS = clampInt(
   process.env.LOCAL_WORKER_INFRINGEMENT_REFERENCE_CACHE_MS,
@@ -1391,6 +1396,16 @@ async function createPatternTile(source, config, reflected = false) {
 async function renderPatternRepeat(source, config, mode) {
   const reflected = mode === "pattern_reflect";
   const tile = await createPatternTile(source, config, reflected);
+  const tossed = mode === "pattern_toss";
+  const diagonal = mode === "pattern_diagonal";
+  const variants = tossed
+    ? await Promise.all([
+        sharp(tile.buffer).rotate(config.rotation - 18, { background: transparentBackground() }).resize(tile.width, tile.height, { fit: "contain", background: transparentBackground() }).png().toBuffer(),
+        sharp(tile.buffer).rotate(config.rotation + 14, { background: transparentBackground() }).resize(tile.width, tile.height, { fit: "contain", background: transparentBackground() }).png().toBuffer(),
+        sharp(tile.buffer).flop().rotate(config.rotation + 24, { background: transparentBackground() }).resize(tile.width, tile.height, { fit: "contain", background: transparentBackground() }).png().toBuffer(),
+        sharp(tile.buffer).flip().rotate(config.rotation - 8, { background: transparentBackground() }).resize(tile.width, tile.height, { fit: "contain", background: transparentBackground() }).png().toBuffer(),
+      ])
+    : [tile.buffer];
   const gap = Math.round(Math.min(config.width, config.height) * (config.spacing / 260));
   const stepX = Math.max(1, tile.width + gap);
   const stepY = Math.max(1, tile.height + gap);
@@ -1402,17 +1417,21 @@ async function renderPatternRepeat(source, config, mode) {
 
   for (let top = startY, row = 0; top <= endY; top += stepY, row += 1) {
     const rowOffset =
-      mode === "pattern_brick" || mode === "pattern_half_drop" || mode === "pattern_stripe"
+      mode === "pattern_brick" || mode === "pattern_half_drop" || mode === "pattern_stripe" || tossed
         ? Math.round((row % 2) * stepX * 0.5)
         : 0;
     const verticalShift = mode === "pattern_half_drop" && row % 2 === 1 ? Math.round(stepY * 0.5) : 0;
     const stripeSkew = mode === "pattern_stripe" ? Math.round((row % 3) * stepX * 0.22) : 0;
+    const diagonalSkew = diagonal ? Math.round((row * stepX * 0.35) % stepX) : 0;
 
-    for (let left = startX - rowOffset - stripeSkew; left <= endX; left += stepX) {
+    for (let left = startX - rowOffset - stripeSkew - diagonalSkew, col = 0; left <= endX; left += stepX, col += 1) {
+      const variantIndex = Math.abs((row * 17 + col * 31) % variants.length);
+      const jitterX = tossed ? Math.round((((row * 13 + col * 7) % 7) - 3) * Math.max(2, gap) * 0.24) : 0;
+      const jitterY = tossed ? Math.round((((row * 5 + col * 11) % 7) - 3) * Math.max(2, gap) * 0.22) : 0;
       composites.push({
-        input: tile.buffer,
-        left,
-        top: top + verticalShift,
+        input: variants[variantIndex],
+        left: left + jitterX,
+        top: top + verticalShift + jitterY,
       });
     }
   }
@@ -1604,6 +1623,147 @@ async function renderTileBloom(source, config) {
     .toBuffer();
 }
 
+async function renderStickerOutline(source, config) {
+  const base = await normalizeFissionSource(source, config.width, config.height, "contain");
+  const outlineSize = Math.max(6, Math.round(Math.min(config.width, config.height) * (0.008 + config.strength / 9000)));
+  const alphaMask = await sharp(base)
+    .ensureAlpha()
+    .extractChannel("alpha")
+    .blur(outlineSize)
+    .threshold(8)
+    .png()
+    .toBuffer();
+  const outline = await sharp({
+    create: {
+      background: { b: 255, g: 255, r: 255 },
+      channels: 3,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .joinChannel(alphaMask)
+    .png()
+    .toBuffer();
+
+  return sharp({
+    create: {
+      background: fissionCanvasBackground(config),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite([{ input: outline, left: 0, top: 0 }, { input: base, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+}
+
+async function applyVintageDistress(buffer, strength) {
+  const normalized = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const data = Buffer.from(normalized.data);
+  const width = normalized.info.width;
+  const height = normalized.info.height;
+  const amount = 9 + Math.round(clamp(strength, 0, 100) * 0.32);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const alpha = data[offset + 3] ?? 0;
+      if (alpha === 0) continue;
+
+      const grain = Math.abs((x * 73856093) ^ (y * 19349663) ^ ((x + y) * 83492791)) % 100;
+      const streak = ((Math.floor(y / 7) + Math.floor(x / 19)) % 11) === 0;
+      if (grain < amount || (streak && grain < amount + 18)) {
+        data[offset + 3] = Math.round(alpha * (grain % 2 === 0 ? 0.12 : 0.36));
+      }
+    }
+  }
+
+  return sharp(data, {
+    raw: {
+      channels: 4,
+      height,
+      width,
+    },
+  }).png().toBuffer();
+}
+
+async function renderVintageDistress(source, config) {
+  const base = await normalizeFissionSource(source, config.width, config.height, "contain");
+  const softened = await sharp(base)
+    .modulate({
+      brightness: 0.98,
+      saturation: Math.max(0.45, 1 - config.strength / 260),
+    })
+    .png()
+    .toBuffer();
+  const distressed = await applyVintageDistress(softened, config.strength);
+
+  return sharp({
+    create: {
+      background: fissionCanvasBackground(config),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite([{ input: distressed, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+}
+
+async function renderHalftonePop(source, config) {
+  const base = await normalizeFissionSource(source, config.width, config.height, "contain");
+  const normalized = await sharp(base).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const data = Buffer.from(normalized.data);
+  const width = normalized.info.width;
+  const height = normalized.info.height;
+  const cell = Math.max(6, Math.round(Math.min(width, height) * (0.011 + (100 - config.strength) / 14000)));
+  const maxRadius = cell * 0.58;
+
+  for (let y = 0; y < height; y += 1) {
+    const cellY = Math.floor(y / cell) * cell + cell / 2;
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const alpha = data[offset + 3] ?? 0;
+      if (alpha === 0) continue;
+
+      const cellX = Math.floor(x / cell) * cell + cell / 2;
+      const distance = Math.hypot(x - cellX, y - cellY);
+      const luminanceValue = (0.2126 * (data[offset] ?? 0) + 0.7152 * (data[offset + 1] ?? 0) + 0.0722 * (data[offset + 2] ?? 0)) / 255;
+      const dotRadius = maxRadius * (0.38 + (1 - luminanceValue) * 0.42 + (alpha / 255) * 0.2);
+
+      if (distance > dotRadius) {
+        data[offset + 3] = 0;
+      } else {
+        data[offset] = Math.min(255, Math.round((data[offset] ?? 0) * 1.06));
+        data[offset + 1] = Math.min(255, Math.round((data[offset + 1] ?? 0) * 1.04));
+        data[offset + 2] = Math.min(255, Math.round((data[offset + 2] ?? 0) * 0.98));
+      }
+    }
+  }
+
+  const halftone = await sharp(data, {
+    raw: {
+      channels: 4,
+      height,
+      width,
+    },
+  }).png().toBuffer();
+
+  return sharp({
+    create: {
+      background: fissionCanvasBackground(config),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite([{ input: halftone, left: 0, top: 0 }])
+    .png()
+    .toBuffer();
+}
+
 async function encodeFissionOutput(buffer, config) {
   if (config.extension === "jpg") {
     const background = config.background.alpha === 0
@@ -1635,6 +1795,12 @@ export async function processFission(job) {
     rendered = await renderSliceShift(source, config);
   } else if (config.effect === "tile_bloom") {
     rendered = await renderTileBloom(source, config);
+  } else if (config.effect === "sticker_outline") {
+    rendered = await renderStickerOutline(source, config);
+  } else if (config.effect === "vintage_distress") {
+    rendered = await renderVintageDistress(source, config);
+  } else if (config.effect === "halftone_pop") {
+    rendered = await renderHalftonePop(source, config);
   } else {
     rendered = await renderMirrorGrid(source, config);
   }

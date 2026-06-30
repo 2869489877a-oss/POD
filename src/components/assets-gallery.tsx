@@ -277,6 +277,7 @@ export function AssetsGallery({
   const [fissionJob, setFissionJob] = useState<FissionJobProgress | null>(null);
   const [fissionError, setFissionError] = useState<string | null>(null);
   const [fissionMessage, setFissionMessage] = useState<string | null>(null);
+  const [fissionTargetAssetIds, setFissionTargetAssetIds] = useState<string[] | null>(null);
   const [isFissionRunning, setIsFissionRunning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingAssetIds, setDeletingAssetIds] = useState<Set<string>>(new Set());
@@ -294,6 +295,13 @@ export function AssetsGallery({
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedAssetId) ?? null,
     [assets, selectedAssetId],
+  );
+  const fissionTargetCount = fissionTargetAssetIds?.length ?? selectedCount;
+  const fissionTargetAsset = useMemo(
+    () => fissionTargetAssetIds?.length === 1
+      ? assets.find((asset) => asset.id === fissionTargetAssetIds[0]) ?? null
+      : null,
+    [assets, fissionTargetAssetIds],
   );
   const resizeCompletedCount = resizeJob
     ? resizeJob.success_count + resizeJob.failed_count
@@ -401,6 +409,7 @@ export function AssetsGallery({
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape" && !isFissionRunning) {
         setIsFissionDialogOpen(false);
+        setFissionTargetAssetIds(null);
       }
     }
 
@@ -605,6 +614,25 @@ export function AssetsGallery({
     setSelectedAssetId(null);
   }
 
+  function closeFissionDialog() {
+    if (isFissionRunning) return;
+    setIsFissionDialogOpen(false);
+    setFissionTargetAssetIds(null);
+  }
+
+  function openBatchFissionDialog() {
+    setFissionTargetAssetIds(null);
+    setFissionError(null);
+    setIsFissionDialogOpen(true);
+  }
+
+  function openSingleFissionDialog(assetId: string) {
+    setFissionTargetAssetIds([assetId]);
+    setFissionError(null);
+    setSelectedAssetId(null);
+    setIsFissionDialogOpen(true);
+  }
+
   function getAssetPreviewUrl(asset: Asset) {
     if (processedFirst) {
       return (
@@ -792,7 +820,8 @@ export function AssetsGallery({
   }
 
   async function startFissionJob() {
-    const assetIds = Array.from(selectedIds);
+    const assetIds = fissionTargetAssetIds ? [...fissionTargetAssetIds] : Array.from(selectedIds);
+    const isSingleFission = assetIds.length === 1;
     const outputFormat = fissionBackgroundKey === "transparent" ? "png" : fissionOutputFormat;
 
     if (assetIds.length === 0) {
@@ -802,7 +831,7 @@ export function AssetsGallery({
 
     setIsFissionRunning(true);
     setFissionError(null);
-    setFissionMessage(t("正在创建批量裂变任务...", "Creating batch fission job..."));
+    setFissionMessage(isSingleFission ? t("正在创建单张裂变任务...", "Creating single fission job...") : t("正在创建批量裂变任务...", "Creating batch fission job..."));
     setFissionJob(null);
 
     try {
@@ -839,8 +868,9 @@ export function AssetsGallery({
         ...createData.job,
         items: [],
       });
-      setFissionMessage(t(`裂变任务已创建：${jobId}，等待 worker 处理...`, `Fission job created: ${jobId}. Waiting for the worker...`));
+      setFissionMessage(isSingleFission ? t(`单张裂变任务已创建：${jobId}，等待 worker 处理...`, `Single fission job created: ${jobId}. Waiting for the worker...`) : t(`裂变任务已创建：${jobId}，等待 worker 处理...`, `Fission job created: ${jobId}. Waiting for the worker...`));
       setIsFissionDialogOpen(false);
+      setFissionTargetAssetIds(null);
 
       for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
         await sleep(RESIZE_POLL_INTERVAL_MS);
@@ -854,7 +884,9 @@ export function AssetsGallery({
         setFissionJob(job);
         setFissionMessage(
           TERMINAL_RESIZE_STATUSES.has(job.status)
-            ? t(`批量裂变完成：${completedCount}/${job.total_count}`, `Batch fission complete: ${completedCount}/${job.total_count}`)
+            ? isSingleFission
+              ? t(`单张裂变完成：${completedCount}/${job.total_count}`, `Single fission complete: ${completedCount}/${job.total_count}`)
+              : t(`批量裂变完成：${completedCount}/${job.total_count}`, `Batch fission complete: ${completedCount}/${job.total_count}`)
             : processingCount > 0
               ? t(`worker 裂变处理中：完成 ${completedCount}/${job.total_count}，运行中 ${processingCount}，${percent}%`, `Worker fission processing: done ${completedCount}/${job.total_count}, running ${processingCount}, ${percent}%`)
               : attempt >= 15 && completedCount === 0
@@ -868,7 +900,7 @@ export function AssetsGallery({
         }
       }
 
-      setFissionMessage(t("批量裂变仍在后台处理，可稍后到图片任务页查看。", "Batch fission is still running. Check Image Jobs later."));
+      setFissionMessage(isSingleFission ? t("单张裂变仍在后台处理，可稍后到图片任务页查看。", "Single fission is still running. Check Image Jobs later.") : t("批量裂变仍在后台处理，可稍后到图片任务页查看。", "Batch fission is still running. Check Image Jobs later."));
     } catch (requestError) {
       setFissionError(requestError instanceof Error ? requestError.message : t("裂变任务处理失败", "Fission job failed"));
       setFissionMessage(null);
@@ -1061,10 +1093,7 @@ export function AssetsGallery({
           </button>
           <button
             type="button"
-            onClick={() => {
-              setFissionError(null);
-              setIsFissionDialogOpen(true);
-            }}
+            onClick={openBatchFissionDialog}
             disabled={selectedCount === 0 || isBatchProcessing}
             className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
@@ -1456,6 +1485,16 @@ export function AssetsGallery({
                       {t("下载到本地", "Download")}
                     </button>
                   </div>
+                  {showFissionComparison ? (
+                    <button
+                      type="button"
+                      onClick={() => openSingleFissionDialog(asset.id)}
+                      disabled={isBatchProcessing || isAssetDeleting || isDeleting}
+                      className="ui-press w-full rounded-md border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                    >
+                      {t("单张裂变", "Single Fission")}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void deleteAssetIds([asset.id])}
@@ -1618,7 +1657,7 @@ export function AssetsGallery({
           aria-labelledby="fission-dialog-title"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget && !isFissionRunning) {
-              setIsFissionDialogOpen(false);
+              closeFissionDialog();
             }
           }}
         >
@@ -1633,13 +1672,13 @@ export function AssetsGallery({
           >
             <button
               type="button"
-              onClick={() => setIsFissionDialogOpen(false)}
+              onClick={closeFissionDialog}
               disabled={isFissionRunning}
               className={[
                 "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border text-lg font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
                 isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
               ].join(" ")}
-              aria-label={t("关闭批量裂变", "Close batch fission")}
+              aria-label={fissionTargetAssetIds ? t("关闭单张裂变", "Close single fission") : t("关闭批量裂变", "Close batch fission")}
             >
               x
             </button>
@@ -1649,10 +1688,12 @@ export function AssetsGallery({
               isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
             ].join(" ")}>
               <h3 id="fission-dialog-title" className={["text-base font-semibold", isDark ? "text-white" : "text-zinc-950"].join(" ")}>
-                {t("批量裂变", "Batch Fission")}
+                {fissionTargetAssetIds ? t("单张裂变", "Single Fission") : t("批量裂变", "Batch Fission")}
               </h3>
               <p className={["mt-1 text-sm", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
-                {t(`已选择 ${selectedCount} 张图片，裂变结果会写入素材 processed_url。`, `${selectedCount} image(s) selected. Fission results will be written to processed_url.`)}
+                {fissionTargetAsset
+                  ? t(`当前图片：${fissionTargetAsset.filename}。裂变结果会写入该素材 processed_url。`, `Current image: ${fissionTargetAsset.filename}. The fission result will be written to this asset's processed_url.`)
+                  : t(`已选择 ${fissionTargetCount} 张图片，裂变结果会写入素材 processed_url。`, `${fissionTargetCount} image(s) selected. Fission results will be written to processed_url.`)}
               </p>
             </div>
 
@@ -2039,7 +2080,7 @@ export function AssetsGallery({
             ].join(" ")}>
               <button
                 type="button"
-                onClick={() => setIsFissionDialogOpen(false)}
+                onClick={closeFissionDialog}
                 disabled={isFissionRunning}
                 className={[
                   "rounded-md border px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
@@ -2051,10 +2092,10 @@ export function AssetsGallery({
               <button
                 type="button"
                 onClick={() => void startFissionJob()}
-                disabled={isFissionRunning || selectedCount === 0}
+                disabled={isFissionRunning || fissionTargetCount === 0}
                 className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isFissionRunning ? t("裂变处理中...", "Processing...") : t("开始裂变", "Start Fission")}
+                {isFissionRunning ? t("裂变处理中...", "Processing...") : fissionTargetAssetIds ? t("开始单张裂变", "Start Single Fission") : t("开始批量裂变", "Start Batch Fission")}
               </button>
             </div>
           </div>
@@ -2134,6 +2175,16 @@ export function AssetsGallery({
                 />
                 )}
                 <div className={["absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-end gap-2 border-t p-3 backdrop-blur", isDark ? "border-white/[0.08] bg-black/60" : "border-zinc-200 bg-white/85"].join(" ")}>
+                  {showFissionComparison ? (
+                    <button
+                      type="button"
+                      onClick={() => openSingleFissionDialog(selectedAsset.id)}
+                      disabled={isBatchProcessing || isDeleting}
+                      className="rounded-md bg-cyan-700 px-3 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                    >
+                      {t("裂变此图", "Fission This Image")}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void downloadAsset(selectedAsset)}
