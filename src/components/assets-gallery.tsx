@@ -127,6 +127,7 @@ type FissionJobProgress = ResizeJobProgress;
 type CreateFissionJobResponse = CreateResizeJobResponse;
 
 type AssetsGalleryProps = {
+  excludedSources?: string[];
   initialAssets: Asset[];
   initialError?: string | null;
   initialTotal?: number;
@@ -244,6 +245,7 @@ function formatDate(value: string, locale: string) {
 }
 
 export function AssetsGallery({
+  excludedSources = [],
   initialAssets,
   initialError = null,
   initialTotal,
@@ -296,6 +298,10 @@ export function AssetsGallery({
   const selectedCount = selectedIds.size;
   const isBatchProcessing = isResizeRunning || isFissionRunning || isAiFissionRunning;
   const totalPages = Math.ceil(total / 24);
+  const visibleSourceOptions = useMemo(
+    () => sourceOptions.filter((option) => option.value === "all" || !excludedSources.includes(option.value)),
+    [excludedSources],
+  );
 
   const selectedAssets = useMemo(
     () => assets.filter((asset) => selectedIds.has(asset.id)),
@@ -442,7 +448,7 @@ export function AssetsGallery({
     setError(null);
 
     try {
-      const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus, nextSource, nextPage);
+      const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus, nextSource, nextPage, excludedSources);
 
       if (data.error) {
         throw new Error(data.error);
@@ -1123,7 +1129,7 @@ export function AssetsGallery({
               onChange={(event) => handleAssetSourceChange(event.target.value as AssetSourceFilter)}
               className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
             >
-              {sourceOptions.map((option) => (
+              {visibleSourceOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {t(option.zh, option.en)}
                 </option>

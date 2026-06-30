@@ -28,6 +28,7 @@ export async function fetchAssetsAction(
   copyrightStatus: string,
   source: string = "all",
   page: number = 1,
+  excludedSources: string[] = [],
 ): Promise<{ assets: unknown[]; error: string | null; total: number }> {
   try {
     const supabase = createSupabaseServiceRoleClient();
@@ -48,6 +49,11 @@ export async function fetchAssetsAction(
         source === "local_original"
           ? query.in("source", ["upload", "upload_original"])
           : query.eq("source", source);
+    }
+    for (const excludedSource of excludedSources) {
+      if (typeof excludedSource === "string" && excludedSource.trim().length > 0) {
+        query = query.neq("source", excludedSource.trim());
+      }
     }
 
     const { data, error, count } = await query;

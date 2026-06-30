@@ -31,6 +31,7 @@ async function getInitialAssets(): Promise<{ assets: Asset[]; error: string | nu
     const { count, data, error } = await supabase
       .from("assets")
       .select(assetColumns, { count: "exact" })
+      .neq("source", "ai")
       .order("created_at", { ascending: false })
       .range(0, PAGE_SIZE - 1);
 
@@ -58,7 +59,7 @@ export default async function ImageFissionPage() {
       descriptionZh="从素材库选择图片，分为 AI 语义裂变和本地快速裂变；快速裂变支持镜像、旋转、缩放、换底、平铺和一图多变体。"
       descriptionEn="Select assets for AI semantic fission or local quick fission, including flip, rotate, scale, background fill, tile, and one-to-many variants."
     >
-      <AssetsGallery initialAssets={assets} initialError={error} initialTotal={total} processedFirst showFissionComparison />
+      <AssetsGallery excludedSources={["ai"]} initialAssets={assets} initialError={error} initialTotal={total} processedFirst showFissionComparison />
     </PageShell>
   );
 }
