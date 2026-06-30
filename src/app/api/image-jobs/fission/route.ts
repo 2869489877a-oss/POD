@@ -8,6 +8,7 @@ import {
   normalizeFissionRotation,
   normalizeFissionSpacing,
   normalizeFissionStrength,
+  normalizeFissionVariantCount,
 } from "@/lib/image-processing/fission-effects";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
@@ -24,6 +25,7 @@ type CreateFissionJobRequest = {
   rotation?: unknown;
   spacing?: unknown;
   strength?: unknown;
+  variant_count?: unknown;
 };
 
 function getUniqueAssetIds(value: unknown) {
@@ -54,6 +56,7 @@ async function readRequestBody(request: Request): Promise<CreateFissionJobReques
     rotation: form.get("rotation"),
     spacing: form.get("spacing"),
     strength: form.get("strength"),
+    variant_count: form.get("variant_count"),
   };
 }
 
@@ -74,6 +77,7 @@ export async function POST(request: Request) {
   const rotation = normalizeFissionRotation(body.rotation);
   const spacing = normalizeFissionSpacing(body.spacing);
   const strength = normalizeFissionStrength(body.strength);
+  const variantCount = normalizeFissionVariantCount(body.variant_count);
 
   if (assetIds.length === 0) {
     return NextResponse.json({ error: "请选择至少一张图片" }, { status: 400 });
@@ -106,6 +110,7 @@ export async function POST(request: Request) {
         rotation,
         spacing,
         strength,
+        variant_count: variantCount,
       },
       setPreferred: false,
     });

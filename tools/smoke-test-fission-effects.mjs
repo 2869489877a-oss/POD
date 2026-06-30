@@ -7,21 +7,14 @@ import path from "node:path";
 import sharp from "sharp";
 
 const effects = [
-  "pattern_block",
-  "pattern_brick",
-  "pattern_half_drop",
-  "pattern_reflect",
-  "pattern_stripe",
-  "pattern_toss",
-  "pattern_diagonal",
-  "echo",
-  "kaleidoscope",
+  "flip_horizontal",
+  "flip_vertical",
+  "rotate_canvas",
+  "scale_center",
+  "background_fill",
+  "tile_repeat",
   "mirror_grid",
-  "slice_shift",
-  "tile_bloom",
-  "sticker_outline",
-  "vintage_distress",
-  "halftone_pop",
+  "entropy_variant",
 ];
 
 const keepOutput = process.argv.includes("--keep");
@@ -56,23 +49,26 @@ const results = [];
 
 try {
   for (const effect of effects) {
-    const outputFormat = effect === "pattern_brick" ? "jpg" : "png";
+    const outputFormat = effect === "background_fill" ? "jpg" : "png";
     const result = await processFission({
       input_url: "http://127.0.0.1:3000/uploads/assets/smoke/source.png",
       job_type: "fission",
       options: {
         options: {
-          background_color: effect === "pattern_brick" ? "#f4ead4" : "transparent",
+          background_color: effect === "background_fill" ? "#f4ead4" : "transparent",
           effect_key: effect,
           output_format: outputFormat,
           output_height: 640,
           output_width: 640,
           preset_key: "smoke",
-          rotation: effect.startsWith("pattern_") ? 15 : 0,
-          spacing: effect.startsWith("pattern_") ? 14 : 0,
+          rotation: effect === "rotate_canvas" || effect === "entropy_variant" ? 15 : 0,
+          spacing: effect === "tile_repeat" || effect === "entropy_variant" ? 14 : 0,
           strength: 72,
+          variant_count: effect === "entropy_variant" ? 9 : 1,
         },
       },
+      item_id: `${effect}-smoke-item`,
+      job_id: "smoke-job",
     });
 
     const output = result.files?.output;

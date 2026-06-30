@@ -152,6 +152,20 @@ function stringOption(options: unknown, key: string) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function numberOption(options: unknown, key: string, fallback: number, min: number, max: number) {
+  if (!options || typeof options !== "object" || !(key in options)) {
+    return fallback;
+  }
+
+  const value = (options as Record<string, unknown>)[key];
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.min(max, Math.round(numeric)));
+}
+
 function pickInputUrl(asset: AssetForWorker, jobType: LocalWorkerJobType) {
   if (jobType === "fission") {
     return (
@@ -351,6 +365,10 @@ export async function createLocalWorkerImageJob(
   }
 
   const options = buildOptions(input);
+  const itemMultiplier = input.jobType === "fission"
+    ? numberOption(input.options, "variant_count", 1, 1, 9)
+    : 1;
+  const totalCount = assets.length * itemMultiplier;
   const { data: jobData, error: jobError } = await supabase
     .from("image_jobs")
     .insert({
@@ -359,7 +377,7 @@ export async function createLocalWorkerImageJob(
       options,
       status: "pending",
       success_count: 0,
-      total_count: assets.length,
+      total_count: totalCount,
     })
     .select("id,job_type,status,total_count,success_count,failed_count")
     .single();
@@ -370,12 +388,14 @@ export async function createLocalWorkerImageJob(
 
   const jobId = (jobData as unknown as { id: string }).id;
   const { error: itemError } = await supabase.from("image_job_items").insert(
-    assets.map((asset) => ({
-      asset_id: asset.id,
-      input_url: pickInputUrl(asset, input.jobType),
-      job_id: jobId,
-      status: "pending",
-    })),
+    assets.flatMap((asset) =>
+      Array.from({ length: itemMultiplier }, () => ({
+        asset_id: asset.id,
+        input_url: pickInputUrl(asset, input.jobType),
+        job_id: jobId,
+        status: "pending",
+      })),
+    ),
   );
 
   if (itemError) {
@@ -383,7 +403,7 @@ export async function createLocalWorkerImageJob(
       .from("image_jobs")
       .update({
         error_message: itemError.message,
-        failed_count: assets.length,
+        failed_count: totalCount,
         status: "failed",
       })
       .eq("id", jobId);

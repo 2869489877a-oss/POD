@@ -19,11 +19,13 @@ import {
   fissionEffects,
   fissionOutputSizes,
   fissionPresets,
+  fissionVariantCounts,
   type FissionBackgroundKey,
   type FissionEffectKey,
   type FissionOutputFormat,
   type FissionPresetKey,
   type FissionOutputSizeKey,
+  type FissionVariantCountKey,
 } from "@/lib/image-processing/fission-effects";
 
 type AssetStatus = "uploaded" | "processing" | "processed" | "failed";
@@ -202,12 +204,13 @@ const statusStyles: Record<AssetStatus, string> = {
 
 const resizePresetOptions: ResizePresetKey[] = ["tshirt-print", "square-product"];
 const fissionEffectOptions = Object.keys(fissionEffects) as FissionEffectKey[];
-const fissionPatternEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "pattern");
-const fissionCreativeEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "creative");
+const fissionQuickEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "quick");
+const fissionEntropyEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "entropy");
 const fissionOutputSizeOptions = Object.keys(fissionOutputSizes) as FissionOutputSizeKey[];
 const fissionOutputFormatOptions: FissionOutputFormat[] = ["png", "jpg"];
 const fissionBackgroundOptionKeys = Object.keys(fissionBackgroundOptions) as FissionBackgroundKey[];
 const fissionPresetOptions = Object.keys(fissionPresets) as FissionPresetKey[];
+const fissionVariantCountOptions = Object.keys(fissionVariantCounts) as FissionVariantCountKey[];
 
 const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }> = {
   completed: { zh: "已完成", en: "Completed" },
@@ -266,18 +269,24 @@ export function AssetsGallery({
   const [resizeMessage, setResizeMessage] = useState<string | null>(null);
   const [isResizeRunning, setIsResizeRunning] = useState(false);
   const [isFissionDialogOpen, setIsFissionDialogOpen] = useState(false);
-  const [fissionEffectKey, setFissionEffectKey] = useState<FissionEffectKey>("pattern_half_drop");
-  const [fissionOutputSize, setFissionOutputSize] = useState<FissionOutputSizeKey>("seamless_4096");
+  const [fissionEffectKey, setFissionEffectKey] = useState<FissionEffectKey>("flip_horizontal");
+  const [fissionOutputSize, setFissionOutputSize] = useState<FissionOutputSizeKey>("original");
   const [fissionOutputFormat, setFissionOutputFormat] = useState<FissionOutputFormat>("png");
   const [fissionStrength, setFissionStrength] = useState(70);
   const [fissionSpacing, setFissionSpacing] = useState(12);
   const [fissionRotation, setFissionRotation] = useState(0);
   const [fissionBackgroundKey, setFissionBackgroundKey] = useState<FissionBackgroundKey>("transparent");
-  const [fissionPresetKey, setFissionPresetKey] = useState<FissionPresetKey | "custom">("aop_fabric");
+  const [fissionPresetKey, setFissionPresetKey] = useState<FissionPresetKey | "custom">("quick_flip");
+  const [fissionVariantCountKey, setFissionVariantCountKey] = useState<FissionVariantCountKey>("one");
   const [fissionJob, setFissionJob] = useState<FissionJobProgress | null>(null);
   const [fissionError, setFissionError] = useState<string | null>(null);
   const [fissionMessage, setFissionMessage] = useState<string | null>(null);
   const [fissionTargetAssetIds, setFissionTargetAssetIds] = useState<string[] | null>(null);
+  const [aiFissionPrompt, setAiFissionPrompt] = useState("保持主体和构图一致，生成一个相似但不同的商业图片变体。可以轻微改变姿势、方向、手部动作、表情、配色或背景，但不要改变核心主题。");
+  const [aiFissionCountKey, setAiFissionCountKey] = useState<FissionVariantCountKey>("four");
+  const [isAiFissionRunning, setIsAiFissionRunning] = useState(false);
+  const [aiFissionError, setAiFissionError] = useState<string | null>(null);
+  const [aiFissionMessage, setAiFissionMessage] = useState<string | null>(null);
   const [isFissionRunning, setIsFissionRunning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deletingAssetIds, setDeletingAssetIds] = useState<Set<string>>(new Set());
@@ -285,7 +294,7 @@ export function AssetsGallery({
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const preloadedImageUrls = useRef<Set<string>>(new Set());
   const selectedCount = selectedIds.size;
-  const isBatchProcessing = isResizeRunning || isFissionRunning;
+  const isBatchProcessing = isResizeRunning || isFissionRunning || isAiFissionRunning;
   const totalPages = Math.ceil(total / 24);
 
   const selectedAssets = useMemo(
@@ -303,6 +312,7 @@ export function AssetsGallery({
       : null,
     [assets, fissionTargetAssetIds],
   );
+  const aiFissionSourceAsset = fissionTargetAsset ?? selectedAssets[0] ?? null;
   const resizeCompletedCount = resizeJob
     ? resizeJob.success_count + resizeJob.failed_count
     : 0;
@@ -704,6 +714,10 @@ export function AssetsGallery({
     }
   }
 
+  function getFissionVariantCountKey(value: number): FissionVariantCountKey {
+    return fissionVariantCountOptions.find((countKey) => fissionVariantCounts[countKey].value === value) ?? "one";
+  }
+
   function applyFissionPreset(presetKey: FissionPresetKey) {
     const preset = fissionPresets[presetKey];
     setFissionPresetKey(presetKey);
@@ -714,6 +728,7 @@ export function AssetsGallery({
     setFissionRotation(preset.rotation);
     setFissionSpacing(preset.spacing);
     setFissionStrength(preset.strength);
+    setFissionVariantCountKey(getFissionVariantCountKey(preset.variantCount));
   }
 
   function markFissionCustom() {
@@ -723,23 +738,25 @@ export function AssetsGallery({
   }
 
   function resetFissionSettings() {
-    applyFissionPreset("aop_fabric");
+    applyFissionPreset("quick_flip");
   }
 
   function randomizeFissionSettings() {
-    const effects = Math.random() > 0.68 ? fissionCreativeEffectOptions : fissionPatternEffectOptions;
-    const outputSizes: FissionOutputSizeKey[] = ["square_2048", "square_3000", "seamless_4096", "aop_5400"];
-    const effectKey = effects[Math.floor(Math.random() * effects.length)] ?? "pattern_half_drop";
+    const effects = Math.random() > 0.72 ? fissionEntropyEffectOptions : fissionQuickEffectOptions;
+    const outputSizes: FissionOutputSizeKey[] = ["original", "square_2048", "square_3000", "aop_5400"];
+    const effectKey = effects[Math.floor(Math.random() * effects.length)] ?? "entropy_variant";
     const backgroundKey = fissionBackgroundOptionKeys[Math.floor(Math.random() * fissionBackgroundOptionKeys.length)] ?? "transparent";
+    const isEntropy = fissionEffects[effectKey].category === "entropy";
 
     setFissionPresetKey("custom");
     setFissionBackgroundKey(backgroundKey);
     setFissionEffectKey(effectKey);
     setFissionOutputFormat(backgroundKey === "transparent" ? "png" : Math.random() > 0.45 ? "jpg" : "png");
-    setFissionOutputSize(outputSizes[Math.floor(Math.random() * outputSizes.length)] ?? "seamless_4096");
+    setFissionOutputSize(outputSizes[Math.floor(Math.random() * outputSizes.length)] ?? "original");
     setFissionRotation(Math.round((Math.random() * 80 - 40) / 5) * 5);
     setFissionSpacing(Math.round((Math.random() * 34) / 2) * 2);
     setFissionStrength(45 + Math.round(Math.random() * 45));
+    setFissionVariantCountKey(isEntropy ? "nine" : "one");
   }
 
   async function fetchResizeJob(jobId: string) {
@@ -819,9 +836,75 @@ export function AssetsGallery({
     return fetchResizeJob(jobId) as Promise<FissionJobProgress>;
   }
 
+  async function startAiFissionJobs() {
+    if (!aiFissionSourceAsset) {
+      setAiFissionError(t("请先选择一张参考图", "Select one reference image first"));
+      return;
+    }
+
+    const prompt = aiFissionPrompt.trim();
+    if (!prompt) {
+      setAiFissionError(t("请先填写 AI 裂变要求", "Enter AI fission instructions first"));
+      return;
+    }
+
+    const count = fissionVariantCounts[aiFissionCountKey].value;
+    const referenceUrl = getFissionInputUrl(aiFissionSourceAsset);
+    const width = Math.max(512, Math.min(1536, aiFissionSourceAsset.width || 1024));
+    const height = Math.max(512, Math.min(1536, aiFissionSourceAsset.height || 1024));
+    const basePrompt = [
+      "Use the reference image as the visual source.",
+      "Create a similar but meaningfully different image variant.",
+      "Preserve the main subject identity, product category, composition logic, and commercial usability.",
+      "Do not copy text incorrectly. If the image contains readable text or logos, keep them clean or simplify them safely.",
+      prompt,
+    ].join(" ");
+
+    setIsAiFissionRunning(true);
+    setAiFissionError(null);
+    setAiFissionMessage(t(`正在创建 ${count} 个 AI 裂变任务...`, `Creating ${count} AI fission jobs...`));
+
+    try {
+      const jobIds: string[] = [];
+
+      for (let index = 0; index < count; index += 1) {
+        const response = await fetch("/api/ai/generate-image", {
+          body: JSON.stringify({
+            async: true,
+            height,
+            prompt: `${basePrompt} Variant ${index + 1}/${count}: change one or two visual details, such as direction, pose, hand action, expression, colorway, lighting, or background, while keeping the result close to the reference.`,
+            queue: true,
+            reference_url: referenceUrl,
+            save_to_assets: true,
+            wait: false,
+            width,
+          }),
+          headers: { "Content-Type": "application/json" },
+          method: "POST",
+        });
+        const data = (await response.json()) as { error?: string; job_id?: string };
+
+        if (!response.ok || !data.job_id) {
+          throw new Error(data.error ?? t("AI 裂变任务创建失败", "Failed to create AI fission job"));
+        }
+
+        jobIds.push(data.job_id);
+        setAiFissionMessage(t(`AI 裂变任务已创建 ${jobIds.length}/${count}，正在进入 worker 队列...`, `Created ${jobIds.length}/${count} AI fission jobs. Queuing for worker...`));
+      }
+
+      setAiFissionMessage(t(`AI 裂变已进入队列：${jobIds.length} 个任务。结果会自动保存到素材库，可在图片任务查看进度。`, `AI fission queued: ${jobIds.length} jobs. Results will be saved to Assets; check Image Jobs for progress.`));
+    } catch (error) {
+      setAiFissionError(error instanceof Error ? error.message : t("AI 裂变任务创建失败", "Failed to create AI fission jobs"));
+    } finally {
+      setIsAiFissionRunning(false);
+    }
+  }
+
   async function startFissionJob() {
     const assetIds = fissionTargetAssetIds ? [...fissionTargetAssetIds] : Array.from(selectedIds);
-    const isSingleFission = assetIds.length === 1;
+    const variantCount = fissionVariantCounts[fissionVariantCountKey].value;
+    const outputCount = assetIds.length * variantCount;
+    const isSingleFission = outputCount === 1;
     const outputFormat = fissionBackgroundKey === "transparent" ? "png" : fissionOutputFormat;
 
     if (assetIds.length === 0) {
@@ -831,7 +914,7 @@ export function AssetsGallery({
 
     setIsFissionRunning(true);
     setFissionError(null);
-    setFissionMessage(isSingleFission ? t("正在创建单张裂变任务...", "Creating single fission job...") : t("正在创建批量裂变任务...", "Creating batch fission job..."));
+    setFissionMessage(isSingleFission ? t("正在创建单张快速裂变任务...", "Creating single quick fission job...") : t(`正在创建快速裂变任务，预计输出 ${outputCount} 张...`, `Creating quick fission job with ${outputCount} expected outputs...`));
     setFissionJob(null);
 
     try {
@@ -851,6 +934,7 @@ export function AssetsGallery({
           rotation: fissionRotation,
           spacing: fissionSpacing,
           strength: fissionStrength,
+          variant_count: variantCount,
         }),
         headers: {
           "Content-Type": "application/json",
@@ -868,7 +952,7 @@ export function AssetsGallery({
         ...createData.job,
         items: [],
       });
-      setFissionMessage(isSingleFission ? t(`单张裂变任务已创建：${jobId}，等待 worker 处理...`, `Single fission job created: ${jobId}. Waiting for the worker...`) : t(`裂变任务已创建：${jobId}，等待 worker 处理...`, `Fission job created: ${jobId}. Waiting for the worker...`));
+      setFissionMessage(isSingleFission ? t(`单张快速裂变任务已创建：${jobId}，等待 worker 处理...`, `Single quick fission job created: ${jobId}. Waiting for the worker...`) : t(`快速裂变任务已创建：${jobId}，等待 worker 处理 ${outputCount} 张结果...`, `Quick fission job created: ${jobId}. Waiting for the worker to process ${outputCount} outputs...`));
       setIsFissionDialogOpen(false);
       setFissionTargetAssetIds(null);
 
@@ -885,8 +969,8 @@ export function AssetsGallery({
         setFissionMessage(
           TERMINAL_RESIZE_STATUSES.has(job.status)
             ? isSingleFission
-              ? t(`单张裂变完成：${completedCount}/${job.total_count}`, `Single fission complete: ${completedCount}/${job.total_count}`)
-              : t(`批量裂变完成：${completedCount}/${job.total_count}`, `Batch fission complete: ${completedCount}/${job.total_count}`)
+              ? t(`单张快速裂变完成：${completedCount}/${job.total_count}`, `Single quick fission complete: ${completedCount}/${job.total_count}`)
+              : t(`快速裂变完成：${completedCount}/${job.total_count}`, `Quick fission complete: ${completedCount}/${job.total_count}`)
             : processingCount > 0
               ? t(`worker 裂变处理中：完成 ${completedCount}/${job.total_count}，运行中 ${processingCount}，${percent}%`, `Worker fission processing: done ${completedCount}/${job.total_count}, running ${processingCount}, ${percent}%`)
               : attempt >= 15 && completedCount === 0
@@ -900,7 +984,7 @@ export function AssetsGallery({
         }
       }
 
-      setFissionMessage(isSingleFission ? t("单张裂变仍在后台处理，可稍后到图片任务页查看。", "Single fission is still running. Check Image Jobs later.") : t("批量裂变仍在后台处理，可稍后到图片任务页查看。", "Batch fission is still running. Check Image Jobs later."));
+      setFissionMessage(isSingleFission ? t("单张快速裂变仍在后台处理，可稍后到图片任务页查看。", "Single quick fission is still running. Check Image Jobs later.") : t("快速裂变仍在后台处理，可稍后到图片任务页查看。", "Quick fission is still running. Check Image Jobs later."));
     } catch (requestError) {
       setFissionError(requestError instanceof Error ? requestError.message : t("裂变任务处理失败", "Fission job failed"));
       setFissionMessage(null);
@@ -1097,7 +1181,7 @@ export function AssetsGallery({
             disabled={selectedCount === 0 || isBatchProcessing}
             className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            {t("批量裂变", "Batch Fission")}
+            {t("快速裂变", "Quick Fission")}
           </button>
           <button
             type="button"
@@ -1492,7 +1576,7 @@ export function AssetsGallery({
                       disabled={isBatchProcessing || isAssetDeleting || isDeleting}
                       className="ui-press w-full rounded-md border border-cyan-300 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
                     >
-                      {t("单张裂变", "Single Fission")}
+                      {t("单张快速裂变", "Single Quick Fission")}
                     </button>
                   ) : null}
                   <button
@@ -1678,7 +1762,7 @@ export function AssetsGallery({
                 "absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border text-lg font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
                 isDark ? "border-white/[0.12] text-zinc-200 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-800 hover:bg-zinc-100",
               ].join(" ")}
-              aria-label={fissionTargetAssetIds ? t("关闭单张裂变", "Close single fission") : t("关闭批量裂变", "Close batch fission")}
+              aria-label={fissionTargetAssetIds ? t("关闭单张快速裂变", "Close single quick fission") : t("关闭快速裂变", "Close quick fission")}
             >
               x
             </button>
@@ -1688,16 +1772,94 @@ export function AssetsGallery({
               isDark ? "border-white/[0.08] bg-[#0f0f10]" : "border-zinc-200 bg-white",
             ].join(" ")}>
               <h3 id="fission-dialog-title" className={["text-base font-semibold", isDark ? "text-white" : "text-zinc-950"].join(" ")}>
-                {fissionTargetAssetIds ? t("单张裂变", "Single Fission") : t("批量裂变", "Batch Fission")}
+                {fissionTargetAssetIds ? t("单张快速裂变", "Single Quick Fission") : t("图片裂变", "Image Fission")}
               </h3>
               <p className={["mt-1 text-sm", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
                 {fissionTargetAsset
-                  ? t(`当前图片：${fissionTargetAsset.filename}。裂变结果会写入该素材 processed_url。`, `Current image: ${fissionTargetAsset.filename}. The fission result will be written to this asset's processed_url.`)
-                  : t(`已选择 ${fissionTargetCount} 张图片，裂变结果会写入素材 processed_url。`, `${fissionTargetCount} image(s) selected. Fission results will be written to processed_url.`)}
+                  ? t(`当前图片：${fissionTargetAsset.filename}。快速裂变结果会写入该素材 processed_url；AI 裂变结果会作为新素材入库。`, `Current image: ${fissionTargetAsset.filename}. Quick fission writes to processed_url; AI fission saves new assets.`)
+                  : t(`已选择 ${fissionTargetCount} 张图片。快速裂变会进入本地 worker；AI 裂变使用第一张作为参考图。`, `${fissionTargetCount} image(s) selected. Quick fission goes to the local worker; AI fission uses the first selected image as reference.`)}
               </p>
             </div>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+              <div className={[
+                "rounded-md border p-4",
+                isDark ? "border-violet-300/20 bg-violet-400/10" : "border-violet-200 bg-violet-50",
+              ].join(" ")}>
+                <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+                  <div>
+                    <p className={["text-sm font-semibold", isDark ? "text-violet-100" : "text-violet-950"].join(" ")}>
+                      {t("AI 裂变", "AI Fission")}
+                    </p>
+                    <p className={["mt-1 text-xs leading-5", isDark ? "text-violet-100/75" : "text-violet-800"].join(" ")}>
+                      {t("用于语义改图：比如左手拿烟变右手拿烟、姿势变化、表情变化、背景变化。会调用 AI API，并把结果保存到素材库。", "For semantic edits such as changing hand action, pose, expression, or background. This uses the AI API and saves results to Assets.")}
+                    </p>
+                    <div className={["mt-3 rounded-md border p-3 text-xs", isDark ? "border-white/[0.08] bg-black/20 text-zinc-300" : "border-violet-200 bg-white text-zinc-600"].join(" ")}>
+                      {aiFissionSourceAsset
+                        ? t(`参考图：${aiFissionSourceAsset.filename}`, `Reference: ${aiFissionSourceAsset.filename}`)
+                        : t("请先选择一张图片作为 AI 参考图。", "Select one image as the AI reference first.")}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <textarea
+                      value={aiFissionPrompt}
+                      onChange={(event) => setAiFissionPrompt(event.target.value)}
+                      rows={4}
+                      className={[
+                        "w-full resize-y rounded-md border px-3 py-2 text-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20",
+                        isDark ? "border-white/[0.12] bg-black/30 text-zinc-100 placeholder:text-zinc-500" : "border-violet-200 bg-white text-zinc-900 placeholder:text-zinc-400",
+                      ].join(" ")}
+                      placeholder={t("例如：保持人物一致，把左手拿烟改成右手拿烟，背景和衣服尽量不变。", "Example: keep the person consistent, change the cigarette from left hand to right hand, keep clothing and background close.")}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      {fissionVariantCountOptions.map((countKey) => {
+                        const count = fissionVariantCounts[countKey];
+                        const isSelected = aiFissionCountKey === countKey;
+
+                        return (
+                          <button
+                            key={countKey}
+                            type="button"
+                            onClick={() => setAiFissionCountKey(countKey)}
+                            className={[
+                              "rounded-md border px-3 py-2 text-xs font-semibold transition",
+                              isSelected
+                                ? isDark
+                                  ? "border-violet-300/50 bg-violet-400/20 text-violet-100"
+                                  : "border-violet-700 bg-violet-100 text-violet-900"
+                                : isDark
+                                  ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                                  : "border-violet-200 bg-white text-violet-800 hover:bg-violet-50",
+                            ].join(" ")}
+                          >
+                            {t(count.label, count.labelEn)}
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        onClick={() => void startAiFissionJobs()}
+                        disabled={isAiFissionRunning || !aiFissionSourceAsset}
+                        className="ml-auto rounded-md bg-violet-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-violet-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                      >
+                        {isAiFissionRunning ? t("AI 排队中...", "Queuing AI...") : t("开始 AI 裂变", "Start AI Fission")}
+                      </button>
+                    </div>
+                    {aiFissionMessage ? (
+                      <div className={["rounded-md border px-3 py-2 text-xs", isDark ? "border-violet-300/20 bg-violet-400/10 text-violet-100" : "border-violet-200 bg-white text-violet-800"].join(" ")}>
+                        {aiFissionMessage}
+                      </div>
+                    ) : null}
+                    {aiFissionError ? (
+                      <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                        {aiFissionError}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
               <div className={[
                 "rounded-md border p-4",
                 isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-zinc-50",
@@ -1705,10 +1867,10 @@ export function AssetsGallery({
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                      {t("推荐预设", "Recommended Presets")}
+                      {t("快速裂变预设", "Quick Fission Presets")}
                     </p>
                     <p className={["mt-1 text-xs", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
-                      {t("先选用途，再微调间距、旋转和底色。", "Start from a use case, then tune spacing, rotation, and background.")}
+                      {t("本地处理，不调用 AI。适合镜像、旋转、缩放、换底色、基础平铺和一图多变体。", "Local processing without AI. Use it for flip, rotation, scale, background, tile, and one-to-many variants.")}
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1767,7 +1929,7 @@ export function AssetsGallery({
 
               <div>
                 <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                  {t("裂变效果", "Fission Effect")}
+                  {t("快速裂变效果", "Quick Fission Effect")}
                 </p>
                 <div className="mt-3 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
                   <div className={[
@@ -1775,10 +1937,10 @@ export function AssetsGallery({
                     isDark ? "border-cyan-300/15 bg-cyan-400/5" : "border-cyan-200 bg-cyan-50/60",
                   ].join(" ")}>
                     <p className={["text-xs font-semibold uppercase tracking-[0.12em]", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
-                      {t("POD 满版图案", "POD Pattern Repeat")}
+                      {t("基础功能", "Basic Tools")}
                     </p>
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      {fissionPatternEffectOptions.map((effectKey) => {
+                      {fissionQuickEffectOptions.map((effectKey) => {
                         const effect = fissionEffects[effectKey];
                         const isSelected = fissionEffectKey === effectKey;
 
@@ -1804,6 +1966,7 @@ export function AssetsGallery({
                               onChange={() => {
                                 markFissionCustom();
                                 setFissionEffectKey(effectKey);
+                                if (fissionEffects[effectKey].category === "quick") setFissionVariantCountKey("one");
                               }}
                               className="mt-1 h-4 w-4 border-zinc-300"
                             />
@@ -1826,10 +1989,10 @@ export function AssetsGallery({
                     isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-zinc-50/70",
                   ].join(" ")}>
                     <p className={["text-xs font-semibold uppercase tracking-[0.12em]", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
-                      {t("创意变体", "Creative Variants")}
+                      {t("多次裂变", "Entropy Fission")}
                     </p>
                     <div className="mt-3 grid gap-3">
-                      {fissionCreativeEffectOptions.map((effectKey) => {
+                      {fissionEntropyEffectOptions.map((effectKey) => {
                         const effect = fissionEffects[effectKey];
                         const isSelected = fissionEffectKey === effectKey;
 
@@ -1855,6 +2018,7 @@ export function AssetsGallery({
                               onChange={() => {
                                 markFissionCustom();
                                 setFissionEffectKey(effectKey);
+                                if (fissionEffects[effectKey].category === "entropy") setFissionVariantCountKey("nine");
                               }}
                               className="mt-1 h-4 w-4 border-zinc-300"
                             />
@@ -1917,6 +2081,42 @@ export function AssetsGallery({
                 </div>
 
                 <div className="space-y-4">
+                  <div>
+                    <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                      {t("生成数量", "Output Count")}
+                    </p>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {fissionVariantCountOptions.map((countKey) => {
+                        const count = fissionVariantCounts[countKey];
+                        const isSelected = fissionVariantCountKey === countKey;
+
+                        return (
+                          <button
+                            key={countKey}
+                            type="button"
+                            onClick={() => {
+                              markFissionCustom();
+                              setFissionVariantCountKey(countKey);
+                              if (count.value > 1) setFissionEffectKey("entropy_variant");
+                            }}
+                            className={[
+                              "rounded-md border px-3 py-2 text-sm font-medium transition",
+                              isSelected
+                                ? isDark
+                                  ? "border-cyan-300/50 bg-cyan-400/10 text-cyan-100"
+                                  : "border-cyan-700 bg-cyan-50 text-cyan-900"
+                                : isDark
+                                  ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                                  : "border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                            ].join(" ")}
+                          >
+                            {t(count.label, count.labelEn)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div>
                     <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
                       {t("输出格式", "Output Format")}
@@ -1998,7 +2198,7 @@ export function AssetsGallery({
                   <div>
                     <div className="flex items-center justify-between gap-3">
                       <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                        {t("铺满尺度 / 特效强度", "Tile Scale / Strength")}
+                        {t("缩放 / 强度", "Scale / Strength")}
                       </p>
                       <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
                         {fissionStrength}%
@@ -2021,7 +2221,7 @@ export function AssetsGallery({
                   <div>
                     <div className="flex items-center justify-between gap-3">
                       <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                        {t("图案间距", "Pattern Spacing")}
+                        {t("间距 / 偏移", "Spacing / Offset")}
                       </p>
                       <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
                         {fissionSpacing}%
@@ -2070,7 +2270,7 @@ export function AssetsGallery({
                 "rounded-md border p-4 text-sm leading-6",
                 isDark ? "border-cyan-300/15 bg-cyan-400/10 text-cyan-100" : "border-cyan-200 bg-cyan-50 text-cyan-800",
               ].join(" ")}>
-                {t("裂变会基于原图/优先设计图生成新的结果图，不覆盖原图；透明底默认输出 PNG，只有选择非透明底色时才允许 JPG。", "Fission creates a new result from the original or preferred design without overwriting the source. Transparent backgrounds always output PNG; JPG is only available for non-transparent backgrounds.")}
+                {t("快速裂变只做本地机械变换，不调用 AI；多次裂变会把同一张图拆成多条 worker 任务，一次生成多张相似但不同的结果。透明底默认输出 PNG。", "Quick fission only performs local mechanical transforms without AI. Entropy fission creates multiple worker items for the same image, producing several similar but different outputs. Transparent backgrounds always output PNG.")}
               </div>
             </div>
 
@@ -2095,7 +2295,7 @@ export function AssetsGallery({
                 disabled={isFissionRunning || fissionTargetCount === 0}
                 className="rounded-md bg-cyan-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-cyan-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
               >
-                {isFissionRunning ? t("裂变处理中...", "Processing...") : fissionTargetAssetIds ? t("开始单张裂变", "Start Single Fission") : t("开始批量裂变", "Start Batch Fission")}
+                {isFissionRunning ? t("快速裂变处理中...", "Processing...") : fissionTargetAssetIds ? t("开始单张快速裂变", "Start Single Quick Fission") : t("开始快速裂变", "Start Quick Fission")}
               </button>
             </div>
           </div>

@@ -55,8 +55,8 @@ export default async function ImageFissionPage() {
     <PageShell
       titleZh="图片裂变"
       titleEn="Image Fission"
-      descriptionZh="从素材库选择图片，批量生成镜像、万花镜、残影、错位切片和满版平铺变体。"
-      descriptionEn="Select assets and batch-generate mirror, kaleidoscope, echo, slice-shift and tile variants."
+      descriptionZh="从素材库选择图片，分为 AI 语义裂变和本地快速裂变；快速裂变支持镜像、旋转、缩放、换底、平铺和一图多变体。"
+      descriptionEn="Select assets for AI semantic fission or local quick fission, including flip, rotate, scale, background fill, tile, and one-to-many variants."
     >
       <AssetsGallery initialAssets={assets} initialError={error} initialTotal={total} processedFirst showFissionComparison />
     </PageShell>

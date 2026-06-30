@@ -1,108 +1,59 @@
 export const fissionEffects = {
-  pattern_block: {
-    category: "pattern",
-    description: "标准整齐重复，适合最快生成 AOP 满版图和基础背景图。",
-    descriptionEn: "Standard repeat for quick all-over prints and background fills.",
-    label: "标准铺满",
-    labelEn: "Block Repeat",
+  flip_horizontal: {
+    category: "quick",
+    description: "整张图左右翻转，适合快速生成反向构图。",
+    descriptionEn: "Mirrors the whole image horizontally for a quick opposite-facing variant.",
+    label: "左右镜像",
+    labelEn: "Horizontal Flip",
   },
-  pattern_brick: {
-    category: "pattern",
-    description: "每行错开半格，减少图案接缝感，适合服装满版印花。",
-    descriptionEn: "Offsets every row by half a tile to soften visible seams.",
-    label: "砖墙错位",
-    labelEn: "Brick Repeat",
+  flip_vertical: {
+    category: "quick",
+    description: "整张图上下翻转，适合做倒影、对称或特殊构图。",
+    descriptionEn: "Flips the whole image vertically for reflection or symmetric layouts.",
+    label: "上下镜像",
+    labelEn: "Vertical Flip",
   },
-  pattern_half_drop: {
-    category: "pattern",
-    description: "半落差重复，生成更自然的连续图案和布料纹理。",
-    descriptionEn: "Half-drop repeat for more natural continuous fabric patterns.",
-    label: "半落差铺满",
-    labelEn: "Half-Drop Repeat",
+  rotate_canvas: {
+    category: "quick",
+    description: "在画布中旋转素材，透明底会保留透明通道。",
+    descriptionEn: "Rotates the artwork inside the output canvas while preserving transparency.",
+    label: "旋转变体",
+    labelEn: "Rotate Variant",
   },
-  pattern_reflect: {
-    category: "pattern",
-    description: "镜像重复单元，适合做对称纹样、围巾、家居布艺和满版商品。",
-    descriptionEn: "Mirrored repeat cell for symmetric apparel and home textile patterns.",
-    label: "镜像铺满",
-    labelEn: "Reflect Repeat",
+  scale_center: {
+    category: "quick",
+    description: "按中心缩放素材，适合快速做放大、缩小和留白版本。",
+    descriptionEn: "Scales the artwork from the center to create enlarged or padded variants.",
+    label: "缩放变体",
+    labelEn: "Scale Variant",
   },
-  pattern_stripe: {
-    category: "pattern",
-    description: "按条带节奏重复，适合把小图案扩展成壁纸式连续设计。",
-    descriptionEn: "Stripe-style repeat for wallpaper-like continuous designs.",
-    label: "条带铺满",
-    labelEn: "Stripe Repeat",
+  background_fill: {
+    category: "quick",
+    description: "保持主体居中，快速换透明、白色、黑色或浅色底。",
+    descriptionEn: "Centers the source and changes the background color.",
+    label: "换底色",
+    labelEn: "Background Fill",
   },
-  pattern_toss: {
-    category: "pattern",
-    description: "随机散点式满版重复，适合 AOP 衣服、睡衣、泳装和布料花型。",
-    descriptionEn: "Tossed scatter repeat for AOP apparel, pajamas, swimwear, and fabric-style prints.",
-    label: "散点满版",
-    labelEn: "Toss Repeat",
-  },
-  pattern_diagonal: {
-    category: "pattern",
-    description: "斜向节奏铺排，适合做运动服、街头风满版和视觉动感图案。",
-    descriptionEn: "Diagonal repeat rhythm for sportswear, streetwear AOP, and motion-heavy patterns.",
-    label: "斜向铺排",
-    labelEn: "Diagonal Repeat",
-  },
-  echo: {
-    category: "creative",
-    description: "多层残影向外扩散，适合做潮牌贴纸、海报感印花。",
-    descriptionEn: "Layered echo copies spread outward for poster-like POD graphics.",
-    label: "残影扩散",
-    labelEn: "Echo Spread",
-  },
-  kaleidoscope: {
-    category: "creative",
-    description: "中心区域镜像重组，生成更强装饰感的万花镜图案。",
-    descriptionEn: "Mirrors the center into a decorative kaleidoscope pattern.",
-    label: "万花镜裂变",
-    labelEn: "Kaleidoscope",
+  tile_repeat: {
+    category: "quick",
+    description: "把单张素材平铺成基础满版图案。",
+    descriptionEn: "Repeats the source into a simple tiled all-over pattern.",
+    label: "基础平铺",
+    labelEn: "Basic Tile",
   },
   mirror_grid: {
-    category: "creative",
-    description: "四宫格镜像复制，快速生成对称图案和方形装饰图。",
-    descriptionEn: "Creates a mirrored 2x2 grid for symmetrical square designs.",
+    category: "quick",
+    description: "生成 2x2 镜像格，适合做机械对称图。",
+    descriptionEn: "Builds a 2x2 mirrored grid for mechanical symmetry.",
     label: "镜像四宫格",
     labelEn: "Mirror Grid",
   },
-  slice_shift: {
-    category: "creative",
-    description: "横向切片错位，制造速度感和故障风裂变效果。",
-    descriptionEn: "Offsets horizontal slices for a glitch-like fission effect.",
-    label: "错位切片",
-    labelEn: "Slice Shift",
-  },
-  tile_bloom: {
-    category: "creative",
-    description: "平铺缩放并旋转复制，适合把单张素材扩展为满版图案。",
-    descriptionEn: "Tiles, scales, and rotates copies into an all-over pattern.",
-    label: "满版平铺",
-    labelEn: "Tile Bloom",
-  },
-  sticker_outline: {
-    category: "creative",
-    description: "给透明印花增加白色贴纸描边，适合胸前印花、贴纸包和电商主图。",
-    descriptionEn: "Adds a white sticker-style outline for chest prints, sticker sheets, and listing images.",
-    label: "贴纸描边",
-    labelEn: "Sticker Outline",
-  },
-  vintage_distress: {
-    category: "creative",
-    description: "叠加旧化磨损纹理，适合复古 T 恤、乐队风和美式做旧印花。",
-    descriptionEn: "Applies a worn distressed texture for vintage tees, band-style art, and retro prints.",
-    label: "复古做旧",
-    labelEn: "Vintage Distress",
-  },
-  halftone_pop: {
-    category: "creative",
-    description: "把印花转成网点半调质感，适合街头风、漫画风和复古丝网印刷效果。",
-    descriptionEn: "Turns the print into a halftone dot treatment for streetwear, comic, and retro screen-print looks.",
-    label: "半调网点",
-    labelEn: "Halftone Pop",
+  entropy_variant: {
+    category: "entropy",
+    description: "基于同一张图自动组合镜像、旋转、缩放和偏移，一次生成多张相似但不同的结果。",
+    descriptionEn: "Combines flip, rotation, scale, and offsets to create multiple similar-but-different variants.",
+    label: "多次裂变",
+    labelEn: "Entropy Variants",
   },
 } as const;
 
@@ -135,15 +86,9 @@ export const fissionOutputSizes = {
   },
   aop_5400: {
     height: 5400,
-    label: "AOP 满版 5400",
+    label: "满版 5400",
     labelEn: "AOP Square 5400",
     width: 5400,
-  },
-  seamless_4096: {
-    height: 4096,
-    label: "连续图案 4096",
-    labelEn: "Seamless 4096",
-    width: 4096,
   },
 } as const;
 
@@ -180,105 +125,98 @@ export const fissionBackgroundOptions = {
 
 export type FissionBackgroundKey = keyof typeof fissionBackgroundOptions;
 
+export const fissionVariantCounts = {
+  one: {
+    label: "生成 1 张",
+    labelEn: "1 output",
+    value: 1,
+  },
+  four: {
+    label: "生成 4 张",
+    labelEn: "4 outputs",
+    value: 4,
+  },
+  nine: {
+    label: "生成 9 张",
+    labelEn: "9 outputs",
+    value: 9,
+  },
+} as const;
+
+export type FissionVariantCountKey = keyof typeof fissionVariantCounts;
+
 export const fissionPresets = {
-  aop_fabric: {
+  quick_flip: {
     backgroundKey: "transparent",
-    effectKey: "pattern_half_drop",
+    effectKey: "flip_horizontal",
     format: "png",
-    label: "服装满版",
-    labelEn: "AOP Fabric",
-    outputSize: "aop_5400",
-    rotation: 0,
-    spacing: 10,
-    strength: 72,
-  },
-  seamless_tile: {
-    backgroundKey: "transparent",
-    effectKey: "pattern_reflect",
-    format: "png",
-    label: "连续图案",
-    labelEn: "Seamless Tile",
-    outputSize: "seamless_4096",
-    rotation: 0,
-    spacing: 4,
-    strength: 66,
-  },
-  toss_aop: {
-    backgroundKey: "transparent",
-    effectKey: "pattern_toss",
-    format: "png",
-    label: "散点满版",
-    labelEn: "Tossed AOP",
-    outputSize: "aop_5400",
-    rotation: -12,
-    spacing: 28,
-    strength: 62,
-  },
-  diagonal_sportswear: {
-    backgroundKey: "transparent",
-    effectKey: "pattern_diagonal",
-    format: "png",
-    label: "运动斜纹",
-    labelEn: "Diagonal Sportswear",
-    outputSize: "seamless_4096",
-    rotation: 12,
-    spacing: 14,
-    strength: 70,
-  },
-  sticker_sheet: {
-    backgroundKey: "white",
-    effectKey: "pattern_brick",
-    format: "jpg",
-    label: "贴纸铺版",
-    labelEn: "Sticker Sheet",
-    outputSize: "square_3000",
-    rotation: -8,
-    spacing: 24,
-    strength: 54,
-  },
-  chest_sticker: {
-    backgroundKey: "transparent",
-    effectKey: "sticker_outline",
-    format: "png",
-    label: "胸前贴纸印花",
-    labelEn: "Chest Sticker Print",
-    outputSize: "print_4500",
+    label: "反向构图",
+    labelEn: "Opposite Direction",
+    outputSize: "original",
     rotation: 0,
     spacing: 0,
-    strength: 68,
+    strength: 70,
+    variantCount: 1,
   },
-  vintage_tee: {
+  quick_rotate: {
     backgroundKey: "transparent",
-    effectKey: "vintage_distress",
+    effectKey: "rotate_canvas",
     format: "png",
-    label: "复古做旧 T 恤",
-    labelEn: "Vintage Tee",
-    outputSize: "print_4500",
+    label: "轻微旋转",
+    labelEn: "Soft Rotation",
+    outputSize: "original",
+    rotation: 12,
+    spacing: 0,
+    strength: 70,
+    variantCount: 1,
+  },
+  quick_scale: {
+    backgroundKey: "transparent",
+    effectKey: "scale_center",
+    format: "png",
+    label: "缩放留白",
+    labelEn: "Scale Padding",
+    outputSize: "original",
     rotation: 0,
     spacing: 0,
     strength: 58,
+    variantCount: 1,
   },
-  halftone_street: {
+  quick_background: {
+    backgroundKey: "white",
+    effectKey: "background_fill",
+    format: "jpg",
+    label: "白底版本",
+    labelEn: "White Background",
+    outputSize: "original",
+    rotation: 0,
+    spacing: 0,
+    strength: 72,
+    variantCount: 1,
+  },
+  quick_tile: {
     backgroundKey: "transparent",
-    effectKey: "halftone_pop",
+    effectKey: "tile_repeat",
     format: "png",
-    label: "街头半调",
-    labelEn: "Street Halftone",
-    outputSize: "print_4500",
+    label: "基础满版",
+    labelEn: "Basic AOP Tile",
+    outputSize: "aop_5400",
     rotation: 0,
-    spacing: 0,
-    strength: 70,
+    spacing: 10,
+    strength: 62,
+    variantCount: 1,
   },
-  poster_variant: {
-    backgroundKey: "black",
-    effectKey: "echo",
+  entropy_nine: {
+    backgroundKey: "transparent",
+    effectKey: "entropy_variant",
     format: "png",
-    label: "海报变体",
-    labelEn: "Poster Variant",
-    outputSize: "square_2048",
-    rotation: 0,
-    spacing: 0,
-    strength: 78,
+    label: "一图九裂变",
+    labelEn: "One to Nine",
+    outputSize: "original",
+    rotation: 18,
+    spacing: 10,
+    strength: 72,
+    variantCount: 9,
   },
 } as const satisfies Record<
   string,
@@ -292,6 +230,7 @@ export const fissionPresets = {
     rotation: number;
     spacing: number;
     strength: number;
+    variantCount: number;
   }
 >;
 
@@ -325,6 +264,12 @@ export function normalizeFissionRotation(value: unknown) {
   const numeric = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(numeric)) return 0;
   return Math.max(-180, Math.min(180, Math.round(numeric)));
+}
+
+export function normalizeFissionVariantCount(value: unknown) {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.max(1, Math.min(9, Math.round(numeric)));
 }
 
 export function getFissionBackground(value: unknown) {
