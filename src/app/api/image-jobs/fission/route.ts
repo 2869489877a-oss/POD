@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 
 import {
+  getFissionBackground,
   getFissionEffect,
   getFissionOutputSize,
   normalizeFissionOutputFormat,
+  normalizeFissionRotation,
+  normalizeFissionSpacing,
   normalizeFissionStrength,
 } from "@/lib/image-processing/fission-effects";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
@@ -14,8 +17,12 @@ export const runtime = "nodejs";
 type CreateFissionJobRequest = {
   asset_ids?: unknown;
   effect_key?: unknown;
+  background_key?: unknown;
   output_format?: unknown;
   output_size?: unknown;
+  preset_key?: unknown;
+  rotation?: unknown;
+  spacing?: unknown;
   strength?: unknown;
 };
 
@@ -39,9 +46,13 @@ async function readRequestBody(request: Request): Promise<CreateFissionJobReques
   const form = await request.formData();
   return {
     asset_ids: form.getAll("asset_ids[]").filter((item): item is string => typeof item === "string"),
+    background_key: form.get("background_key"),
     effect_key: form.get("effect_key"),
     output_format: form.get("output_format"),
     output_size: form.get("output_size"),
+    preset_key: form.get("preset_key"),
+    rotation: form.get("rotation"),
+    spacing: form.get("spacing"),
     strength: form.get("strength"),
   };
 }
@@ -57,8 +68,11 @@ export async function POST(request: Request) {
 
   const assetIds = getUniqueAssetIds(body.asset_ids);
   const effect = getFissionEffect(body.effect_key);
+  const background = getFissionBackground(body.background_key);
   const outputSize = getFissionOutputSize(body.output_size);
   const outputFormat = normalizeFissionOutputFormat(body.output_format);
+  const rotation = normalizeFissionRotation(body.rotation);
+  const spacing = normalizeFissionSpacing(body.spacing);
   const strength = normalizeFissionStrength(body.strength);
 
   if (assetIds.length === 0) {
@@ -80,12 +94,17 @@ export async function POST(request: Request) {
       jobType: "fission",
       mode: body.effect_key,
       options: {
+        background_color: background.color,
+        background_key: typeof body.background_key === "string" ? body.background_key : "transparent",
         effect_key: body.effect_key,
         effect_label: effect.label,
         output_format: outputFormat,
         output_height: outputSize.height,
         output_size: body.output_size,
         output_width: outputSize.width,
+        preset_key: typeof body.preset_key === "string" ? body.preset_key : null,
+        rotation,
+        spacing,
         strength,
       },
       setPreferred: false,

@@ -9,6 +9,7 @@
     "collect:risk-images": "node tools/collect-risk-candidate-images.mjs",
     "import:openlogo-candidates": "node tools/import-openlogo-candidates.mjs",
     "seed:collector-risk-images": "node tools/seed-collector-risk-images.mjs",
+    "smoke:fission": "node tools/smoke-test-fission-effects.mjs",
     "start": "next start",
     "worker:images": "node tools/local-image-worker.mjs",
     "lint": "eslint"

@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promise
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { createJiti } from "jiti";
 import JSZip from "jszip";
@@ -77,6 +78,18 @@ const OCR_LANGS = process.env.OCR_LANGS?.trim() || "eng+chi_sim";
 const OCR_PSM = process.env.OCR_PSM?.trim() || "11";
 const OCR_TIMEOUT_MS = clampInt(process.env.OCR_TIMEOUT_MS, 5_000, 120_000, 25_000);
 const OCR_MAX_DIM = clampInt(process.env.OCR_MAX_DIM, 600, 4000, 2000);
+const FISSION_EFFECTS = new Set([
+  "pattern_block",
+  "pattern_brick",
+  "pattern_half_drop",
+  "pattern_reflect",
+  "pattern_stripe",
+  "echo",
+  "kaleidoscope",
+  "mirror_grid",
+  "slice_shift",
+  "tile_bloom",
+]);
 const INFRINGEMENT_REFERENCE_CACHE_MS = clampInt(
   process.env.LOCAL_WORKER_INFRINGEMENT_REFERENCE_CACHE_MS,
   0,
@@ -1245,22 +1258,56 @@ function getFissionConfig(job, metadata) {
   const requestedHeight = Math.round(Number(options.output_height));
   const width = Number.isFinite(requestedWidth) && requestedWidth > 0 ? requestedWidth : sourceWidth;
   const height = Number.isFinite(requestedHeight) && requestedHeight > 0 ? requestedHeight : sourceHeight;
-  const effect = typeof options.effect_key === "string" ? options.effect_key : job.options?.mode || "mirror_grid";
+  const requestedEffect = typeof options.effect_key === "string" ? options.effect_key : job.options?.mode || "pattern_half_drop";
+  const effect = FISSION_EFFECTS.has(requestedEffect) ? requestedEffect : "pattern_half_drop";
   const outputFormat = options.output_format === "jpg" || options.output_format === "jpeg" ? "jpg" : "png";
+  const background = parseFissionBackgroundColor(options.background_color);
+  const rotation = clamp(numberOption(options, "rotation", 0), -180, 180);
+  const spacing = clamp(numberOption(options, "spacing", 12), 0, 80);
   const strength = clamp(numberOption(options, "strength", 70), 0, 100);
 
   return {
+    background,
     contentType: outputFormat === "jpg" ? "image/jpeg" : "image/png",
     effect,
     extension: outputFormat,
     height: Math.max(64, Math.min(5400, height)),
+    rotation,
+    spacing,
     strength,
+    presetKey: typeof options.preset_key === "string" ? options.preset_key : null,
     width: Math.max(64, Math.min(5400, width)),
   };
 }
 
 function transparentBackground() {
   return { alpha: 0, b: 0, g: 0, r: 0 };
+}
+
+function parseFissionBackgroundColor(value) {
+  if (typeof value !== "string" || value === "transparent") {
+    return transparentBackground();
+  }
+
+  const normalized = value.trim();
+  const hex = normalized.startsWith("#") ? normalized.slice(1) : normalized;
+
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return transparentBackground();
+  }
+
+  return {
+    alpha: 1,
+    b: Number.parseInt(hex.slice(4, 6), 16),
+    g: Number.parseInt(hex.slice(2, 4), 16),
+    r: Number.parseInt(hex.slice(0, 2), 16),
+  };
+}
+
+function fissionCanvasBackground(config) {
+  return config.extension === "jpg" && config.background.alpha === 0
+    ? { alpha: 1, b: 255, g: 255, r: 255 }
+    : config.background;
 }
 
 async function normalizeFissionSource(source, width, height, fit = "cover") {
@@ -1295,6 +1342,93 @@ async function setImageOpacity(buffer, opacity) {
   }).png().toBuffer();
 }
 
+async function createPatternTile(source, config, reflected = false) {
+  const sourceMeta = await sharp(source).metadata();
+  const aspect = (sourceMeta.width || 1) / Math.max(1, sourceMeta.height || 1);
+  const minSide = Math.min(config.width, config.height);
+  const baseSize = Math.max(160, Math.round(minSide * (0.12 + config.strength / 420)));
+  const tileWidth = Math.max(120, Math.min(Math.round(baseSize * Math.sqrt(aspect)), Math.round(config.width * 0.72)));
+  const tileHeight = Math.max(120, Math.min(Math.round(baseSize / Math.sqrt(aspect)), Math.round(config.height * 0.72)));
+  const tile = await normalizeFissionSource(source, tileWidth, tileHeight, "contain");
+  const rotated = config.rotation === 0
+    ? tile
+    : await sharp(tile)
+        .rotate(config.rotation, { background: transparentBackground() })
+        .resize(tileWidth, tileHeight, {
+          background: transparentBackground(),
+          fit: "contain",
+        })
+        .png()
+        .toBuffer();
+
+  if (!reflected) {
+    return { buffer: rotated, height: tileHeight, width: tileWidth };
+  }
+
+  const reflectedWidth = tileWidth * 2;
+  const reflectedHeight = tileHeight * 2;
+  const reflectedTile = await sharp({
+    create: {
+      background: transparentBackground(),
+      channels: 4,
+      height: reflectedHeight,
+      width: reflectedWidth,
+    },
+  })
+    .composite([
+      { input: rotated, left: 0, top: 0 },
+      { input: await sharp(rotated).flop().png().toBuffer(), left: tileWidth, top: 0 },
+      { input: await sharp(rotated).flip().png().toBuffer(), left: 0, top: tileHeight },
+      { input: await sharp(rotated).flip().flop().png().toBuffer(), left: tileWidth, top: tileHeight },
+    ])
+    .png()
+    .toBuffer();
+
+  return { buffer: reflectedTile, height: reflectedHeight, width: reflectedWidth };
+}
+
+async function renderPatternRepeat(source, config, mode) {
+  const reflected = mode === "pattern_reflect";
+  const tile = await createPatternTile(source, config, reflected);
+  const gap = Math.round(Math.min(config.width, config.height) * (config.spacing / 260));
+  const stepX = Math.max(1, tile.width + gap);
+  const stepY = Math.max(1, tile.height + gap);
+  const composites = [];
+  const startY = -stepY;
+  const endY = config.height + stepY;
+  const startX = -stepX;
+  const endX = config.width + stepX;
+
+  for (let top = startY, row = 0; top <= endY; top += stepY, row += 1) {
+    const rowOffset =
+      mode === "pattern_brick" || mode === "pattern_half_drop" || mode === "pattern_stripe"
+        ? Math.round((row % 2) * stepX * 0.5)
+        : 0;
+    const verticalShift = mode === "pattern_half_drop" && row % 2 === 1 ? Math.round(stepY * 0.5) : 0;
+    const stripeSkew = mode === "pattern_stripe" ? Math.round((row % 3) * stepX * 0.22) : 0;
+
+    for (let left = startX - rowOffset - stripeSkew; left <= endX; left += stepX) {
+      composites.push({
+        input: tile.buffer,
+        left,
+        top: top + verticalShift,
+      });
+    }
+  }
+
+  return sharp({
+    create: {
+      background: fissionCanvasBackground(config),
+      channels: 4,
+      height: config.height,
+      width: config.width,
+    },
+  })
+    .composite(composites)
+    .png()
+    .toBuffer();
+}
+
 async function renderMirrorGrid(source, config) {
   const cellWidth = Math.ceil(config.width / 2);
   const cellHeight = Math.ceil(config.height / 2);
@@ -1308,7 +1442,7 @@ async function renderMirrorGrid(source, config) {
 
   return sharp({
     create: {
-      background: transparentBackground(),
+      background: fissionCanvasBackground(config),
       channels: 4,
       height: cellHeight * 2,
       width: cellWidth * 2,
@@ -1344,7 +1478,7 @@ async function renderKaleidoscope(source, config) {
 
   return sharp({
     create: {
-      background: transparentBackground(),
+      background: fissionCanvasBackground(config),
       channels: 4,
       height: cellHeight * 2,
       width: cellWidth * 2,
@@ -1384,7 +1518,7 @@ async function renderEchoSpread(source, config) {
 
   return sharp({
     create: {
-      background: transparentBackground(),
+      background: fissionCanvasBackground(config),
       channels: 4,
       height: config.height,
       width: config.width,
@@ -1422,7 +1556,7 @@ async function renderSliceShift(source, config) {
 
   return sharp({
     create: {
-      background: transparentBackground(),
+      background: fissionCanvasBackground(config),
       channels: 4,
       height: config.height,
       width: config.width,
@@ -1457,7 +1591,7 @@ async function renderTileBloom(source, config) {
 
   return sharp({
     create: {
-      background: transparentBackground(),
+      background: fissionCanvasBackground(config),
       channels: 4,
       height: tileHeight * 3,
       width: tileWidth * 3,
@@ -1471,19 +1605,28 @@ async function renderTileBloom(source, config) {
 
 async function encodeFissionOutput(buffer, config) {
   if (config.extension === "jpg") {
-    return sharp(buffer).flatten({ background: "#ffffff" }).jpeg({ quality: 92 }).toBuffer();
+    const background = config.background.alpha === 0
+      ? "#ffffff"
+      : {
+          b: config.background.b,
+          g: config.background.g,
+          r: config.background.r,
+        };
+    return sharp(buffer).flatten({ background }).jpeg({ quality: 92 }).toBuffer();
   }
 
   return sharp(buffer).png({ compressionLevel: 9 }).toBuffer();
 }
 
-async function processFission(job) {
+export async function processFission(job) {
   const source = await readImageBuffer(job.input_url);
   const metadata = await sharp(source).metadata();
   const config = getFissionConfig(job, metadata);
   let rendered;
 
-  if (config.effect === "kaleidoscope") {
+  if (config.effect.startsWith("pattern_")) {
+    rendered = await renderPatternRepeat(source, config, config.effect);
+  } else if (config.effect === "kaleidoscope") {
     rendered = await renderKaleidoscope(source, config);
   } else if (config.effect === "echo") {
     rendered = await renderEchoSpread(source, config);
@@ -1509,9 +1652,13 @@ async function processFission(job) {
     },
     height: outputMeta.height ?? config.height,
     metrics: {
+      background_alpha: config.background.alpha,
       effect: config.effect,
       output_format: config.extension,
+      preset_key: config.presetKey,
+      rotation: config.rotation,
       source: "local-image-worker",
+      spacing: config.spacing,
       strength: config.strength,
     },
     width: outputMeta.width ?? config.width,
@@ -2241,7 +2388,9 @@ async function main() {
   console.log("[local-image-worker] stopped");
 }
 
-main().catch((error) => {
-  console.error(getErrorMessage(error));
-  process.exitCode = 1;
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(getErrorMessage(error));
+    process.exitCode = 1;
+  });
+}

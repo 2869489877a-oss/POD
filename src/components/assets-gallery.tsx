@@ -15,10 +15,14 @@ import {
   type ResizePresetKey,
 } from "@/lib/image-processing/resize-presets";
 import {
+  fissionBackgroundOptions,
   fissionEffects,
   fissionOutputSizes,
+  fissionPresets,
+  type FissionBackgroundKey,
   type FissionEffectKey,
   type FissionOutputFormat,
+  type FissionPresetKey,
   type FissionOutputSizeKey,
 } from "@/lib/image-processing/fission-effects";
 
@@ -195,8 +199,12 @@ const statusStyles: Record<AssetStatus, string> = {
 
 const resizePresetOptions: ResizePresetKey[] = ["tshirt-print", "square-product"];
 const fissionEffectOptions = Object.keys(fissionEffects) as FissionEffectKey[];
+const fissionPatternEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "pattern");
+const fissionCreativeEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "creative");
 const fissionOutputSizeOptions = Object.keys(fissionOutputSizes) as FissionOutputSizeKey[];
 const fissionOutputFormatOptions: FissionOutputFormat[] = ["png", "jpg"];
+const fissionBackgroundOptionKeys = Object.keys(fissionBackgroundOptions) as FissionBackgroundKey[];
+const fissionPresetOptions = Object.keys(fissionPresets) as FissionPresetKey[];
 
 const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }> = {
   completed: { zh: "已完成", en: "Completed" },
@@ -249,10 +257,14 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [resizeMessage, setResizeMessage] = useState<string | null>(null);
   const [isResizeRunning, setIsResizeRunning] = useState(false);
   const [isFissionDialogOpen, setIsFissionDialogOpen] = useState(false);
-  const [fissionEffectKey, setFissionEffectKey] = useState<FissionEffectKey>("mirror_grid");
-  const [fissionOutputSize, setFissionOutputSize] = useState<FissionOutputSizeKey>("square_2048");
+  const [fissionEffectKey, setFissionEffectKey] = useState<FissionEffectKey>("pattern_half_drop");
+  const [fissionOutputSize, setFissionOutputSize] = useState<FissionOutputSizeKey>("seamless_4096");
   const [fissionOutputFormat, setFissionOutputFormat] = useState<FissionOutputFormat>("png");
   const [fissionStrength, setFissionStrength] = useState(70);
+  const [fissionSpacing, setFissionSpacing] = useState(12);
+  const [fissionRotation, setFissionRotation] = useState(0);
+  const [fissionBackgroundKey, setFissionBackgroundKey] = useState<FissionBackgroundKey>("transparent");
+  const [fissionPresetKey, setFissionPresetKey] = useState<FissionPresetKey | "custom">("aop_fabric");
   const [fissionJob, setFissionJob] = useState<FissionJobProgress | null>(null);
   const [fissionError, setFissionError] = useState<string | null>(null);
   const [fissionMessage, setFissionMessage] = useState<string | null>(null);
@@ -631,6 +643,44 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
     }
   }
 
+  function applyFissionPreset(presetKey: FissionPresetKey) {
+    const preset = fissionPresets[presetKey];
+    setFissionPresetKey(presetKey);
+    setFissionBackgroundKey(preset.backgroundKey);
+    setFissionEffectKey(preset.effectKey);
+    setFissionOutputFormat(preset.format);
+    setFissionOutputSize(preset.outputSize);
+    setFissionRotation(preset.rotation);
+    setFissionSpacing(preset.spacing);
+    setFissionStrength(preset.strength);
+  }
+
+  function markFissionCustom() {
+    if (fissionPresetKey !== "custom") {
+      setFissionPresetKey("custom");
+    }
+  }
+
+  function resetFissionSettings() {
+    applyFissionPreset("aop_fabric");
+  }
+
+  function randomizeFissionSettings() {
+    const effects = Math.random() > 0.68 ? fissionCreativeEffectOptions : fissionPatternEffectOptions;
+    const outputSizes: FissionOutputSizeKey[] = ["square_2048", "square_3000", "seamless_4096", "aop_5400"];
+    const effectKey = effects[Math.floor(Math.random() * effects.length)] ?? "pattern_half_drop";
+    const backgroundKey = fissionBackgroundOptionKeys[Math.floor(Math.random() * fissionBackgroundOptionKeys.length)] ?? "transparent";
+
+    setFissionPresetKey("custom");
+    setFissionBackgroundKey(backgroundKey);
+    setFissionEffectKey(effectKey);
+    setFissionOutputFormat(backgroundKey === "transparent" ? "png" : Math.random() > 0.45 ? "jpg" : "png");
+    setFissionOutputSize(outputSizes[Math.floor(Math.random() * outputSizes.length)] ?? "seamless_4096");
+    setFissionRotation(Math.round((Math.random() * 80 - 40) / 5) * 5);
+    setFissionSpacing(Math.round((Math.random() * 34) / 2) * 2);
+    setFissionStrength(45 + Math.round(Math.random() * 45));
+  }
+
   async function fetchResizeJob(jobId: string) {
     const response = await fetch(`/api/image-jobs/${jobId}`, {
       cache: "no-store",
@@ -730,9 +780,13 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       const createResponse = await fetch("/api/image-jobs/fission", {
         body: JSON.stringify({
           asset_ids: assetIds,
+          background_key: fissionBackgroundKey,
           effect_key: fissionEffectKey,
           output_format: fissionOutputFormat,
           output_size: fissionOutputSize,
+          preset_key: fissionPresetKey,
+          rotation: fissionRotation,
+          spacing: fissionSpacing,
           strength: fissionStrength,
         }),
         headers: {
@@ -1468,48 +1522,179 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
             </div>
 
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
+              <div className={[
+                "rounded-md border p-4",
+                isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-zinc-50",
+              ].join(" ")}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                      {t("推荐预设", "Recommended Presets")}
+                    </p>
+                    <p className={["mt-1 text-xs", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
+                      {t("先选用途，再微调间距、旋转和底色。", "Start from a use case, then tune spacing, rotation, and background.")}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={randomizeFissionSettings}
+                      className={[
+                        "rounded-md border px-3 py-2 text-xs font-semibold transition",
+                        isDark ? "border-cyan-300/30 text-cyan-100 hover:bg-cyan-400/10" : "border-cyan-200 text-cyan-800 hover:bg-cyan-50",
+                      ].join(" ")}
+                    >
+                      {t("随机变体", "Randomize")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetFissionSettings}
+                      className={[
+                        "rounded-md border px-3 py-2 text-xs font-semibold transition",
+                        isDark ? "border-white/[0.12] text-zinc-300 hover:bg-white/[0.06]" : "border-zinc-300 text-zinc-700 hover:bg-white",
+                      ].join(" ")}
+                    >
+                      {t("重置参数", "Reset")}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {fissionPresetOptions.map((presetKey) => {
+                    const preset = fissionPresets[presetKey];
+                    const isSelected = fissionPresetKey === presetKey;
+
+                    return (
+                      <button
+                        key={presetKey}
+                        type="button"
+                        onClick={() => applyFissionPreset(presetKey)}
+                        className={[
+                          "rounded-md border px-3 py-2 text-left text-sm transition",
+                          isSelected
+                            ? isDark
+                              ? "border-cyan-300/50 bg-cyan-400/10 text-cyan-100"
+                              : "border-cyan-700 bg-cyan-50 text-cyan-900"
+                            : isDark
+                              ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50",
+                        ].join(" ")}
+                      >
+                        <span className="block font-semibold">{t(preset.label, preset.labelEn)}</span>
+                        <span className={["mt-1 block text-xs", isDark ? "text-zinc-500" : "text-zinc-500"].join(" ")}>
+                          {t(fissionEffects[preset.effectKey].label, fissionEffects[preset.effectKey].labelEn)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div>
                 <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
                   {t("裂变效果", "Fission Effect")}
                 </p>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {fissionEffectOptions.map((effectKey) => {
-                    const effect = fissionEffects[effectKey];
-                    const isSelected = fissionEffectKey === effectKey;
+                <div className="mt-3 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                  <div className={[
+                    "rounded-md border p-3",
+                    isDark ? "border-cyan-300/15 bg-cyan-400/5" : "border-cyan-200 bg-cyan-50/60",
+                  ].join(" ")}>
+                    <p className={["text-xs font-semibold uppercase tracking-[0.12em]", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
+                      {t("POD 满版图案", "POD Pattern Repeat")}
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      {fissionPatternEffectOptions.map((effectKey) => {
+                        const effect = fissionEffects[effectKey];
+                        const isSelected = fissionEffectKey === effectKey;
 
-                    return (
-                      <label
-                        key={effectKey}
-                        className={[
-                          "ui-hover-sheen flex cursor-pointer gap-3 rounded-md border p-4 transition",
-                          isSelected
-                            ? isDark
-                              ? "border-cyan-300/50 bg-cyan-400/10"
-                              : "border-cyan-700 bg-cyan-50"
-                            : isDark
-                              ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
-                              : "border-zinc-200 hover:bg-zinc-50",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="radio"
-                          name="fission-effect"
-                          value={effectKey}
-                          checked={isSelected}
-                          onChange={() => setFissionEffectKey(effectKey)}
-                          className="mt-1 h-4 w-4 border-zinc-300"
-                        />
-                        <span>
-                          <span className={["block text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                            {t(effect.label, effect.labelEn)}
-                          </span>
-                          <span className={["mt-1 block text-sm", isDark ? "text-zinc-400" : "text-zinc-600"].join(" ")}>
-                            {t(effect.description, effect.descriptionEn)}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
+                        return (
+                          <label
+                            key={effectKey}
+                            className={[
+                              "ui-hover-sheen flex cursor-pointer gap-3 rounded-md border p-3 transition",
+                              isSelected
+                                ? isDark
+                                  ? "border-cyan-300/50 bg-cyan-400/10"
+                                  : "border-cyan-700 bg-cyan-50"
+                                : isDark
+                                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                                  : "border-zinc-200 bg-white hover:bg-zinc-50",
+                            ].join(" ")}
+                          >
+                            <input
+                              type="radio"
+                              name="fission-effect"
+                              value={effectKey}
+                              checked={isSelected}
+                              onChange={() => {
+                                markFissionCustom();
+                                setFissionEffectKey(effectKey);
+                              }}
+                              className="mt-1 h-4 w-4 border-zinc-300"
+                            />
+                            <span>
+                              <span className={["block text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                                {t(effect.label, effect.labelEn)}
+                              </span>
+                              <span className={["mt-1 block text-xs leading-5", isDark ? "text-zinc-400" : "text-zinc-600"].join(" ")}>
+                                {t(effect.description, effect.descriptionEn)}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={[
+                    "rounded-md border p-3",
+                    isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-zinc-50/70",
+                  ].join(" ")}>
+                    <p className={["text-xs font-semibold uppercase tracking-[0.12em]", isDark ? "text-zinc-400" : "text-zinc-500"].join(" ")}>
+                      {t("创意变体", "Creative Variants")}
+                    </p>
+                    <div className="mt-3 grid gap-3">
+                      {fissionCreativeEffectOptions.map((effectKey) => {
+                        const effect = fissionEffects[effectKey];
+                        const isSelected = fissionEffectKey === effectKey;
+
+                        return (
+                          <label
+                            key={effectKey}
+                            className={[
+                              "ui-hover-sheen flex cursor-pointer gap-3 rounded-md border p-3 transition",
+                              isSelected
+                                ? isDark
+                                  ? "border-cyan-300/50 bg-cyan-400/10"
+                                  : "border-cyan-700 bg-cyan-50"
+                                : isDark
+                                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                                  : "border-zinc-200 bg-white hover:bg-zinc-50",
+                            ].join(" ")}
+                          >
+                            <input
+                              type="radio"
+                              name="fission-effect"
+                              value={effectKey}
+                              checked={isSelected}
+                              onChange={() => {
+                                markFissionCustom();
+                                setFissionEffectKey(effectKey);
+                              }}
+                              className="mt-1 h-4 w-4 border-zinc-300"
+                            />
+                            <span>
+                              <span className={["block text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                                {t(effect.label, effect.labelEn)}
+                              </span>
+                              <span className={["mt-1 block text-xs leading-5", isDark ? "text-zinc-400" : "text-zinc-600"].join(" ")}>
+                                {t(effect.description, effect.descriptionEn)}
+                              </span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1542,7 +1727,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                             name="fission-output-size"
                             value={sizeKey}
                             checked={isSelected}
-                            onChange={() => setFissionOutputSize(sizeKey)}
+                            onChange={() => {
+                              markFissionCustom();
+                              setFissionOutputSize(sizeKey);
+                            }}
                             className="h-4 w-4 border-zinc-300"
                           />
                           <span>{t(size.label, size.labelEn)}</span>
@@ -1562,7 +1750,10 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                         <button
                           key={format}
                           type="button"
-                          onClick={() => setFissionOutputFormat(format)}
+                          onClick={() => {
+                            markFissionCustom();
+                            setFissionOutputFormat(format);
+                          }}
                           className={[
                             "rounded-md border px-3 py-2 text-sm font-medium uppercase transition",
                             fissionOutputFormat === format
@@ -1581,9 +1772,53 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                   </div>
 
                   <div>
+                    <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                      {t("底色", "Background")}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {fissionBackgroundOptionKeys.map((backgroundKey) => {
+                        const background = fissionBackgroundOptions[backgroundKey];
+                        const isSelected = fissionBackgroundKey === backgroundKey;
+
+                        return (
+                          <button
+                            key={backgroundKey}
+                            type="button"
+                            onClick={() => {
+                              markFissionCustom();
+                              setFissionBackgroundKey(backgroundKey);
+                            }}
+                            className={[
+                              "flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition",
+                              isSelected
+                                ? isDark
+                                  ? "border-cyan-300/50 bg-cyan-400/10 text-cyan-100"
+                                  : "border-cyan-700 bg-cyan-50 text-cyan-900"
+                                : isDark
+                                  ? "border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]"
+                                  : "border-zinc-200 text-zinc-700 hover:bg-zinc-50",
+                            ].join(" ")}
+                          >
+                            <span
+                              className={[
+                                "h-4 w-4 rounded-full border",
+                                backgroundKey === "transparent" ? "bg-[linear-gradient(45deg,#ddd_25%,transparent_25%),linear-gradient(-45deg,#ddd_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#ddd_75%),linear-gradient(-45deg,transparent_75%,#ddd_75%)] bg-[length:8px_8px] bg-[position:0_0,0_4px,4px_-4px,-4px_0]" : "",
+                                isDark ? "border-white/20" : "border-zinc-300",
+                              ].join(" ")}
+                              style={backgroundKey === "transparent" ? undefined : { backgroundColor: background.color }}
+                              aria-hidden="true"
+                            />
+                            <span>{t(background.label, background.labelEn)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
                     <div className="flex items-center justify-between gap-3">
                       <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
-                        {t("裂变强度", "Strength")}
+                        {t("铺满尺度 / 特效强度", "Tile Scale / Strength")}
                       </p>
                       <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
                         {fissionStrength}%
@@ -1595,7 +1830,56 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
                       max={100}
                       step={5}
                       value={fissionStrength}
-                      onChange={(event) => setFissionStrength(Number(event.target.value))}
+                      onChange={(event) => {
+                        markFissionCustom();
+                        setFissionStrength(Number(event.target.value));
+                      }}
+                      className="mt-3 w-full accent-cyan-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                        {t("图案间距", "Pattern Spacing")}
+                      </p>
+                      <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
+                        {fissionSpacing}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={80}
+                      step={2}
+                      value={fissionSpacing}
+                      onChange={(event) => {
+                        markFissionCustom();
+                        setFissionSpacing(Number(event.target.value));
+                      }}
+                      className="mt-3 w-full accent-cyan-600"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={["text-sm font-semibold", isDark ? "text-zinc-100" : "text-zinc-950"].join(" ")}>
+                        {t("旋转角度", "Rotation")}
+                      </p>
+                      <span className={["text-sm font-medium", isDark ? "text-cyan-200" : "text-cyan-700"].join(" ")}>
+                        {fissionRotation}°
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={-180}
+                      max={180}
+                      step={5}
+                      value={fissionRotation}
+                      onChange={(event) => {
+                        markFissionCustom();
+                        setFissionRotation(Number(event.target.value));
+                      }}
                       className="mt-3 w-full accent-cyan-600"
                     />
                   </div>

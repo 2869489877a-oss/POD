@@ -447,13 +447,17 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 /image-fission
 ```
 
-也可以在 `/assets` 素材库选择多张图片后，点击“批量裂变”创建处理任务。当前支持五种本地裂变效果：
+也可以在 `/assets` 素材库选择多张图片后，点击“批量裂变”创建处理任务。当前分成两类本地裂变效果：
 
-- 镜像矩阵：生成 2x2 镜像组合。
-- 万花筒：通过镜像和旋转生成中心对称图案。
-- 回声扩散：叠加偏移图层，适合做动感变体。
-- 切片错位：按横向切片进行错位，生成故障风格。
-- 拼贴爆发：生成 3x3 拼贴扩散图。
+- POD 满版图案：标准铺满、砖墙错位、半落差铺满、镜像铺满、条带铺满。
+- 创意变体：镜像矩阵、万花筒、回声扩散、切片错位、拼贴爆发。
+
+裂变参数支持：
+
+- 输出尺寸：原图、2048 方图、3000 方图、4096 连续图案、4500x5400 印花和 5400 AOP 满版。
+- 输出格式：PNG 保留透明，JPG 自动按底色铺底。
+- 图案控制：铺满尺度 / 特效强度、图案间距、旋转角度和底色。
+- 快捷预设：服装满版、连续图案、贴纸铺版和海报变体，也支持随机生成参数组合。
 
 处理流程：
 
@@ -464,6 +468,14 @@ collections/{yyyyMMdd-HHmmss}-{mainFolder}/{sourceFolder}/{uuid}-{safeFilename}.
 5. 更新 `assets.processed_url` 和任务成功、失败统计。
 
 如果服务器显式配置了 worker 任务类型，需要确保 `LOCAL_WORKER_JOB_TYPES` 或 `LOCAL_IMAGE_WORKER_JOB_TYPES` 包含 `fission`，否则裂变任务会进入队列但不会被 worker 领取。
+
+裂变 worker 可用性自检：
+
+```text
+npm run smoke:fission
+```
+
+该命令会生成测试源图并逐个跑完全部裂变效果，校验输出文件尺寸和图片格式。
 
 ## 图片任务中心
 
