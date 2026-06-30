@@ -381,10 +381,12 @@ export async function createLocalWorkerImageJob(
     throw new Error(`鏈湴 worker 瀛愪换鍔″垱寤哄け璐ワ細${itemError.message}`);
   }
 
-  await supabase.from("assets").update({ status: "processing" }).in(
-    "id",
-    assets.map((asset) => asset.id),
-  );
+  if (input.jobType !== "fission") {
+    await supabase.from("assets").update({ status: "processing" }).in(
+      "id",
+      assets.map((asset) => asset.id),
+    );
+  }
 
   return jobData;
 }
@@ -437,10 +439,11 @@ export async function claimLocalWorkerItem(
       continue;
     }
 
-    await Promise.all([
-      supabase.from("image_jobs").update({ status: "processing" }).eq("id", row.job_id),
-      supabase.from("assets").update({ status: "processing" }).eq("id", row.asset_id),
-    ]);
+    await supabase.from("image_jobs").update({ status: "processing" }).eq("id", row.job_id);
+
+    if (job.job_type !== "fission") {
+      await supabase.from("assets").update({ status: "processing" }).eq("id", row.asset_id);
+    }
 
     return {
       asset: {

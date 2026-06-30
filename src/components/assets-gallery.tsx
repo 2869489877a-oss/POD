@@ -127,6 +127,8 @@ type CreateFissionJobResponse = CreateResizeJobResponse;
 type AssetsGalleryProps = {
   initialAssets: Asset[];
   initialError?: string | null;
+  initialTotal?: number;
+  processedFirst?: boolean;
 };
 
 const statusOptions: Array<{ zh: string; en: string; value: "all" | AssetStatus }> = [
@@ -237,7 +239,12 @@ function formatDate(value: string, locale: string) {
   }).format(new Date(value));
 }
 
-export function AssetsGallery({ initialAssets, initialError = null }: AssetsGalleryProps) {
+export function AssetsGallery({
+  initialAssets,
+  initialError = null,
+  initialTotal,
+  processedFirst = false,
+}: AssetsGalleryProps) {
   const { isDark, language, t } = useSettings();
   const [assets, setAssets] = useState<Asset[]>(initialAssets);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -249,7 +256,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
   const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(initialAssets.length);
+  const [total, setTotal] = useState(initialTotal ?? initialAssets.length);
   const [isResizeDialogOpen, setIsResizeDialogOpen] = useState(false);
   const [resizePresetKey, setResizePresetKey] = useState<ResizePresetKey>("tshirt-print");
   const [resizeJob, setResizeJob] = useState<ResizeJobProgress | null>(null);
@@ -302,6 +309,7 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
       ? Math.round((fissionCompletedCount / fissionJob.total_count) * 100)
       : 0;
   const failedFissionItems = fissionJob?.items.filter((item) => item.status === "failed") ?? [];
+  const completedFissionItems = fissionJob?.items.filter((item) => item.status === "completed" && item.output_url) ?? [];
   const detailOverlayClass = isDark ? "bg-black/75" : "bg-zinc-950/60";
   const detailPanelClass = isDark
     ? "border border-white/[0.08] bg-[#0f0f10] text-zinc-100 shadow-2xl shadow-black/50"
@@ -596,6 +604,16 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
   }
 
   function getAssetPreviewUrl(asset: Asset) {
+    if (processedFirst) {
+      return (
+        asset.processed_url ??
+        asset.preferred_design_url ??
+        asset.print_extract_url ??
+        asset.cutout_url ??
+        asset.original_url
+      );
+    }
+
     return (
       asset.preferred_design_url ??
       asset.print_extract_url ??
@@ -1003,7 +1021,8 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-600">
-          <span>{t(`共 ${assets.length} 张素材`, `${assets.length} assets`)}</span>
+          <span>{t(`共 ${total} 张素材`, `${total} assets`)}</span>
+          <span>{t(`当前页 ${assets.length} 张`, `${assets.length} on this page`)}</span>
           <span>{t(`已选择 ${selectedCount} 张`, `${selectedCount} selected`)}</span>
           {selectedAssets.length > 0 ? (
             <span className="text-zinc-500">
@@ -1145,6 +1164,44 @@ export function AssetsGallery({ initialAssets, initialError = null }: AssetsGall
           {fissionError ? (
             <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {fissionError}
+            </div>
+          ) : null}
+
+          {completedFissionItems.length > 0 ? (
+            <div className="mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-cyan-900">
+                  {t(`已生成 ${completedFissionItems.length} 张裂变图`, `${completedFissionItems.length} fission output(s) generated`)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void fetchAssets(status, copyrightStatus, assetSource)}
+                  className="rounded-md border border-cyan-300 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                >
+                  {t("刷新查看结果", "Refresh Results")}
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {completedFissionItems.slice(0, 8).map((item, index) => (
+                  <a
+                    key={item.id}
+                    href={item.output_url ?? "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-md bg-cyan-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-cyan-800"
+                  >
+                    {t(`打开结果 ${index + 1}`, `Open Result ${index + 1}`)}
+                  </a>
+                ))}
+                {completedFissionItems.length > 8 ? (
+                  <span className="px-2 py-1.5 text-xs text-cyan-800">
+                    {t(`还有 ${completedFissionItems.length - 8} 张，请在刷新后的卡片详情里查看处理图。`, `${completedFissionItems.length - 8} more. Refresh and open card details to view processed images.`)}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-3 text-xs text-cyan-800">
+                {t("裂变结果会写入所选素材的 processed_url；图片裂变页会优先显示处理图。", "Fission outputs are written to selected assets' processed_url. The Image Fission page shows processed images first.")}
+              </p>
             </div>
           ) : null}
 
