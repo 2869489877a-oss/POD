@@ -1170,50 +1170,32 @@ export function InfringementChecksManager({
     : riskLevelLabels.unknown;
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-5">
-        <div className="rounded-md border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium text-zinc-500">{t("素材总数", "Total Assets")}</p>
-          <p className="mt-2 text-2xl font-semibold text-zinc-950">{stats.total}</p>
-        </div>
-        <div className="rounded-md border border-zinc-200 bg-white p-4">
-          <p className="text-xs font-medium text-zinc-500">{t("未检测", "Unchecked")}</p>
-          <p className="mt-2 text-2xl font-semibold text-zinc-950">{stats.unchecked}</p>
-        </div>
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-medium text-amber-700">{t("待复核", "Need Review")}</p>
-          <p className="mt-2 text-2xl font-semibold text-amber-800">{stats.review}</p>
-        </div>
-        <div className="rounded-md border border-orange-200 bg-orange-50 p-4">
-          <p className="text-xs font-medium text-orange-700">{t("高风险", "Risky")}</p>
-          <p className="mt-2 text-2xl font-semibold text-orange-800">{stats.risky}</p>
-        </div>
-        <div className="rounded-md border border-red-200 bg-red-50 p-4">
-          <p className="text-xs font-medium text-red-700">{t("禁用", "Blocked")}</p>
-          <p className="mt-2 text-2xl font-semibold text-red-800">{stats.blocked}</p>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-zinc-200 bg-white p-5">
+    <div className="space-y-5">
+      <section className="ui-enter rounded-[10px] border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h3 className="text-base font-semibold text-zinc-950">{t("风险观察面板", "Risk Overview")}</h3>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-600">
+              {t("侵权检测总览", "Infringement Overview")}
+            </p>
+            <h3 className="mt-2 text-2xl font-semibold tracking-tight text-zinc-950">
+              {t(`待处理 ${actionableRiskCount} 张`, `${actionableRiskCount} need action`)}
+            </h3>
             <p className="mt-1 text-sm text-zinc-500">
-              {t("一眼判断当前素材是安全为主、待复核为主，还是高风险积压。", "Quickly see whether assets are mostly clear, pending review, or risk-heavy.")}
+              {t(`通过率 ${clearedPercent}% · 风险占比 ${riskPercent}%`, `${clearedPercent}% clear rate · ${riskPercent}% risk share`)}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            <div className="rounded-md bg-zinc-50 px-3 py-2 text-zinc-700">
+              <p>{t("总数", "Total")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{numberFormatter.format(stats.total)}</p>
+            </div>
+            <div className="rounded-md bg-zinc-50 px-3 py-2 text-zinc-700">
+              <p>{t("未检测", "Unchecked")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{numberFormatter.format(stats.unchecked)}</p>
+            </div>
             <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-700">
-              <p>{t("通过率", "Clear Rate")}</p>
-              <p className="mt-1 text-lg font-semibold">{clearedPercent}%</p>
-            </div>
-            <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-700">
-              <p>{t("需处理", "Action Needed")}</p>
-              <p className="mt-1 text-lg font-semibold">{actionableRiskCount}</p>
-            </div>
-            <div className="rounded-md bg-red-50 px-3 py-2 text-red-700">
-              <p>{t("风险占比", "Risk Share")}</p>
-              <p className="mt-1 text-lg font-semibold">{riskPercent}%</p>
+              <p>{t("已通过", "Clear")}</p>
+              <p className="mt-1 text-lg font-semibold">{numberFormatter.format(stats.clear)}</p>
             </div>
           </div>
         </div>
@@ -1234,37 +1216,49 @@ export function InfringementChecksManager({
           ) : null}
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-4 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
           {checkStatusVisualRows.map((row) => (
-            <div key={row.label.en} className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
-              <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                <span className="inline-flex items-center gap-2 font-medium text-zinc-700">
+            <button
+              key={row.label.en}
+              type="button"
+              onClick={() => {
+                setFilter(row.label.en.toLowerCase() === "unchecked" ? "unchecked" : row.label.en.toLowerCase() as InfringementDashboardStatus);
+                setPage(1);
+              }}
+              className="ui-press rounded-md border border-zinc-200 bg-zinc-50 p-3 text-left hover:bg-zinc-100"
+            >
+              <span className="flex items-center justify-between gap-2 text-xs text-zinc-600">
+                <span className="inline-flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
                   {t(row.label.zh, row.label.en)}
                 </span>
-                <span className="text-zinc-500">{numberFormatter.format(row.value)}</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className="h-full rounded-full transition-all"
+                <span>{percent(row.value, Math.max(1, stats.total))}%</span>
+              </span>
+              <span className="mt-2 block text-xl font-semibold text-zinc-950">{numberFormatter.format(row.value)}</span>
+              <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-white">
+                <span
+                  className="block h-full rounded-full"
                   style={{
                     backgroundColor: row.color,
                     width: `${row.value > 0 ? Math.max(5, percent(row.value, maxCheckStatusCount)) : 0}%`,
                   }}
                 />
-              </div>
-            </div>
+              </span>
+            </button>
           ))}
         </div>
 
         {activeCheckJob ? (
-          <div className="mt-5 rounded-md border border-cyan-200 bg-cyan-50 p-4">
+          <div className="ui-enter mt-5 rounded-md border border-cyan-200 bg-cyan-50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-cyan-900">
-              <span className="font-semibold">{t("当前检测队列", "Active Check Queue")}</span>
+              <span className="inline-flex items-center gap-2 font-semibold">
+                <span className="ui-spinner ui-spinner-sm text-cyan-500" aria-hidden="true" />
+                {t("检测队列运行中", "Check queue running")}
+              </span>
               <span>{activeCheckJob.done}/{activeCheckJob.total} · {activeCheckJob.percent}%</span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-cyan-100">
-              <div className="h-full rounded-full bg-cyan-500 transition-all" style={{ width: `${Math.max(4, activeCheckJob.percent)}%` }} />
+              <div className="ui-progress-fill h-full rounded-full bg-cyan-500 transition-all" style={{ width: `${Math.max(4, activeCheckJob.percent)}%` }} />
             </div>
             <div className="mt-3 grid gap-2 text-xs text-cyan-800 sm:grid-cols-4">
               <span>{t("运行中", "Running")} {activeCheckJob.processing}</span>
@@ -1276,8 +1270,25 @@ export function InfringementChecksManager({
         ) : null}
       </section>
 
-      <section className="rounded-md border border-zinc-200 bg-white p-5">
-        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto_auto]">
+      <section className="rounded-[10px] border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("筛选与检测", "Filter and Check")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("先筛选素材，再提交所选或未检测素材进入 worker 队列。", "Filter assets first, then submit selected or unchecked assets to the worker queue.")}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refreshDashboard({ page, search: searchQuery, status: filter })}
+            disabled={isRefreshing}
+            className="ui-press rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
+          >
+            {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新", "Refresh")}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(260px,1fr)_220px_auto]">
           <div>
             <label htmlFor="infringement-search" className="block text-sm font-medium text-zinc-950">
               {t("搜索", "Search")}
@@ -1325,26 +1336,16 @@ export function InfringementChecksManager({
               ? t("取消当前筛选", "Deselect Filtered")
               : t("全选当前筛选", "Select Filtered")}
           </button>
-
-          <button
-            type="button"
-            onClick={() => void refreshDashboard({ page, search: searchQuery, status: filter })}
-            disabled={isRefreshing}
-            className="ui-press self-end rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:text-zinc-400"
-          >
-            {isRefreshing ? t("刷新中...", "Refreshing...") : t("刷新", "Refresh")}
-          </button>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-zinc-600">
-          <span>{t(`当前页 ${visibleItems.length} 张 / 共 ${dashboardTotal} 张`, `${visibleItems.length} on this page / ${dashboardTotal} total`)}</span>
-          <span>{t(`已选择 ${selectedCount} 张`, `${selectedCount} selected`)}</span>
-          <span>{t(`当前页未检测 ${visibleUncheckedIds.length} 张`, `${visibleUncheckedIds.length} unchecked on page`)}</span>
-          <span>{t(`当前搜索未检测 ${uncheckedTotalCount} 张`, `${uncheckedTotalCount} unchecked in result`)}</span>
-          <span>{t("自动检测会读取文件名、URL 和商品草稿文案；图片视觉识别可后续接入豆包/即梦/千问视觉模型。", "Auto checks scan filenames, URLs and product draft text. Visual AI can be added later.")}</span>
+        <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+          <span className="rounded-full bg-zinc-100 px-3 py-1">{t(`当前页 ${visibleItems.length} / ${dashboardTotal}`, `${visibleItems.length} / ${dashboardTotal} on page`)}</span>
+          <span className="rounded-full bg-zinc-100 px-3 py-1">{t(`已选择 ${selectedCount}`, `${selectedCount} selected`)}</span>
+          <span className="rounded-full bg-zinc-100 px-3 py-1">{t(`本页未检 ${visibleUncheckedIds.length}`, `${visibleUncheckedIds.length} unchecked here`)}</span>
+          <span className="rounded-full bg-zinc-100 px-3 py-1">{t(`全部未检 ${uncheckedTotalCount}`, `${uncheckedTotalCount} unchecked total`)}</span>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void runChecks(Array.from(selectedIds), "selected")}
@@ -1377,6 +1378,9 @@ export function InfringementChecksManager({
             {t(`一键检测全部未检测 ${uncheckedTotalCount} 张`, `Check All Unchecked (${uncheckedTotalCount})`)}
           </button>
         </div>
+        <p className="mt-3 text-xs leading-5 text-zinc-500">
+          {t("规则检测会读取文件名、URL 和商品草稿文案；视觉 Logo/OCR 可后续接入视觉模型。", "Rule checks scan filenames, URLs and product draft text; visual Logo/OCR can be connected later.")}
+        </p>
 
         {isRunning ? (
           <div className="ui-enter ui-scan-panel mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800">
@@ -1411,7 +1415,21 @@ export function InfringementChecksManager({
         ) : null}
       </section>
 
-      <section className="rounded-md border border-zinc-200 bg-white p-5">
+      <details className="group rounded-[10px] border border-zinc-200 bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600">
+              {t("高级规则库", "Advanced Rule Library")}
+            </p>
+            <h3 className="mt-1 text-base font-semibold text-zinc-950">
+              {t("服装印花规则库与判定算法", "Apparel print rules and scoring")}
+            </h3>
+          </div>
+          <span className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 transition group-open:rotate-180">
+            ⌄
+          </span>
+        </summary>
+        <div className="border-t border-zinc-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
@@ -1560,9 +1578,24 @@ export function InfringementChecksManager({
             `Showing ${displayedRuleEntries.length} / ${visibleRuleEntries.length} filtered entries. The library is a risk screen, not legal advice; final listing still requires manual rights and source review.`,
           )}
         </p>
-      </section>
+        </div>
+      </details>
 
-      <section className="rounded-md border border-zinc-200 bg-white p-5">
+      <details className="group rounded-[10px] border border-zinc-200 bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600">
+              {t("高级参考库", "Advanced Reference Library")}
+            </p>
+            <h3 className="mt-1 text-base font-semibold text-zinc-950">
+              {t("高风险参考库 / 白名单库管理", "High-risk reference / allowlist management")}
+            </h3>
+          </div>
+          <span className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 transition group-open:rotate-180">
+            ⌄
+          </span>
+        </summary>
+        <div className="border-t border-zinc-200 p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">
@@ -1841,7 +1874,8 @@ export function InfringementChecksManager({
             )}
           </div>
         </div>
-      </section>
+        </div>
+      </details>
 
       {message ? (
         <div className="ui-enter rounded-md border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
