@@ -8,10 +8,41 @@ export const runtime = "nodejs";
 
 const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"] as const;
 const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "asset_delete", "collector_operation", "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
+const WORKER_STATUS_CACHE_TTL_MS = 2000;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 type QueueStatus = "pending" | "processing" | "failed";
+type WorkerStatusPayload = {
+  blocked_job_types: LocalWorkerJobType[];
+  expected_job_types: readonly LocalWorkerJobType[];
+  last_seen_seconds: number | null;
+  missing_job_types: LocalWorkerJobType[];
+  ok: true;
+  online: boolean;
+  queue: {
+    active_jobs: number;
+    failed: number;
+    pending: number;
+    processing: number;
+  };
+  queue_by_type: Record<LocalWorkerJobType, ReturnType<typeof emptyQueueCounts>>;
+  ready: boolean;
+  state_file: string;
+  stale_after_seconds: number;
+  worker: {
+    concurrency: number | null;
+    job_type_limits: Partial<Record<LocalWorkerJobType, number>>;
+    job_types: LocalWorkerJobType[];
+    slots: unknown[];
+    started_at: string | null;
+    updated_at: string | null;
+    worker: string;
+  } | null;
+  worker_jobs: unknown[];
+};
+
+let workerStatusCache: { expiresAt: number; payload: WorkerStatusPayload } | null = null;
 
 type WorkerState = {
   concurrency?: number;
@@ -32,7 +63,7 @@ function emptyQueueCounts() {
   };
 }
 
-function normalizeWorkerJobTypes(value: unknown) {
+function normalizeWorkerJobTypes(value: unknown): LocalWorkerJobType[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -258,7 +289,16 @@ async function readQueueStateByCounts() {
 async function readQueueState() {
   return readQueueStateByCounts();
 }
-export async function GET() {
+export async function GET(request: Request) {
+  const bypassCache = new URL(request.url).searchParams.get("fresh") === "1";
+  if (!bypassCache && workerStatusCache && workerStatusCache.expiresAt > Date.now()) {
+    return NextResponse.json(workerStatusCache.payload, {
+      headers: {
+        "cache-control": "no-store",
+      },
+    });
+  }
+
   try {
     const [workerState, queueState] = await Promise.all([readWorkerState(), readQueueState()]);
     const updatedAtMs = workerState?.updated_at ? Date.parse(workerState.updated_at) : Number.NaN;
@@ -273,32 +313,38 @@ export async function GET() {
       return counts.pending + counts.processing > 0;
     });
 
+    const payload: WorkerStatusPayload = {
+      blocked_job_types: blockedJobTypes,
+      expected_job_types: LOCAL_WORKER_JOB_TYPES,
+      last_seen_seconds: lastSeenSeconds,
+      missing_job_types: missingJobTypes,
+      ok: true,
+      online,
+      queue: queueState.queue,
+      queue_by_type: queueState.queue_by_type,
+      ready: online && missingJobTypes.length === 0,
+      state_file: getWorkerStateFile(),
+      stale_after_seconds: staleAfterSeconds,
+      worker: workerState
+        ? {
+            concurrency: workerState.concurrency ?? null,
+            job_type_limits: workerState.job_type_limits ?? {},
+            job_types: workerJobTypes,
+            slots: workerState.slots ?? [],
+            started_at: workerState.started_at ?? null,
+            updated_at: workerState.updated_at ?? null,
+            worker: workerState.worker ?? "local-image-worker",
+          }
+        : null,
+      worker_jobs: queueState.active_jobs,
+    };
+    workerStatusCache = {
+      expiresAt: Date.now() + WORKER_STATUS_CACHE_TTL_MS,
+      payload,
+    };
+
     return NextResponse.json(
-      {
-        blocked_job_types: blockedJobTypes,
-        expected_job_types: LOCAL_WORKER_JOB_TYPES,
-        last_seen_seconds: lastSeenSeconds,
-        missing_job_types: missingJobTypes,
-        ok: true,
-        online,
-        queue: queueState.queue,
-        queue_by_type: queueState.queue_by_type,
-        ready: online && missingJobTypes.length === 0,
-        state_file: getWorkerStateFile(),
-        stale_after_seconds: staleAfterSeconds,
-        worker: workerState
-          ? {
-              concurrency: workerState.concurrency ?? null,
-              job_type_limits: workerState.job_type_limits ?? {},
-              job_types: workerJobTypes,
-              slots: workerState.slots ?? [],
-              started_at: workerState.started_at ?? null,
-              updated_at: workerState.updated_at ?? null,
-              worker: workerState.worker ?? "local-image-worker",
-            }
-          : null,
-        worker_jobs: queueState.active_jobs,
-      },
+      payload,
       {
         headers: {
           "cache-control": "no-store",

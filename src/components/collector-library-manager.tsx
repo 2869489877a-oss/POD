@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Collector images are local/proxied user files and are intentionally rendered as lazy previews. */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Pagination } from "@/components/pagination";
@@ -168,6 +168,7 @@ export function CollectorLibraryManager() {
   const [isMounted, setIsMounted] = useState(false);
   const [pendingMutationPaths, setPendingMutationPaths] = useState<Set<string>>(new Set());
   const [pendingMutationMode, setPendingMutationMode] = useState<CollectorMutationMode | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const employees = useMemo(() => uniqueSorted(items.map((item) => item.employeeName)), [items]);
   const sites = useMemo(() => uniqueSorted(items.map((item) => item.siteType)), [items]);
@@ -247,6 +248,8 @@ export function CollectorLibraryManager() {
   async function loadItems(targetPage = page, forceRebuildIndex = false) {
     const normalizedPage = Math.max(1, targetPage);
     const offset = (normalizedPage - 1) * COLLECTOR_PAGE_SIZE;
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
     setIsLoading(true);
     setError(null);
 
@@ -261,6 +264,7 @@ export function CollectorLibraryManager() {
 
       const response = await fetch(`/api/collector-library?${params.toString()}`, { cache: "no-store" });
       const data = (await response.json()) as CollectorResponse;
+      if (requestId !== loadRequestIdRef.current) return;
 
       if (!response.ok) {
         throw new Error(data.error || t("读取采集库失败", "Failed to load collector library"));
@@ -271,9 +275,12 @@ export function CollectorLibraryManager() {
       setTotal(data.total ?? nextItems.length);
       setItems(nextItems);
     } catch (requestError) {
+      if (requestId !== loadRequestIdRef.current) return;
       setError(requestError instanceof Error ? requestError.message : t("读取采集库失败", "Failed to load collector library"));
     } finally {
-      setIsLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }
 

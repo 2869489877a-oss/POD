@@ -94,6 +94,12 @@ type ResizeJobStatus = "pending" | "processing" | "completed" | "failed" | "part
 type ResizeJobProgress = {
   failed_count: number;
   id: string;
+  item_status_counts?: {
+    completed: number;
+    failed: number;
+    pending: number;
+    processing: number;
+  };
   items: Array<{
     asset_id: string;
     error_message: string | null;
@@ -295,6 +301,7 @@ export function AssetsGallery({
   const [deletePhase, setDeletePhase] = useState<"checking" | "deleting" | null>(null);
   const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
   const preloadedImageUrls = useRef<Set<string>>(new Set());
+  const assetsRequestIdRef = useRef(0);
   const selectedCount = selectedIds.size;
   const isBatchProcessing = isResizeRunning || isFissionRunning || isAiFissionRunning;
   const totalPages = Math.ceil(total / 24);
@@ -444,11 +451,14 @@ export function AssetsGallery({
     nextSource: AssetSourceFilter = assetSource,
     nextPage: number = page,
   ) {
+    const requestId = assetsRequestIdRef.current + 1;
+    assetsRequestIdRef.current = requestId;
     setIsLoading(true);
     setError(null);
 
     try {
       const data = await fetchAssetsAction(nextStatus, nextCopyrightStatus, nextSource, nextPage, excludedSources);
+      if (requestId !== assetsRequestIdRef.current) return;
 
       if (data.error) {
         throw new Error(data.error);
@@ -462,11 +472,14 @@ export function AssetsGallery({
         return new Set(Array.from(current).filter((id) => visibleIds.has(id)));
       });
     } catch (requestError) {
+      if (requestId !== assetsRequestIdRef.current) return;
       setError(requestError instanceof Error ? requestError.message : t("读取素材失败", "Failed to load assets"));
       setAssets([]);
       setSelectedIds(new Set());
     } finally {
-      setIsLoading(false);
+      if (requestId === assetsRequestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -765,8 +778,8 @@ export function AssetsGallery({
     setFissionVariantCountKey(isEntropy ? "nine" : "one");
   }
 
-  async function fetchResizeJob(jobId: string) {
-    const response = await fetch(`/api/image-jobs/${jobId}`, {
+  async function fetchResizeJob(jobId: string, summary = false) {
+    const response = await fetch(`/api/image-jobs/${jobId}${summary ? "?summary=1" : ""}`, {
       cache: "no-store",
     });
     const data = (await response.json()) as ResizeJobResponse;
@@ -838,8 +851,8 @@ export function AssetsGallery({
     return null;
   }
 
-  async function fetchFissionJob(jobId: string) {
-    return fetchResizeJob(jobId) as Promise<FissionJobProgress>;
+  async function fetchFissionJob(jobId: string, summary = false) {
+    return fetchResizeJob(jobId, summary) as Promise<FissionJobProgress>;
   }
 
   async function startAiFissionJobs() {
@@ -872,8 +885,10 @@ export function AssetsGallery({
 
     try {
       const jobIds: string[] = [];
+      const indexes = Array.from({ length: count }, (_, index) => index);
+      const concurrency = Math.min(3, indexes.length);
 
-      for (let index = 0; index < count; index += 1) {
+      async function createAiFissionJob(index: number) {
         const response = await fetch("/api/ai/generate-image", {
           body: JSON.stringify({
             async: true,
@@ -897,6 +912,16 @@ export function AssetsGallery({
         jobIds.push(data.job_id);
         setAiFissionMessage(t(`AI 裂变任务已创建 ${jobIds.length}/${count}，正在进入 worker 队列...`, `Created ${jobIds.length}/${count} AI fission jobs. Queuing for worker...`));
       }
+
+      await Promise.all(
+        Array.from({ length: concurrency }, async () => {
+          while (indexes.length > 0) {
+            const index = indexes.shift();
+            if (index === undefined) return;
+            await createAiFissionJob(index);
+          }
+        }),
+      );
 
       setAiFissionMessage(t(`AI 裂变已进入队列：${jobIds.length} 个任务。结果会自动保存到素材库，可在图片任务查看进度。`, `AI fission queued: ${jobIds.length} jobs. Results will be saved to Assets; check Image Jobs for progress.`));
     } catch (error) {
@@ -965,10 +990,10 @@ export function AssetsGallery({
       for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
         await sleep(RESIZE_POLL_INTERVAL_MS);
 
-        const job = await fetchFissionJob(jobId);
+        const job = await fetchFissionJob(jobId, true);
         const completedCount = job.success_count + job.failed_count;
-        const processingCount = job.items.filter((item) => item.status === "processing").length;
-        const pendingCount = job.items.filter((item) => item.status === "pending").length;
+        const processingCount = job.item_status_counts?.processing ?? job.items.filter((item) => item.status === "processing").length;
+        const pendingCount = job.item_status_counts?.pending ?? job.items.filter((item) => item.status === "pending").length;
         const percent = job.total_count > 0 ? Math.min(100, Math.round((completedCount / job.total_count) * 100)) : 0;
 
         setFissionJob(job);
@@ -985,6 +1010,8 @@ export function AssetsGallery({
         );
 
         if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
+          const detailedJob = await fetchFissionJob(jobId).catch(() => job);
+          setFissionJob(detailedJob);
           await fetchAssets(status, copyrightStatus, assetSource);
           return;
         }
@@ -1045,10 +1072,10 @@ export function AssetsGallery({
       for (let attempt = 0; attempt < RESIZE_MAX_POLLS; attempt += 1) {
         await sleep(RESIZE_POLL_INTERVAL_MS);
 
-        const job = await fetchResizeJob(jobId);
+        const job = await fetchResizeJob(jobId, true);
         const completedCount = job.success_count + job.failed_count;
-        const processingCount = job.items.filter((item) => item.status === "processing").length;
-        const pendingCount = job.items.filter((item) => item.status === "pending").length;
+        const processingCount = job.item_status_counts?.processing ?? job.items.filter((item) => item.status === "processing").length;
+        const pendingCount = job.item_status_counts?.pending ?? job.items.filter((item) => item.status === "pending").length;
         const percent = job.total_count > 0 ? Math.min(100, Math.round((completedCount / job.total_count) * 100)) : 0;
 
         setResizeJob(job);
@@ -1063,6 +1090,8 @@ export function AssetsGallery({
         );
 
         if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
+          const detailedJob = await fetchResizeJob(jobId).catch(() => job);
+          setResizeJob(detailedJob);
           await fetchAssets(status, copyrightStatus, assetSource);
           return;
         }
@@ -1335,7 +1364,7 @@ export function AssetsGallery({
                 ) : null}
               </div>
               <p className="mt-3 text-xs text-cyan-800">
-                {t("裂变结果会写入所选素材的 processed_url；图片裂变页会优先显示处理图。", "Fission outputs are written to selected assets' processed_url. The Image Fission page shows processed images first.")}
+                {t("单张裂变会写回原素材；一图多裂变会作为新素材保存，刷新后可在素材库查看。", "Single fission writes back to the source asset. Multi-variant fission saves outputs as new assets; refresh to view them in Assets.")}
               </p>
             </div>
           ) : null}

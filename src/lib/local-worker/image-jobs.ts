@@ -125,8 +125,22 @@ function buildProcessedOutputPath(
   return `processed/${jobType}/${datePath}/${jobId}/${itemId}-${randomUUID()}-${safeName}.${extension}`;
 }
 
+function buildFissionAssetFilename(filename: string, itemId: string, extension: "jpg" | "png") {
+  const safeName = sanitizeFilename(filename).replace(/\.[^.]+$/, "");
+  return `${safeName}-fission-${itemId.slice(0, 8)}.${extension}`;
+}
+
+function workerPayloadOptions(options: unknown) {
+  if (!options || typeof options !== "object") {
+    return {};
+  }
+
+  const payload = (options as { options?: unknown }).options;
+  return payload && typeof payload === "object" && !Array.isArray(payload) ? payload : options;
+}
+
 function outputExtension(options: unknown, file: WorkerFileInput): "jpg" | "png" {
-  const option = stringOption(options, "output_format");
+  const option = stringOption(workerPayloadOptions(options), "output_format");
   if (option === "jpg" || option === "jpeg") {
     return "jpg";
   }
@@ -531,22 +545,48 @@ export async function completeLocalWorkerItem(
   const options = job.options ?? {};
 
   if (job.job_type === "resize" || job.job_type === "fission") {
+    const extension = outputExtension(options, input.output);
     const outputUrl = await uploadFile(
       supabase,
-      buildProcessedOutputPath(job.job_type, item.job_id, item.id, asset.filename, outputExtension(options, input.output)),
+      buildProcessedOutputPath(job.job_type, item.job_id, item.id, asset.filename, extension),
       input.output,
     );
+    const jobOptions = workerPayloadOptions(options);
+    const fissionVariantCount = job.job_type === "fission"
+      ? numberOption(jobOptions, "variant_count", 1, 1, 9)
+      : 1;
+    const shouldCreateFissionAsset = job.job_type === "fission" && fissionVariantCount > 1;
 
-    const { error: assetUpdateError } = await supabase
-      .from("assets")
-      .update({
+    if (shouldCreateFissionAsset) {
+      const size = await getImageSize(input.output, input.width, input.height);
+      const { error: assetInsertError } = await supabase.from("assets").insert({
+        copyright_status: "unknown",
+        file_size: input.output.buffer.byteLength,
+        filename: buildFissionAssetFilename(asset.filename, item.id, extension),
+        format: extension === "jpg" ? "jpeg" : "png",
+        height: Math.max(1, size.height ?? 1),
+        original_url: outputUrl,
         processed_url: outputUrl,
+        source: "other",
         status: "processed",
-      })
-      .eq("id", asset.id);
+        width: Math.max(1, size.width ?? 1),
+      });
 
-    if (assetUpdateError) {
-      throw new Error(`${job.job_type} asset update failed: ${assetUpdateError.message}`);
+      if (assetInsertError) {
+        throw new Error(`${job.job_type} asset insert failed: ${assetInsertError.message}`);
+      }
+    } else {
+      const { error: assetUpdateError } = await supabase
+        .from("assets")
+        .update({
+          processed_url: outputUrl,
+          status: "processed",
+        })
+        .eq("id", asset.id);
+
+      if (assetUpdateError) {
+        throw new Error(`${job.job_type} asset update failed: ${assetUpdateError.message}`);
+      }
     }
 
     const { error: itemUpdateError } = await supabase
