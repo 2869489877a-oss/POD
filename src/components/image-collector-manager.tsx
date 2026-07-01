@@ -118,6 +118,11 @@ function formatDateTime(value: string | null, locale: string) {
   }).format(new Date(value));
 }
 
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((value / total) * 100));
+}
+
 function buildPayload(form: TemplateFormState) {
   const cronExpression =
     form.scheduleFrequency === "custom" ? form.customCronExpression.trim() : form.scheduleFrequency;
@@ -212,6 +217,18 @@ export function ImageCollectorManager() {
     () => runItems.slice((currentRunItemsPage - 1) * RUN_ITEMS_PER_PAGE, currentRunItemsPage * RUN_ITEMS_PER_PAGE),
     [runItems, currentRunItemsPage],
   );
+  const runStatusRows = useMemo(() => {
+    const statuses = ["pending", "processing", "completed", "partial_failed", "failed"];
+    return statuses.map((status) => ({
+      count: runs.filter((run) => run.status === status).length,
+      status,
+    }));
+  }, [runs]);
+  const maxRunStatusCount = Math.max(1, ...runStatusRows.map((row) => row.count));
+  const totalFound = runs.reduce((sum, run) => sum + run.total_found, 0);
+  const totalDownloaded = runs.reduce((sum, run) => sum + run.total_downloaded, 0);
+  const totalFailed = runs.reduce((sum, run) => sum + run.total_failed, 0);
+  const downloadRate = percent(totalDownloaded, totalFound);
 
   const refreshTemplates = useCallback(async () => {
     setIsLoading(true);
@@ -351,6 +368,72 @@ export function ImageCollectorManager() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+      <section className="rounded-md border border-zinc-200 bg-white p-5 xl:col-span-2">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("采集任务观察面板", "Collection Overview")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("查看模板启用情况、历史采集成功率和最近任务状态。", "Review active templates, historical success rate, and recent run status.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              <p className="text-zinc-500">{t("模板总数", "Templates")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{templates.length}</p>
+            </div>
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-800">
+              <p>{t("启用模板", "Active")}</p>
+              <p className="mt-1 text-lg font-semibold">{activeTemplates.length}</p>
+            </div>
+            <div className="rounded-md bg-sky-50 px-3 py-2 text-sky-800">
+              <p>{t("历史采集", "Runs")}</p>
+              <p className="mt-1 text-lg font-semibold">{runs.length}</p>
+            </div>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-800">
+              <p>{t("成功率", "Success")}</p>
+              <p className="mt-1 text-lg font-semibold">{downloadRate}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("采集结果累计", "Collected Totals")}</p>
+            <div className="mt-4 grid gap-2 text-sm text-zinc-600 sm:grid-cols-3">
+              <span>{t("发现", "Found")} <b className="text-zinc-950">{totalFound}</b></span>
+              <span>{t("成功", "Downloaded")} <b className="text-emerald-700">{totalDownloaded}</b></span>
+              <span>{t("失败", "Failed")} <b className="text-red-700">{totalFailed}</b></span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${downloadRate}%` }} />
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("运行状态分布", "Run Status")}</p>
+            <div className="mt-4 space-y-3">
+              {runStatusRows.map((row) => (
+                <div key={row.status}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-600">
+                    <span>{statusLabel(row.status, t)}</span>
+                    <span>{row.count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white">
+                    <div
+                      className={[
+                        "h-full rounded-full",
+                        row.status === "completed" ? "bg-emerald-600" : row.status === "failed" ? "bg-red-500" : row.status === "processing" ? "bg-sky-500" : row.status === "partial_failed" ? "bg-amber-500" : "bg-zinc-500",
+                      ].join(" ")}
+                      style={{ width: `${row.count > 0 ? Math.max(5, percent(row.count, maxRunStatusCount)) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="space-y-6">
         <div className="rounded-md border border-zinc-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">

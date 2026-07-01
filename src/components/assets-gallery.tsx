@@ -209,6 +209,21 @@ const statusStyles: Record<AssetStatus, string> = {
   uploaded: "bg-sky-50 text-sky-700",
 };
 
+const assetStatusVisualStyles: Record<AssetStatus, string> = {
+  failed: "#ef4444",
+  processed: "#10b981",
+  processing: "#f59e0b",
+  uploaded: "#0ea5e9",
+};
+
+const copyrightVisualStyles: Record<CopyrightStatus, string> = {
+  commercial_ok: "#10b981",
+  forbidden: "#ef4444",
+  owned: "#0ea5e9",
+  risky: "#f59e0b",
+  unknown: "#71717a",
+};
+
 const resizePresetOptions: ResizePresetKey[] = ["tshirt-print", "square-product"];
 const fissionEffectOptions = Object.keys(fissionEffects) as FissionEffectKey[];
 const fissionQuickEffectOptions = fissionEffectOptions.filter((effectKey) => fissionEffects[effectKey].category === "quick");
@@ -248,6 +263,11 @@ function formatDate(value: string, locale: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function percent(value: number, totalValue: number) {
+  if (totalValue <= 0) return 0;
+  return Math.min(100, Math.round((value / totalValue) * 100));
 }
 
 export function AssetsGallery({
@@ -314,6 +334,27 @@ export function AssetsGallery({
     () => assets.filter((asset) => selectedIds.has(asset.id)),
     [assets, selectedIds],
   );
+  const assetStatusRows = useMemo(
+    () =>
+      (Object.keys(statusLabels) as AssetStatus[]).map((assetStatusValue) => ({
+        color: assetStatusVisualStyles[assetStatusValue],
+        label: statusLabels[assetStatusValue],
+        value: assets.filter((asset) => asset.status === assetStatusValue).length,
+      })),
+    [assets],
+  );
+  const copyrightRows = useMemo(
+    () =>
+      (Object.keys(copyrightLabels) as CopyrightStatus[]).map((copyrightValue) => ({
+        color: copyrightVisualStyles[copyrightValue],
+        label: copyrightLabels[copyrightValue],
+        value: assets.filter((asset) => asset.copyright_status === copyrightValue).length,
+      })),
+    [assets],
+  );
+  const maxAssetStatusCount = Math.max(1, ...assetStatusRows.map((row) => row.value));
+  const maxCopyrightCount = Math.max(1, ...copyrightRows.map((row) => row.value));
+  const processedOnPageCount = assets.filter((asset) => Boolean(asset.preferred_design_url || asset.processed_url || asset.print_extract_url || asset.cutout_url)).length;
   const selectedAsset = useMemo(
     () => assets.find((asset) => asset.id === selectedAssetId) ?? null,
     [assets, selectedAssetId],
@@ -341,6 +382,8 @@ export function AssetsGallery({
     fissionJob && fissionJob.total_count > 0
       ? Math.round((fissionCompletedCount / fissionJob.total_count) * 100)
       : 0;
+  const activeBatchJob = resizeJob ?? fissionJob;
+  const activeBatchProgress = activeBatchJob === resizeJob ? resizeProgressPercent : fissionProgressPercent;
   const failedFissionItems = fissionJob?.items.filter((item) => item.status === "failed") ?? [];
   const completedFissionItems = fissionJob?.items.filter((item) => item.status === "completed" && item.output_url) ?? [];
   const detailOverlayClass = isDark ? "bg-black/75" : "bg-zinc-950/60";
@@ -1108,6 +1151,101 @@ export function AssetsGallery({
 
   return (
     <div className="space-y-6">
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("素材观察面板", "Asset Overview")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("快速查看当前页素材结构、版权风险和批量任务状态。", "Quickly review visible asset mix, copyright risk, and batch job status.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              <p className="text-zinc-500">{t("全部素材", "Total")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{total}</p>
+            </div>
+            <div className="rounded-md bg-sky-50 px-3 py-2">
+              <p className="text-sky-700">{t("当前页", "Page")}</p>
+              <p className="mt-1 text-lg font-semibold text-sky-800">{assets.length}</p>
+            </div>
+            <div className="rounded-md bg-emerald-50 px-3 py-2">
+              <p className="text-emerald-700">{t("有处理图", "Processed")}</p>
+              <p className="mt-1 text-lg font-semibold text-emerald-800">{processedOnPageCount}</p>
+            </div>
+            <div className="rounded-md bg-amber-50 px-3 py-2">
+              <p className="text-amber-700">{t("已选择", "Selected")}</p>
+              <p className="mt-1 text-lg font-semibold text-amber-800">{selectedCount}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("处理状态分布", "Processing Status")}</p>
+            <div className="mt-4 space-y-3">
+              {assetStatusRows.map((row) => (
+                <div key={row.label.en}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="inline-flex items-center gap-2 text-zinc-700">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                      {t(row.label.zh, row.label.en)}
+                    </span>
+                    <span className="text-zinc-500">{row.value}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ backgroundColor: row.color, width: `${row.value > 0 ? Math.max(5, percent(row.value, maxAssetStatusCount)) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("版权风险分布", "Copyright Risk")}</p>
+            <div className="mt-4 space-y-3">
+              {copyrightRows.map((row) => (
+                <div key={row.label.en}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+                    <span className="inline-flex items-center gap-2 text-zinc-700">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                      {t(row.label.zh, row.label.en)}
+                    </span>
+                    <span className="text-zinc-500">{row.value}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{ backgroundColor: row.color, width: `${row.value > 0 ? Math.max(5, percent(row.value, maxCopyrightCount)) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {activeBatchJob ? (
+          <div className="mt-5 rounded-md border border-cyan-200 bg-cyan-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-cyan-900">
+              <span className="font-semibold">{resizeJob ? t("批量改尺寸任务", "Batch Resize Job") : t("裂变处理任务", "Fission Job")}</span>
+              <span>{activeBatchProgress}% · {t(resizeJobStatusLabels[activeBatchJob.status].zh, resizeJobStatusLabels[activeBatchJob.status].en)}</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-cyan-100">
+              <div className="h-full rounded-full bg-cyan-600 transition-all" style={{ width: `${Math.max(3, activeBatchProgress)}%` }} />
+            </div>
+            <div className="mt-3 grid gap-2 text-xs text-cyan-800 sm:grid-cols-4">
+              <span>{t("总数", "Total")} {activeBatchJob.total_count}</span>
+              <span>{t("成功", "Success")} {activeBatchJob.success_count}</span>
+              <span>{t("失败", "Failed")} {activeBatchJob.failed_count}</span>
+              <span>{t("已处理", "Done")} {activeBatchJob.success_count + activeBatchJob.failed_count}</span>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="rounded-md border border-zinc-200 bg-white p-5">
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_auto_auto]">
           <div>

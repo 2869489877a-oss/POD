@@ -122,6 +122,11 @@ function shortId(id: string) {
   return id.length > 14 ? `${id.slice(0, 8)}...${id.slice(-6)}` : id;
 }
 
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((value / total) * 100));
+}
+
 function pickAssetPreviewUrl(asset: MockupJobAsset) {
   return (
     asset.preferred_design_url ??
@@ -228,6 +233,18 @@ export function MockupJobsManager({
     jobResult && jobResult.total_count > 0
       ? Math.min(100, Math.round((jobDoneCount / jobResult.total_count) * 100))
       : 0;
+  const selectedSceneCount = selectedTemplate?.scenes.length ?? 0;
+  const expectedOutputCount = selectedAssetIds.size * selectedSceneCount;
+  const mockupOutputRows = useMemo(
+    () =>
+      (["pending", "processing", "completed", "failed"] as MockupOutputStatus[]).map((status) => ({
+        count: jobResult?.outputs.filter((output) => output.status === status).length ?? 0,
+        label: outputStatusLabels[status],
+        status,
+      })),
+    [jobResult],
+  );
+  const maxMockupOutputCount = Math.max(1, ...mockupOutputRows.map((row) => row.count));
 
   function toggleAsset(assetId: string) {
     setSelectedAssetIds((current) => {
@@ -285,7 +302,7 @@ export function MockupJobsManager({
         const finalData = (await finalResponse.json()) as QueuedMockupJobResponse;
 
         if (!finalResponse.ok || !finalData.job) {
-          throw new Error(finalData.error ?? t("璇诲彇濂楀浘浠诲姟杩涘害澶辫触", "Failed to read mockup job progress"));
+          throw new Error(finalData.error ?? t("读取套图任务进度失败", "Failed to read mockup job progress"));
         }
 
         const finalResult = buildMockupResultFromQueuedJob(finalData.job, assetById);
@@ -370,6 +387,60 @@ export function MockupJobsManager({
 
   return (
     <div className="space-y-6">
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("套图观察面板", "Mockup Overview")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("先看素材、模板场景和预计产出，再提交套图任务。", "Review assets, scenes, and expected outputs before submitting.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              <p className="text-zinc-500">{t("可用素材", "Assets")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{assets.length}</p>
+            </div>
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-800">
+              <p>{t("已选择", "Selected")}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedAssetIds.size}</p>
+            </div>
+            <div className="rounded-md bg-cyan-50 px-3 py-2 text-cyan-800">
+              <p>{t("模板场景", "Scenes")}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedSceneCount}</p>
+            </div>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-800">
+              <p>{t("预计输出", "Expected")}</p>
+              <p className="mt-1 text-lg font-semibold">{expectedOutputCount}</p>
+            </div>
+          </div>
+        </div>
+
+        {jobResult ? (
+          <div className="mt-5 rounded-md border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-emerald-900">
+              <span className="font-semibold">{t("当前套图任务", "Current Mockup Job")}</span>
+              <span>{jobDoneCount}/{jobResult.total_count} · {jobProgress}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100">
+              <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${Math.max(3, jobProgress)}%` }} />
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-4">
+              {mockupOutputRows.map((row) => (
+                <div key={row.status} className="rounded-md bg-white px-3 py-2 text-xs">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-zinc-600">{t(row.label.zh, row.label.en)}</span>
+                    <span className="font-semibold text-zinc-950">{row.count}</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100">
+                    <div className="h-full rounded-full bg-emerald-600" style={{ width: `${row.count > 0 ? Math.max(6, percent(row.count, maxMockupOutputCount)) : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className="rounded-md border border-zinc-200 bg-white p-5">
         <div className="grid gap-4 xl:grid-cols-[1fr_1fr_auto_auto]">
           <div>

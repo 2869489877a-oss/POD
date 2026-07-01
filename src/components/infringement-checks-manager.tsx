@@ -228,6 +228,15 @@ const checkStatusStyles: Record<CheckStatus, string> = {
   risky: "bg-orange-100 text-orange-800",
 };
 
+const checkStatusVisualStyles: Record<"blocked" | "clear" | "pending" | "review" | "risky" | "unchecked", string> = {
+  blocked: "#ef4444",
+  clear: "#10b981",
+  pending: "#71717a",
+  review: "#f59e0b",
+  risky: "#f97316",
+  unchecked: "#94a3b8",
+};
+
 const copyrightStyles: Record<CopyrightStatus, string> = {
   commercial_ok: "bg-emerald-50 text-emerald-700",
   forbidden: "bg-red-100 text-red-800",
@@ -401,6 +410,11 @@ function shortId(id: string) {
   return `${id.slice(0, 8)}...${id.slice(-6)}`;
 }
 
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((value / total) * 100));
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -554,6 +568,18 @@ export function InfringementChecksManager({
   }, [activeCheckJobs]);
   const isRunning = isSubmittingChecks || activeCheckJobs.length > 0;
   const stats = dashboardStatusCounts;
+  const actionableRiskCount = stats.review + stats.risky + stats.blocked;
+  const clearedPercent = percent(stats.clear, stats.total);
+  const riskPercent = percent(actionableRiskCount, stats.total);
+  const checkStatusVisualRows = [
+    { color: checkStatusVisualStyles.clear, label: checkStatusLabels.clear, value: stats.clear },
+    { color: checkStatusVisualStyles.review, label: checkStatusLabels.review, value: stats.review },
+    { color: checkStatusVisualStyles.risky, label: checkStatusLabels.risky, value: stats.risky },
+    { color: checkStatusVisualStyles.blocked, label: checkStatusLabels.blocked, value: stats.blocked },
+    { color: checkStatusVisualStyles.pending, label: checkStatusLabels.pending, value: stats.pending },
+    { color: checkStatusVisualStyles.unchecked, label: { en: "Unchecked", zh: "未检测" }, value: stats.unchecked },
+  ];
+  const maxCheckStatusCount = Math.max(1, ...checkStatusVisualRows.map((row) => row.value));
   const numberFormatter = useMemo(() => new Intl.NumberFormat(language === "zh" ? "zh-CN" : "en-US"), [language]);
   const displayedRuleEntries = visibleRuleEntries.slice(0, 80);
   const referenceKeyword = referenceSearchQuery.trim().toLowerCase();
@@ -1166,6 +1192,88 @@ export function InfringementChecksManager({
           <p className="text-xs font-medium text-red-700">{t("禁用", "Blocked")}</p>
           <p className="mt-2 text-2xl font-semibold text-red-800">{stats.blocked}</p>
         </div>
+      </section>
+
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("风险观察面板", "Risk Overview")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("一眼判断当前素材是安全为主、待复核为主，还是高风险积压。", "Quickly see whether assets are mostly clear, pending review, or risk-heavy.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-700">
+              <p>{t("通过率", "Clear Rate")}</p>
+              <p className="mt-1 text-lg font-semibold">{clearedPercent}%</p>
+            </div>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-700">
+              <p>{t("需处理", "Action Needed")}</p>
+              <p className="mt-1 text-lg font-semibold">{actionableRiskCount}</p>
+            </div>
+            <div className="rounded-md bg-red-50 px-3 py-2 text-red-700">
+              <p>{t("风险占比", "Risk Share")}</p>
+              <p className="mt-1 text-lg font-semibold">{riskPercent}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 h-3 overflow-hidden rounded-full bg-zinc-100">
+          {stats.total > 0 ? (
+            <div className="flex h-full">
+              {checkStatusVisualRows.map((row) =>
+                row.value > 0 ? (
+                  <div
+                    key={row.label.en}
+                    title={t(`${row.label.zh}：${row.value}`, `${row.label.en}: ${row.value}`)}
+                    style={{ backgroundColor: row.color, width: `${percent(row.value, stats.total)}%` }}
+                  />
+                ) : null,
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {checkStatusVisualRows.map((row) => (
+            <div key={row.label.en} className="rounded-md border border-zinc-200 bg-zinc-50 p-3">
+              <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                <span className="inline-flex items-center gap-2 font-medium text-zinc-700">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: row.color }} />
+                  {t(row.label.zh, row.label.en)}
+                </span>
+                <span className="text-zinc-500">{numberFormatter.format(row.value)}</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-white">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    backgroundColor: row.color,
+                    width: `${row.value > 0 ? Math.max(5, percent(row.value, maxCheckStatusCount)) : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {activeCheckJob ? (
+          <div className="mt-5 rounded-md border border-cyan-200 bg-cyan-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-cyan-900">
+              <span className="font-semibold">{t("当前检测队列", "Active Check Queue")}</span>
+              <span>{activeCheckJob.done}/{activeCheckJob.total} · {activeCheckJob.percent}%</span>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-cyan-100">
+              <div className="h-full rounded-full bg-cyan-500 transition-all" style={{ width: `${Math.max(4, activeCheckJob.percent)}%` }} />
+            </div>
+            <div className="mt-3 grid gap-2 text-xs text-cyan-800 sm:grid-cols-4">
+              <span>{t("运行中", "Running")} {activeCheckJob.processing}</span>
+              <span>{t("等待", "Pending")} {activeCheckJob.pending}</span>
+              <span>{t("成功", "Succeeded")} {activeCheckJob.succeeded}</span>
+              <span>{t("失败", "Failed")} {activeCheckJob.failed}</span>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-md border border-zinc-200 bg-white p-5">

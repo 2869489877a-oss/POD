@@ -102,6 +102,11 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function percent(value: number, total: number) {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((value / total) * 100));
+}
+
 function upsertRecord(records: ExportRecordView[], record: ExportRecordView) {
   return [record, ...records.filter((item) => item.id !== record.id)]
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
@@ -165,6 +170,29 @@ export function ExportsManager({
   );
   const currentPageVisibleIds = useMemo(() => pagedProducts.map((product) => product.id), [pagedProducts]);
   const currentPageSelected = currentPageVisibleIds.length > 0 && currentPageVisibleIds.every((id) => selectedIds.includes(id));
+  const productStatusRows = useMemo(
+    () =>
+      statusFilterOptions
+        .filter((status): status is ProductDraftStatus => status !== "all")
+        .map((status) => ({
+          count: products.filter((product) => product.status === status).length,
+          label: statusLabels[status],
+          status,
+        })),
+    [products],
+  );
+  const exportRecordStatusRows = useMemo(
+    () =>
+      (["pending", "processing", "completed", "failed"] as ExportRecordView["status"][]).map((status) => ({
+        count: records.filter((record) => record.status === status).length,
+        label: exportStatusLabels[status],
+        status,
+      })),
+    [records],
+  );
+  const maxProductStatusCount = Math.max(1, ...productStatusRows.map((row) => row.count));
+  const maxExportRecordStatusCount = Math.max(1, ...exportRecordStatusRows.map((row) => row.count));
+  const selectedImageCount = selectedProducts.reduce((total, product) => total + imageCount(product), 0);
 
   function toggleProduct(productId: string) {
     setSelectedIds((current) =>
@@ -309,6 +337,77 @@ export function ExportsManager({
 
   return (
     <div className="space-y-6">
+      <section className="rounded-md border border-zinc-200 bg-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-zinc-950">{t("导出观察面板", "Export Overview")}</h3>
+            <p className="mt-1 text-sm text-zinc-500">
+              {t("查看可导出商品、已选图片数量和最近导出记录状态。", "Review exportable products, selected image count, and recent export status.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className="rounded-md bg-zinc-50 px-3 py-2">
+              <p className="text-zinc-500">{t("商品草稿", "Drafts")}</p>
+              <p className="mt-1 text-lg font-semibold text-zinc-950">{products.length}</p>
+            </div>
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-emerald-800">
+              <p>{t("可导出", "Exportable")}</p>
+              <p className="mt-1 text-lg font-semibold">{visibleProducts.length}</p>
+            </div>
+            <div className="rounded-md bg-sky-50 px-3 py-2 text-sky-800">
+              <p>{t("已选择", "Selected")}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedIds.length}</p>
+            </div>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-800">
+              <p>{t("待打包图片", "Images")}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedImageCount}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("商品状态分布", "Product Status")}</p>
+            <div className="mt-4 space-y-3">
+              {productStatusRows.map((row) => (
+                <div key={row.status}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-600">
+                    <span>{t(row.label.zh, row.label.en)}</span>
+                    <span>{row.count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white">
+                    <div className="h-full rounded-full bg-zinc-900" style={{ width: `${row.count > 0 ? Math.max(5, percent(row.count, maxProductStatusCount)) : 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-200 bg-zinc-50 p-4">
+            <p className="text-sm font-semibold text-zinc-950">{t("导出记录状态", "Export Record Status")}</p>
+            <div className="mt-4 space-y-3">
+              {exportRecordStatusRows.map((row) => (
+                <div key={row.status}>
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs text-zinc-600">
+                    <span>{t(row.label.zh, row.label.en)}</span>
+                    <span>{row.count}</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-white">
+                    <div
+                      className={[
+                        "h-full rounded-full",
+                        row.status === "completed" ? "bg-emerald-600" : row.status === "failed" ? "bg-red-500" : row.status === "processing" ? "bg-sky-500" : "bg-zinc-500",
+                      ].join(" ")}
+                      style={{ width: `${row.count > 0 ? Math.max(5, percent(row.count, maxExportRecordStatusCount)) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="rounded-md border border-zinc-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>

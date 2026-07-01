@@ -42,10 +42,10 @@ export default async function ImageJobsPage() {
 
   return (
     <PageShell
-      titleZh="批量图片处理"
+      titleZh="图片任务"
       titleEn="Image Jobs"
-      descriptionZh="用于查看和管理图片处理任务。"
-      descriptionEn="View and manage batch image processing jobs."
+      descriptionZh="查看后台处理进度、失败原因和重试入口。"
+      descriptionEn="Track background progress, errors, and retries."
     >
       <ImageJobsCenter initialError={error} initialJobs={jobs} />
     </PageShell>

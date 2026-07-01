@@ -146,6 +146,11 @@ function calendarMonthTitle(monthKey: string) {
   return `${year}年 ${Number(month)}月`;
 }
 
+function percent(value: number, totalValue: number) {
+  if (totalValue <= 0) return 0;
+  return Math.min(100, Math.round((value / totalValue) * 100));
+}
+
 export function CollectorLibraryManager() {
   const { isDark, t } = useSettings();
   const [items, setItems] = useState<CollectorLibraryItem[]>([]);
@@ -223,6 +228,20 @@ export function CollectorLibraryManager() {
   const allFilteredSelected = filteredItems.length > 0 && filteredItems.every((item) => selected.has(item.relativePath));
   const totalPages = Math.max(1, Math.ceil(Math.max(total, 0) / COLLECTOR_PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
+  const selectedShare = percent(selectedCount, total || items.length);
+  const siteRows = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      counts.set(item.siteType || "unknown", (counts.get(item.siteType || "unknown") || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([site, count]) => ({ count, site }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 6);
+  }, [items]);
+  const maxSiteCount = Math.max(1, ...siteRows.map((row) => row.count));
+  const recentDateRows = dateBuckets.slice(0, 7);
+  const maxRecentDateCount = Math.max(1, ...recentDateRows.map((row) => row.count));
   const previewPendingMode = previewItem && pendingMutationPaths.has(previewItem.relativePath) ? pendingMutationMode : null;
   const panelClass = isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-white";
   const mutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
@@ -619,6 +638,95 @@ export function CollectorLibraryManager() {
 
   return (
     <div className="space-y-4">
+      <section className={"rounded-md border p-4 " + panelClass}>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h3 className={"text-base font-semibold " + textClass}>{t("采集库观察面板", "Collector Overview")}</h3>
+            <p className={"mt-1 text-sm " + mutedClass}>
+              {t("查看当前采集库数量、来源分布、日期热度和已选比例。", "Review collector size, sources, date activity, and selected share.")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <div className={isDark ? "rounded-md bg-white/[0.04] px-3 py-2" : "rounded-md bg-zinc-50 px-3 py-2"}>
+              <p className={mutedClass}>{t("全部图片", "Total")}</p>
+              <p className={"mt-1 text-lg font-semibold " + textClass}>{total}</p>
+            </div>
+            <div className={isDark ? "rounded-md bg-white/[0.04] px-3 py-2" : "rounded-md bg-zinc-50 px-3 py-2"}>
+              <p className={mutedClass}>{t("已加载", "Loaded")}</p>
+              <p className={"mt-1 text-lg font-semibold " + textClass}>{items.length}</p>
+            </div>
+            <div className={isDark ? "rounded-md bg-cyan-500/10 px-3 py-2 text-cyan-200" : "rounded-md bg-cyan-50 px-3 py-2 text-cyan-800"}>
+              <p>{t("当前筛选", "Filtered")}</p>
+              <p className="mt-1 text-lg font-semibold">{filteredItems.length}</p>
+            </div>
+            <div className={isDark ? "rounded-md bg-emerald-500/10 px-3 py-2 text-emerald-200" : "rounded-md bg-emerald-50 px-3 py-2 text-emerald-800"}>
+              <p>{t("已选择", "Selected")}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedCount} / {selectedShare}%</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div className={isDark ? "rounded-md border border-white/[0.08] bg-zinc-950/40 p-3" : "rounded-md border border-zinc-200 bg-zinc-50 p-3"}>
+            <p className={"text-sm font-semibold " + textClass}>{t("来源网站分布", "Source Sites")}</p>
+            {siteRows.length > 0 ? (
+              <div className="mt-3 space-y-3">
+                {siteRows.map((row) => (
+                  <div key={row.site}>
+                    <div className={"mb-1 flex items-center justify-between gap-3 text-xs " + mutedClass}>
+                      <span className="truncate">{row.site}</span>
+                      <span>{row.count}</span>
+                    </div>
+                    <div className={isDark ? "h-2 overflow-hidden rounded-full bg-white/[0.08]" : "h-2 overflow-hidden rounded-full bg-white"}>
+                      <div className="h-full rounded-full bg-cyan-500" style={{ width: `${Math.max(5, percent(row.count, maxSiteCount))}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className={"mt-3 text-sm " + mutedClass}>{t("暂无来源数据。", "No source data yet.")}</p>
+            )}
+          </div>
+
+          <div className={isDark ? "rounded-md border border-white/[0.08] bg-zinc-950/40 p-3" : "rounded-md border border-zinc-200 bg-zinc-50 p-3"}>
+            <p className={"text-sm font-semibold " + textClass}>{t("最近上传热度", "Recent Upload Activity")}</p>
+            {recentDateRows.length > 0 ? (
+              <div className="mt-3 grid grid-cols-7 gap-2">
+                {recentDateRows.map((row) => (
+                  <button
+                    key={row.date}
+                    type="button"
+                    onClick={() => applySingleUploadDate(row.date)}
+                    className={isDark ? "rounded-md border border-white/[0.08] bg-white/[0.03] p-2 text-left hover:bg-white/[0.06]" : "rounded-md border border-zinc-200 bg-white p-2 text-left hover:bg-zinc-100"}
+                    title={row.date}
+                  >
+                    <div className="flex h-16 items-end">
+                      <div className="w-full rounded-sm bg-emerald-500" style={{ height: `${Math.max(12, percent(row.count, maxRecentDateCount))}%` }} />
+                    </div>
+                    <p className={"mt-2 truncate text-[11px] " + mutedClass}>{row.date.slice(5)}</p>
+                    <p className={"text-xs font-semibold " + textClass}>{row.count}</p>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className={"mt-3 text-sm " + mutedClass}>{t("暂无日期数据。", "No date data yet.")}</p>
+            )}
+          </div>
+        </div>
+
+        {pendingMutationPaths.size > 0 ? (
+          <div className={isDark ? "mt-4 rounded-md border border-cyan-400/30 bg-cyan-500/10 p-3 text-sm text-cyan-100" : "mt-4 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-800"}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="font-semibold">{mutationLabel(pendingMutationMode)}</span>
+              <span>{pendingMutationPaths.size} {t("张处理中", "processing")}</span>
+            </div>
+            <div className={isDark ? "mt-2 h-2 overflow-hidden rounded-full bg-white/[0.08]" : "mt-2 h-2 overflow-hidden rounded-full bg-cyan-100"}>
+              <div className="ui-progress-fill h-full rounded-full bg-cyan-500" />
+            </div>
+          </div>
+        ) : null}
+      </section>
+
       <section className={"rounded-md border p-4 " + panelClass}>
         <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
           <label className="block text-sm font-medium">
