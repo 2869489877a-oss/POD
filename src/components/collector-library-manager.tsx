@@ -158,6 +158,7 @@ export function CollectorLibraryManager() {
   const [employeeFilter, setEmployeeFilter] = useState("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [isDatePanelOpen, setIsDatePanelOpen] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(() => formatUploadDateKey(new Date().toISOString()).slice(0, 7));
   const [page, setPage] = useState(1);
   const [siteFilter, setSiteFilter] = useState("all");
@@ -243,6 +244,10 @@ export function CollectorLibraryManager() {
   const recentDateRows = dateBuckets.slice(0, 7);
   const maxRecentDateCount = Math.max(1, ...recentDateRows.map((row) => row.count));
   const previewPendingMode = previewItem && pendingMutationPaths.has(previewItem.relativePath) ? pendingMutationMode : null;
+  const dateRangeText = activeStartDate || activeEndDate
+    ? (activeStartDate || activeEndDate) + (activeEndDate && activeEndDate !== activeStartDate ? " - " + activeEndDate : "")
+    : t("未限制日期", "No date limit");
+  const hasDateFilter = Boolean(activeStartDate || activeEndDate);
   const panelClass = isDark ? "border-white/[0.08] bg-white/[0.03]" : "border-zinc-200 bg-white";
   const mutedClass = isDark ? "text-zinc-400" : "text-zinc-500";
   const textClass = isDark ? "text-white" : "text-zinc-950";
@@ -359,6 +364,7 @@ export function CollectorLibraryManager() {
     setEndDate(latestUploadDate);
     setStartDate(addDays(latestUploadDate, -(days - 1)));
     setCalendarMonth(latestUploadDate.slice(0, 7));
+    setIsDatePanelOpen(false);
   }
 
   function applyThisMonth() {
@@ -367,6 +373,7 @@ export function CollectorLibraryManager() {
     setStartDate(latestUploadDate.slice(0, 8) + "01");
     setEndDate(latestUploadDate);
     setCalendarMonth(latestUploadDate.slice(0, 7));
+    setIsDatePanelOpen(false);
   }
 
   function applySingleUploadDate(uploadDate: string) {
@@ -375,6 +382,7 @@ export function CollectorLibraryManager() {
     setStartDate(uploadDate);
     setEndDate(uploadDate);
     setCalendarMonth(uploadDate.slice(0, 7));
+    setIsDatePanelOpen(false);
   }
 
   function clearDateRange() {
@@ -382,6 +390,7 @@ export function CollectorLibraryManager() {
     setSelected(new Set());
     setStartDate("");
     setEndDate("");
+    setIsDatePanelOpen(false);
   }
 
   function selectCalendarDate(dateKey: string) {
@@ -398,10 +407,12 @@ export function CollectorLibraryManager() {
     if (dateKey < startDate) {
       setStartDate(dateKey);
       setEndDate(startDate);
+      setIsDatePanelOpen(false);
       return;
     }
 
     setEndDate(dateKey);
+    setIsDatePanelOpen(false);
   }
 
   function setCalendarYear(year: string) {
@@ -727,8 +738,25 @@ export function CollectorLibraryManager() {
         ) : null}
       </section>
 
-      <section className={"rounded-md border p-4 " + panelClass}>
-        <div className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr_0.8fr_auto]">
+      <section className={"ui-enter rounded-[10px] border p-4 shadow-lg " + panelClass}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className={"text-base font-semibold " + textClass}>{t("筛选与整理", "Filter and Organize")}</h3>
+            <p className={"mt-1 text-sm " + mutedClass}>
+              {t("按关键词、员工、来源网站和上传日期快速缩小图片范围。", "Narrow images by keyword, employee, source site, and upload date.")}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className={isDark ? "rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-200" : "rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs text-cyan-700"}>
+              {t(`当前页 ${safePage}/${totalPages}`, `Page ${safePage}/${totalPages}`)}
+            </span>
+            <span className={isDark ? "rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200" : "rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700"}>
+              {t(`已选 ${selectedCount}`, `${selectedCount} selected`)}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(260px,1.2fr)_180px_180px_230px_auto]">
           <label className="block text-sm font-medium">
             <span className={textClass}>{t("搜索", "Search")}</span>
             <input
@@ -768,226 +796,253 @@ export function CollectorLibraryManager() {
               ))}
             </select>
           </label>
-          <button type="button" onClick={() => void loadItems(page, true)} disabled={isLoading || isMutating} className={neutralButtonClass + " self-end"}>
-            {isLoading ? t("刷新中", "Refreshing") : t("刷新", "Refresh")}
+          <div className="block text-sm font-medium">
+            <span className={textClass}>{t("上传日期", "Upload Date")}</span>
+            <button
+              type="button"
+              onClick={() => setIsDatePanelOpen((open) => !open)}
+              aria-expanded={isDatePanelOpen}
+              className={[
+                "ui-press mt-2 flex h-[38px] w-full items-center justify-between gap-3 rounded-md border px-3 text-left text-sm font-medium",
+                hasDateFilter
+                  ? isDark
+                    ? "border-cyan-400/40 bg-cyan-400/10 text-cyan-100"
+                    : "border-cyan-300 bg-cyan-50 text-cyan-800"
+                  : isDark
+                    ? "border-white/[0.10] bg-zinc-950/70 text-zinc-200"
+                    : "border-zinc-300 bg-white text-zinc-800",
+              ].join(" ")}
+            >
+              <span className="min-w-0 truncate">{dateRangeText}</span>
+              <span className={"shrink-0 text-xs transition-transform " + (isDatePanelOpen ? "rotate-180" : "")}>⌄</span>
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadItems(page, true)}
+            disabled={isLoading || isMutating}
+            className={neutralButtonClass + " self-end"}
+          >
+            {isLoading ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="ui-spinner ui-spinner-sm" aria-hidden="true" />
+                {t("刷新中", "Refreshing")}
+              </span>
+            ) : t("刷新", "Refresh")}
           </button>
         </div>
 
-        <div className="mt-4 rounded-md border border-dashed border-cyan-500/25 p-3">
-          <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
-            <div className={isDark ? "rounded-md border border-white/[0.08] bg-zinc-950/40 p-3" : "rounded-md border border-zinc-200 bg-zinc-50 p-3"}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
-                  className={neutralButtonClass + " h-9 w-9 px-0"}
-                  aria-label={t("上个月", "Previous month")}
-                >
-                  {"<"}
-                </button>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={calendarMonth.slice(0, 4)}
-                    onChange={(event) => setCalendarYear(event.target.value)}
-                    className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
-                    aria-label={t("年份", "Year")}
-                  >
-                    {calendarYears.map((year) => (
-                      <option key={year} value={year}>
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={calendarMonth.slice(5, 7)}
-                    onChange={(event) => setCalendarMonthNumber(event.target.value)}
-                    className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
-                    aria-label={t("月份", "Month")}
-                  >
-                    {monthOptions.map((month) => (
-                      <option key={month} value={month}>
-                        {Number(month)}月
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setCalendarMonth(shiftMonth(calendarMonth, 1))}
-                  className={neutralButtonClass + " h-9 w-9 px-0"}
-                  aria-label={t("下个月", "Next month")}
-                >
-                  {">"}
-                </button>
-              </div>
-
-              <div className={"mt-3 text-center text-sm font-semibold " + textClass}>{calendarMonthTitle(calendarMonth)}</div>
-              <div className={"mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold " + mutedClass}>
-                {["日", "一", "二", "三", "四", "五", "六"].map((day) => (
-                  <span key={day}>{day}</span>
-                ))}
-              </div>
-              <div className="mt-1 grid grid-cols-7 gap-1">
-                {calendarDays.map((day) => {
-                  const count = dateCountMap.get(day.dateKey) || 0;
-                  const isStart = day.dateKey === activeStartDate;
-                  const isEnd = day.dateKey === activeEndDate;
-                  const inRange =
-                    activeStartDate && activeEndDate && day.dateKey >= activeStartDate && day.dateKey <= activeEndDate;
-                  const isSelected = isStart || isEnd || Boolean(inRange);
-                  return (
-                    <button
-                      key={day.dateKey}
-                      type="button"
-                      onClick={() => selectCalendarDate(day.dateKey)}
-                      className={[
-                        "relative h-12 rounded-md border text-xs font-semibold transition hover:-translate-y-0.5",
-                        isSelected
-                          ? isDark
-                            ? "border-cyan-400 bg-cyan-500/20 text-cyan-100"
-                            : "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm"
-                          : day.inMonth
-                            ? isDark
-                              ? "border-white/[0.08] bg-white/[0.03] text-zinc-200 hover:bg-white/[0.08]"
-                              : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-100"
-                            : isDark
-                              ? "border-white/[0.04] bg-transparent text-zinc-600"
-                              : "border-zinc-100 bg-transparent text-zinc-300",
-                      ].join(" ")}
-                    >
-                      <span>{day.day}</span>
-                      {count > 0 ? (
-                        <span className="absolute bottom-1 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-emerald-500 px-1 text-[10px] leading-4 text-white">
-                          {count}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-between gap-3">
-              <div>
-                <p className={"text-sm font-semibold " + textClass}>{t("上传日期区间", "Upload Date Range")}</p>
-                <p className={"mt-1 text-xs " + mutedClass}>
-                  {activeStartDate || activeEndDate
-                    ? (activeStartDate || activeEndDate) + (activeEndDate && activeEndDate !== activeStartDate ? " - " + activeEndDate : "")
-                    : t("未限制日期", "No date limit")}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => applyRecentDays(7)} className={neutralButtonClass}>
-                  {t("最近 7 天", "Last 7 Days")}
-                </button>
-                <button type="button" onClick={() => applyRecentDays(30)} className={neutralButtonClass}>
-                  {t("最近 30 天", "Last 30 Days")}
-                </button>
-                <button type="button" onClick={applyThisMonth} className={neutralButtonClass}>
-                  {t("本月", "This Month")}
-                </button>
-                <button type="button" onClick={clearDateRange} className={neutralButtonClass}>
-                  {t("清空日期", "Clear Dates")}
-                </button>
-              </div>
-              <div className={isDark ? "rounded-md bg-white/[0.04] p-3" : "rounded-md bg-white p-3"}>
-                <p className={"text-xs " + mutedClass}>
-                  {t("日期格右下角数字表示当天上传数量。先点开始日期，再点结束日期，即可筛选区间。", "The number on each date is that day's upload count. Click a start date, then an end date to filter the range.")}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="hidden">
-            <label className="block text-sm font-medium">
-              <span className={textClass}>{t("上传日期起", "Upload Date From")}</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                className={"mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none " + inputClass}
-              />
-            </label>
-            <label className="block text-sm font-medium">
-              <span className={textClass}>{t("上传日期止", "Upload Date To")}</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                className={"mt-2 w-full rounded-md border px-3 py-2 text-sm outline-none " + inputClass}
-              />
-            </label>
-            <div className="flex flex-wrap items-end gap-2">
-              <button type="button" onClick={() => applyRecentDays(7)} className={neutralButtonClass}>
-                {t("最近 7 天", "Last 7 Days")}
-              </button>
-              <button type="button" onClick={() => applyRecentDays(30)} className={neutralButtonClass}>
-                {t("最近 30 天", "Last 30 Days")}
-              </button>
-              <button type="button" onClick={applyThisMonth} className={neutralButtonClass}>
-                {t("本月", "This Month")}
-              </button>
-              <button type="button" onClick={clearDateRange} className={neutralButtonClass}>
-                {t("清空日期", "Clear Dates")}
-              </button>
-            </div>
-          </div>
-
-          {dateBuckets.length > 0 ? (
-            <div className="hidden">
-              {dateBuckets.slice(0, 18).map((bucket) => {
-                const activeStartDate = startDate && endDate && startDate > endDate ? endDate : startDate;
-                const activeEndDate = startDate && endDate && startDate > endDate ? startDate : endDate;
-                const selectedDate =
-                  activeStartDate && activeEndDate
-                    ? bucket.date >= activeStartDate && bucket.date <= activeEndDate
-                    : bucket.date === activeStartDate || bucket.date === activeEndDate;
-                return (
-                  <button
-                    key={bucket.date}
-                    type="button"
-                    onClick={() => applySingleUploadDate(bucket.date)}
-                    className={[
-                      "rounded-md border p-2 text-left transition hover:-translate-y-0.5",
-                      selectedDate
-                        ? "border-cyan-400 bg-cyan-500/10"
-                        : isDark
-                          ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
-                          : "border-zinc-200 bg-white hover:bg-zinc-50",
-                    ].join(" ")}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className={"text-xs font-semibold " + textClass}>{bucket.date}</span>
-                      <span className={"text-[11px] " + mutedClass}>{bucket.count}</span>
-                    </div>
-                    <div className={isDark ? "mt-2 h-1.5 rounded-full bg-white/[0.08]" : "mt-2 h-1.5 rounded-full bg-zinc-100"}>
-                      <div
-                        className="h-full rounded-full bg-cyan-400"
-                        style={{ width: Math.max(12, Math.round((bucket.count / maxDateCount) * 100)) + "%" }}
-                      />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+        <div className={"mt-3 flex flex-wrap items-center gap-2 text-xs " + mutedClass}>
+          <span className={isDark ? "rounded-full bg-white/[0.04] px-3 py-1" : "rounded-full bg-zinc-100 px-3 py-1"}>
+            {t(`已加载 ${items.length}/${total || items.length}`, `${items.length}/${total || items.length} loaded`)}
+          </span>
+          <span className={isDark ? "rounded-full bg-white/[0.04] px-3 py-1" : "rounded-full bg-zinc-100 px-3 py-1"}>
+            {t(`筛选显示 ${filteredItems.length}`, `${filteredItems.length} visible`)}
+          </span>
+          {hasDateFilter ? (
+            <button
+              type="button"
+              onClick={clearDateRange}
+              className={isDark ? "ui-press rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-cyan-200" : "ui-press rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700"}
+            >
+              {t("清空日期", "Clear dates")}
+            </button>
           ) : null}
         </div>
+
+        {isDatePanelOpen ? (
+          <div className="ui-enter mt-4 rounded-[10px] border border-dashed border-cyan-500/25 p-3">
+            <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <div className={isDark ? "rounded-[10px] border border-white/[0.08] bg-zinc-950/50 p-3" : "rounded-[10px] border border-zinc-200 bg-zinc-50 p-3"}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCalendarMonth(shiftMonth(calendarMonth, -1))}
+                    className={neutralButtonClass + " h-9 w-9 px-0"}
+                    aria-label={t("上个月", "Previous month")}
+                  >
+                    {"<"}
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={calendarMonth.slice(0, 4)}
+                      onChange={(event) => setCalendarYear(event.target.value)}
+                      className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
+                      aria-label={t("年份", "Year")}
+                    >
+                      {calendarYears.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={calendarMonth.slice(5, 7)}
+                      onChange={(event) => setCalendarMonthNumber(event.target.value)}
+                      className={"h-9 rounded-md border px-2 text-sm outline-none " + inputClass}
+                      aria-label={t("月份", "Month")}
+                    >
+                      {monthOptions.map((month) => (
+                        <option key={month} value={month}>
+                          {Number(month)}月
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCalendarMonth(shiftMonth(calendarMonth, 1))}
+                    className={neutralButtonClass + " h-9 w-9 px-0"}
+                    aria-label={t("下个月", "Next month")}
+                  >
+                    {">"}
+                  </button>
+                </div>
+
+                <div className={"mt-3 text-center text-sm font-semibold " + textClass}>{calendarMonthTitle(calendarMonth)}</div>
+                <div className={"mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold " + mutedClass}>
+                  {["日", "一", "二", "三", "四", "五", "六"].map((day) => (
+                    <span key={day}>{day}</span>
+                  ))}
+                </div>
+                <div className="mt-1 grid grid-cols-7 gap-1">
+                  {calendarDays.map((day) => {
+                    const count = dateCountMap.get(day.dateKey) || 0;
+                    const isStart = day.dateKey === activeStartDate;
+                    const isEnd = day.dateKey === activeEndDate;
+                    const inRange =
+                      activeStartDate && activeEndDate && day.dateKey >= activeStartDate && day.dateKey <= activeEndDate;
+                    const isSelected = isStart || isEnd || Boolean(inRange);
+                    return (
+                      <button
+                        key={day.dateKey}
+                        type="button"
+                        onClick={() => selectCalendarDate(day.dateKey)}
+                        className={[
+                          "relative h-12 rounded-md border text-xs font-semibold transition hover:-translate-y-0.5",
+                          isSelected
+                            ? isDark
+                              ? "border-cyan-400 bg-cyan-500/20 text-cyan-100"
+                              : "border-cyan-500 bg-cyan-50 text-cyan-900 shadow-sm"
+                            : day.inMonth
+                              ? isDark
+                                ? "border-white/[0.08] bg-white/[0.03] text-zinc-200 hover:bg-white/[0.08]"
+                                : "border-zinc-200 bg-white text-zinc-800 hover:bg-zinc-100"
+                              : isDark
+                                ? "border-white/[0.04] bg-transparent text-zinc-600"
+                                : "border-zinc-100 bg-transparent text-zinc-300",
+                        ].join(" ")}
+                      >
+                        <span>{day.day}</span>
+                        {count > 0 ? (
+                          <span className="absolute bottom-1 left-1/2 min-w-5 -translate-x-1/2 rounded-full bg-emerald-500 px-1 text-[10px] leading-4 text-white">
+                            {count}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-rows-[auto_1fr]">
+                <div className={isDark ? "rounded-[10px] border border-white/[0.08] bg-white/[0.03] p-4" : "rounded-[10px] border border-zinc-200 bg-white p-4"}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className={"text-sm font-semibold " + textClass}>{t("上传日期区间", "Upload Date Range")}</p>
+                      <p className={"mt-1 text-xs " + mutedClass}>{dateRangeText}</p>
+                    </div>
+                    <button type="button" onClick={() => setIsDatePanelOpen(false)} className={neutralButtonClass}>
+                      {t("收起日历", "Collapse Calendar")}
+                    </button>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => applyRecentDays(7)} className={neutralButtonClass}>
+                      {t("最近 7 天", "Last 7 Days")}
+                    </button>
+                    <button type="button" onClick={() => applyRecentDays(30)} className={neutralButtonClass}>
+                      {t("最近 30 天", "Last 30 Days")}
+                    </button>
+                    <button type="button" onClick={applyThisMonth} className={neutralButtonClass}>
+                      {t("本月", "This Month")}
+                    </button>
+                    <button type="button" onClick={clearDateRange} className={neutralButtonClass}>
+                      {t("清空日期", "Clear Dates")}
+                    </button>
+                  </div>
+                  <p className={"mt-3 text-xs leading-5 " + mutedClass}>
+                    {t("日期格右下角数字表示当天上传数量。先点开始日期，再点结束日期，即可筛选区间。", "The number on each date is that day's upload count. Click a start date, then an end date to filter the range.")}
+                  </p>
+                </div>
+
+                <div className={isDark ? "rounded-[10px] border border-white/[0.08] bg-zinc-950/40 p-4" : "rounded-[10px] border border-zinc-200 bg-zinc-50 p-4"}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className={"text-sm font-semibold " + textClass}>{t("最近上传日期", "Recent Upload Dates")}</p>
+                    <span className={"text-xs " + mutedClass}>{t("点击单日筛选", "Click a day to filter")}</span>
+                  </div>
+                  {dateBuckets.length > 0 ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {dateBuckets.slice(0, 12).map((bucket) => {
+                        const selectedDate =
+                          activeStartDate && activeEndDate
+                            ? bucket.date >= activeStartDate && bucket.date <= activeEndDate
+                            : bucket.date === activeStartDate || bucket.date === activeEndDate;
+                        return (
+                          <button
+                            key={bucket.date}
+                            type="button"
+                            onClick={() => applySingleUploadDate(bucket.date)}
+                            className={[
+                              "ui-press rounded-md border p-2 text-left",
+                              selectedDate
+                                ? "border-cyan-400 bg-cyan-500/10"
+                                : isDark
+                                  ? "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]"
+                                  : "border-zinc-200 bg-white hover:bg-zinc-100",
+                            ].join(" ")}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={"text-xs font-semibold " + textClass}>{bucket.date}</span>
+                              <span className={"text-[11px] " + mutedClass}>{bucket.count}</span>
+                            </div>
+                            <div className={isDark ? "mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]" : "mt-2 h-1.5 overflow-hidden rounded-full bg-zinc-100"}>
+                              <div
+                                className="h-full rounded-full bg-cyan-400"
+                                style={{ width: Math.max(12, Math.round((bucket.count / maxDateCount) * 100)) + "%" }}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className={"mt-3 text-sm " + mutedClass}>{t("暂无日期数据。", "No date data yet.")}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className={"text-sm " + mutedClass}>
-          {t(
-            `第 ${safePage}/${totalPages} 页，当前页 ${filteredItems.length} 张，全部 ${total} 张，已选 ${selectedCount} 张`,
-            `Page ${safePage}/${totalPages}, ${filteredItems.length} on this page, ${total} total, ${selectedCount} selected`,
-          )}
-        </div>
-        <div className={"text-sm " + mutedClass}>
-          {t(
-            `已加载 ${items.length}/${total || items.length} 张，当前筛选显示 ${filteredItems.length} 张`,
-            `${items.length}/${total || items.length} loaded, ${filteredItems.length} visible after filters`,
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <section className={"rounded-[10px] border p-3 " + panelClass}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={isDark ? "rounded-full bg-white/[0.04] px-3 py-1 text-xs text-zinc-300" : "rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-600"}>
+              {t(`第 ${safePage}/${totalPages} 页`, `Page ${safePage}/${totalPages}`)}
+            </span>
+            <span className={isDark ? "rounded-full bg-white/[0.04] px-3 py-1 text-xs text-zinc-300" : "rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-600"}>
+              {t(`当前页 ${filteredItems.length} 张`, `${filteredItems.length} on this page`)}
+            </span>
+            <span className={isDark ? "rounded-full bg-white/[0.04] px-3 py-1 text-xs text-zinc-300" : "rounded-full bg-zinc-100 px-3 py-1 text-xs text-zinc-600"}>
+              {t(`全部 ${total} 张`, `${total} total`)}
+            </span>
+            <span className={isDark ? "rounded-full bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200" : "rounded-full bg-emerald-50 px-3 py-1 text-xs text-emerald-700"}>
+              {t(`已选 ${selectedCount} 张`, `${selectedCount} selected`)}
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void selectAllResults()}
@@ -1023,8 +1078,9 @@ export function CollectorLibraryManager() {
           >
             {t("删除选中", "Delete Selected")}
           </button>
+          </div>
         </div>
-      </div>
+      </section>
 
       {message ? <p className="ui-enter rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-600">{message}</p> : null}
       {error ? <pre className="ui-enter whitespace-pre-wrap rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500">{error}</pre> : null}
