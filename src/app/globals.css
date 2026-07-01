@@ -259,6 +259,55 @@ a {
   50% { transform: translateY(-4px); }
 }
 
+@keyframes dashboard-grid-flow {
+  0% {
+    background-position:
+      0 0,
+      0 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      48px 48px,
+      -36px 24px,
+      100% 0;
+  }
+}
+
+@keyframes dashboard-core-breathe {
+  0%,
+  100% {
+    opacity: 0.76;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dashboard-bar-rise {
+  0% {
+    transform: scaleY(0.2);
+    filter: saturate(0.85);
+  }
+  64% {
+    transform: scaleY(1.05);
+    filter: saturate(1.15);
+  }
+  100% {
+    transform: scaleY(1);
+    filter: saturate(1);
+  }
+}
+
+@keyframes dashboard-line-drift {
+  0% { transform: translateX(-55%); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translateX(55%); opacity: 0; }
+}
+
 @keyframes ui-rail-breathe {
   0%,
   100% {
@@ -997,6 +1046,213 @@ a {
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.65), rgba(16, 185, 129, 0.42), transparent);
   box-shadow: 0 0 16px rgba(34, 211, 238, 0.22);
+}
+
+.dashboard-hero {
+  isolation: isolate;
+}
+
+.dashboard-grid {
+  z-index: 1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.08) 1px, transparent 1px),
+    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.08) 44%, transparent 62%);
+  background-size:
+    48px 48px,
+    48px 48px,
+    220% 100%;
+  opacity: 0.62;
+  animation: dashboard-grid-flow 14s linear infinite;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.95), rgba(0, 0, 0, 0.42), transparent);
+}
+
+.dashboard-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.65rem;
+  border-width: 1px;
+  border-radius: 999px;
+  padding: 0.32rem 0.68rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
+}
+
+.dashboard-glass {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.028)),
+    rgba(255, 255, 255, 0.035);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 40px rgba(0, 0, 0, 0.16);
+}
+
+.dashboard-command-panel::before,
+.dashboard-panel::before,
+.dashboard-metric::before {
+  content: "";
+  position: absolute;
+  inset-inline: 1.25rem;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.75), rgba(16, 185, 129, 0.45), transparent);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.24);
+}
+
+.dashboard-command-panel::after {
+  content: "";
+  position: absolute;
+  inset: auto -20% 0;
+  height: 28%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.08), rgba(16, 185, 129, 0.08), transparent);
+  animation: dashboard-line-drift 5.4s var(--motion-smooth) infinite;
+}
+
+.dashboard-core {
+  position: relative;
+  display: grid;
+  width: min(12.5rem, 100%);
+  aspect-ratio: 1;
+  place-items: center;
+  isolation: isolate;
+}
+
+.dashboard-core::before {
+  content: "";
+  position: absolute;
+  inset: 12%;
+  border: 1px solid rgba(34, 211, 238, 0.16);
+  border-radius: 999px;
+  background:
+    repeating-conic-gradient(from 0deg, rgba(34, 211, 238, 0.18) 0deg 6deg, transparent 6deg 18deg);
+  opacity: 0.58;
+  animation: ui-orbit 18s linear infinite reverse;
+}
+
+.dashboard-core-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background:
+    conic-gradient(from 0deg, transparent 0deg, rgba(34, 211, 238, 0.92) 70deg, rgba(16, 185, 129, 0.78) 128deg, transparent 190deg, rgba(245, 158, 11, 0.62) 254deg, transparent 330deg),
+    radial-gradient(circle at center, rgba(34, 211, 238, 0.1), transparent 64%);
+  filter: drop-shadow(0 0 18px rgba(34, 211, 238, 0.24));
+  animation: ui-orbit 8s linear infinite;
+}
+
+.dashboard-core-ring::after {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: inherit;
+  background: #080a0d;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.dashboard-core-inner {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 58%;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(34, 211, 238, 0.16);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.24);
+  animation: dashboard-core-breathe 2.8s ease-in-out infinite;
+}
+
+.dashboard-core-inner strong {
+  font-size: clamp(2rem, 5vw, 3.1rem);
+  line-height: 0.92;
+  color: #ffffff;
+  letter-spacing: -0.06em;
+  text-shadow: 0 0 22px rgba(34, 211, 238, 0.32);
+}
+
+.dashboard-row {
+  position: relative;
+  overflow: hidden;
+  animation: ui-enter-up 0.36s var(--motion-smooth) both;
+}
+
+.dashboard-row::before,
+.dashboard-pipeline-card::before,
+.dashboard-note::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0), rgba(34, 211, 238, 0.86), rgba(16, 185, 129, 0));
+  opacity: 0.7;
+}
+
+.dashboard-panel,
+.dashboard-metric,
+.dashboard-pipeline-card,
+.dashboard-note {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-panel {
+  backdrop-filter: blur(8px);
+}
+
+.dashboard-metric {
+  min-height: 10.5rem;
+}
+
+.dashboard-pipeline-card {
+  transition:
+    transform 0.18s var(--motion-smooth),
+    border-color 0.18s var(--motion-smooth),
+    background-color 0.18s var(--motion-smooth);
+}
+
+.dashboard-pipeline-card:hover {
+  transform: translateY(-2px);
+}
+
+.dashboard-sparkline {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboard-sparkline::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.5;
+}
+
+.dashboard-spark-bar {
+  position: relative;
+  z-index: 1;
+  min-width: 0.45rem;
+  transform-origin: bottom;
+  animation: dashboard-bar-rise 0.74s var(--motion-smooth) both;
+  box-shadow: 0 0 16px rgba(34, 211, 238, 0.2);
+}
+
+.dashboard-note {
+  animation: ui-enter-up 0.34s var(--motion-smooth) both;
 }
 
 .ui-metric-tile {
