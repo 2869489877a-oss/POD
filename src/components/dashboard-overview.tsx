@@ -52,8 +52,6 @@ const toneStyles: Record<
   },
 };
 
-const sparklineHeights = [34, 52, 44, 72, 58, 84, 66, 92, 73, 64, 88, 76];
-
 function formatNumber(value: number) {
   return new Intl.NumberFormat("zh-CN").format(value);
 }
@@ -79,7 +77,7 @@ export function DashboardOverview({ stats }: Props) {
   const assetReadyPercent = percent(stats.processedAssets, stats.totalAssets);
   const riskClearPercent = percent(stats.clearChecks, checkTotal);
   const draftReadyPercent = percent(stats.readyDrafts + stats.exportedDrafts, stats.totalDrafts);
-  const productionScore = Math.max(
+  const operationalHealth = Math.max(
     8,
     Math.min(
       99,
@@ -102,29 +100,29 @@ export function DashboardOverview({ stats }: Props) {
 
   const summaryCards = [
     {
-      label: t("今日上新", "New Today"),
-      note: t("上传入口的新增素材", "New assets from upload flows"),
+      label: t("今日新增", "New Assets"),
+      note: t("今日上传与采集入库素材", "Uploaded and collected assets today"),
       progress: percent(stats.todayUploads, Math.max(12, stats.todayUploads + 6)),
       tone: "cyan" as Tone,
       value: stats.todayUploads,
     },
     {
-      label: t("素材战备", "Asset Readiness"),
+      label: t("素材处理率", "Asset Processing"),
       note: t(`已处理 ${assetReadyPercent}%`, `${assetReadyPercent}% processed`),
       progress: assetReadyPercent,
       tone: "emerald" as Tone,
       value: stats.totalAssets,
     },
     {
-      label: t("任务队列", "Task Queue"),
-      note: statusLabel(activeWork, t("当前空闲", "Idle now"), t("正在排队/处理", "Queued or running")),
+      label: t("任务队列", "Active Queue"),
+      note: statusLabel(activeWork, t("队列空闲", "Queue idle"), t("等待或处理中", "Queued or running")),
       progress: percent(activeWork, Math.max(8, activeWork + finishedWork)),
       tone: activeWork > 0 ? ("amber" as Tone) : ("cyan" as Tone),
       value: activeWork,
     },
     {
-      label: t("风险待办", "Risk Actions"),
-      note: t(`清白率 ${riskClearPercent}%`, `${riskClearPercent}% cleared`),
+      label: t("风险复核", "Risk Review"),
+      note: t(`合规通过率 ${riskClearPercent}%`, `${riskClearPercent}% cleared`),
       progress: percent(riskWork, Math.max(1, checkTotal)),
       tone: riskWork > 0 ? ("rose" as Tone) : ("emerald" as Tone),
       value: riskWork,
@@ -134,29 +132,29 @@ export function DashboardOverview({ stats }: Props) {
   const pipeline = [
     {
       count: stats.todayUploads,
-      detail: t("上传与采集入口", "Upload and collection intake"),
-      label: t("素材进入", "Intake"),
+      detail: t("上传、采集与素材入库", "Upload and collection intake"),
+      label: t("素材导入", "Asset Intake"),
       progress: percent(stats.todayUploads, Math.max(1, stats.todayUploads + stats.totalAssets)),
       tone: "cyan" as Tone,
     },
     {
       count: stats.pendingChecks + riskWork,
-      detail: t("侵权检测与风险复核", "Infringement checks and review"),
-      label: t("风险筛查", "Risk Scan"),
+      detail: t("侵权检测、风险分级与人工复核", "Infringement checks and review"),
+      label: t("合规审核", "Compliance Review"),
       progress: percent(stats.clearChecks, Math.max(1, checkTotal)),
       tone: riskWork > 0 ? ("amber" as Tone) : ("emerald" as Tone),
     },
     {
       count: activeWork,
-      detail: t("抠图、印花、尺寸、AI", "Cutout, print, resize, AI"),
-      label: t("图片处理", "Processing"),
+      detail: t("抠图、印花提取、尺寸处理与 AI 任务", "Cutout, print, resize, AI"),
+      label: t("图片处理", "Image Processing"),
       progress: percent(finishedWork, Math.max(1, finishedWork + activeWork + failedWork)),
       tone: activeWork > 0 ? ("amber" as Tone) : ("cyan" as Tone),
     },
     {
       count: stats.mockupOutputs,
-      detail: t("套图模板与商品草稿", "Mockups and product drafts"),
-      label: t("商品输出", "Output"),
+      detail: t("套图模板、商品草稿与导出", "Mockups and product drafts"),
+      label: t("商品发布", "Listing Output"),
       progress: draftReadyPercent,
       tone: "emerald" as Tone,
     },
@@ -164,30 +162,30 @@ export function DashboardOverview({ stats }: Props) {
 
   const operationRows = [
     {
-      label: t("普通图片任务", "Image jobs"),
+      label: t("图片处理任务", "Image Processing Jobs"),
       meta: t(`${stats.pendingJobs} 个进行中`, `${stats.pendingJobs} active`),
       value: stats.completedJobs,
       tone: "cyan" as Tone,
     },
     {
-      label: t("AI 生图任务", "AI image jobs"),
+      label: t("AI 生成任务", "AI Generation Jobs"),
       meta: t(`${stats.activeAiJobs} 个进行中`, `${stats.activeAiJobs} active`),
       value: stats.completedAiJobs,
       tone: "emerald" as Tone,
     },
     {
-      label: t("异常/失败", "Failures"),
-      meta: t("需要人工复查", "Needs review"),
+      label: t("异常任务", "Failed Tasks"),
+      meta: t("需要人工复核", "Needs review"),
       value: failedWork,
       tone: failedWork > 0 ? ("rose" as Tone) : ("cyan" as Tone),
     },
   ];
 
   const quickLinks = [
-    { href: "/upload", label: t("上传图片", "Upload") },
+    { href: "/upload", label: t("上传素材", "Upload") },
     { href: "/assets", label: t("素材库", "Assets") },
-    { href: "/infringement-check", label: t("侵权检测", "Risk Check") },
-    { href: "/image-jobs", label: t("图片任务", "Jobs") },
+    { href: "/infringement-check", label: t("合规检测", "Risk Check") },
+    { href: "/image-jobs", label: t("任务中心", "Jobs") },
   ];
 
   return (
@@ -199,40 +197,40 @@ export function DashboardOverview({ stats }: Props) {
           fill
           priority
           sizes="(max-width: 1024px) 100vw, 1400px"
-          className="object-cover object-right opacity-[0.42]"
+          className="object-cover object-right opacity-[0.34]"
         />
         <div className="dashboard-grid absolute inset-0" />
-        <div className="absolute inset-0 bg-[linear-gradient(100deg,#07090b_0%,rgba(7,9,11,0.94)_38%,rgba(7,9,11,0.58)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(100deg,#07090b_0%,rgba(7,9,11,0.94)_42%,rgba(7,9,11,0.62)_100%)]" />
         <div className="relative z-10 grid gap-6 p-5 sm:p-6 lg:grid-cols-[1.15fr_0.85fr] lg:p-8">
           <div className="flex min-w-0 flex-col justify-between gap-8">
             <div className="max-w-3xl">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="dashboard-chip border-cyan-300/20 bg-cyan-300/10 text-cyan-100">
-                  {t("生产驾驶舱", "Production Cockpit")}
+                  {t("运营概览", "Operations Dashboard")}
                 </span>
                 <span className="dashboard-chip border-emerald-300/20 bg-emerald-300/10 text-emerald-100">
-                  {t("实时任务流", "Live task flow")}
+                  {t("实时队列", "Live Queue")}
                 </span>
                 <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-zinc-500">
                   POD OPERATIONS
                 </span>
               </div>
               <h2 className="mt-5 max-w-2xl text-balance text-[32px] font-semibold leading-[1.05] tracking-tight sm:text-[42px] lg:text-[48px]">
-                {t("把素材、风控、处理、出品压进一个工作台", "One cockpit for assets, risk, processing, and output")}
+                {t("POD 生产运营概览", "POD Production Operations")}
               </h2>
               <p className="mt-4 max-w-2xl text-pretty text-sm leading-7 text-zinc-400">
                 {t(
-                  "参考 POD 平台常见的运营面板，把关键指标、队列状态和生产节点集中展示；动画只服务于状态反馈，避免拖慢页面。",
-                  "Inspired by common POD operation dashboards: central KPIs, queue state, and production stages with lightweight status motion.",
+                  "集中展示素材入库、合规审核、图片处理和商品发布进度，便于快速判断当前生产状态。",
+                  "Track asset intake, compliance review, image processing, and listing output from one operational view.",
                 )}
               </p>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               {[
-                { label: t("生产评分", "Production score"), value: `${productionScore}%` },
-                { label: t("已处理素材", "Processed assets"), value: `${assetReadyPercent}%` },
-                { label: t("草稿就绪", "Draft readiness"), value: `${draftReadyPercent}%` },
+                { label: t("综合健康度", "Operational Health"), value: `${operationalHealth}%` },
+                { label: t("素材处理率", "Processed Assets"), value: `${assetReadyPercent}%` },
+                { label: t("商品就绪率", "Listing Readiness"), value: `${draftReadyPercent}%` },
               ].map((item, index) => (
                 <div
                   key={item.label}
@@ -249,8 +247,8 @@ export function DashboardOverview({ stats }: Props) {
           <div className="dashboard-command-panel ui-hover-sheen relative overflow-hidden rounded-[10px] border border-white/[0.1] bg-white/[0.045] p-5 backdrop-blur-md">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">SYSTEM CORE</p>
-                <h3 className="mt-1 text-lg font-semibold">{t("任务生产核心", "Task Production Core")}</h3>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-zinc-500">OPERATIONS CORE</p>
+                <h3 className="mt-1 text-lg font-semibold">{t("运营核心指标", "Operations Core")}</h3>
               </div>
               <span className="ui-activity ui-activity-lg" aria-hidden="true" />
             </div>
@@ -260,9 +258,9 @@ export function DashboardOverview({ stats }: Props) {
                 <div className="dashboard-core-ring" />
                 <div className="dashboard-core-inner">
                   <span className="text-[11px] uppercase tracking-[0.14em] text-cyan-100/80">
-                    SCORE
+                    HEALTH
                   </span>
-                  <strong>{productionScore}</strong>
+                  <strong>{operationalHealth}</strong>
                   <span className="text-[11px] text-zinc-500">/ 100</span>
                 </div>
               </div>
@@ -350,11 +348,11 @@ export function DashboardOverview({ stats }: Props) {
                 PRODUCTION FLOW
               </p>
               <h3 className={`mt-1 text-lg font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                {t("生产管线", "Production Pipeline")}
+                {t("生产流程", "Production Pipeline")}
               </h3>
             </div>
             <div className={`rounded-full border px-3 py-1 text-xs ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-300" : "border-black/[0.08] bg-black/[0.03] text-zinc-600"}`}>
-              {t("从素材到导出", "From assets to export")}
+              {t("从素材入库到商品发布", "From asset intake to listing")}
             </div>
           </div>
 
@@ -397,9 +395,9 @@ export function DashboardOverview({ stats }: Props) {
         <section className={`dashboard-panel ui-enter ui-delay-2 rounded-[10px] border p-5 shadow-lg ${cardClass}`}>
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${faintText}`}>RISK & OUTPUT</p>
+              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${faintText}`}>COMPLIANCE & OUTPUT</p>
               <h3 className={`mt-1 text-lg font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                {t("风险与出品", "Risk and Output")}
+                {t("合规与出品", "Compliance and Output")}
               </h3>
             </div>
             <span className="ui-activity" aria-hidden="true" />
@@ -410,10 +408,10 @@ export function DashboardOverview({ stats }: Props) {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                    {t("侵权检测状态", "Infringement status")}
+                    {t("合规检测状态", "Compliance Status")}
                   </p>
                   <p className={`mt-1 text-xs ${mutedText}`}>
-                    {t("清白、待检、复核、风险分布", "Clear, pending, review, and risk distribution")}
+                    {t("合规、待检测、复核与高风险分布", "Compliance status distribution")}
                   </p>
                 </div>
                 <p className={`text-2xl font-semibold tabular-nums ${riskWork > 0 ? "text-amber-300" : "text-emerald-300"}`}>
@@ -422,10 +420,10 @@ export function DashboardOverview({ stats }: Props) {
               </div>
               <div className="mt-4 grid grid-cols-4 overflow-hidden rounded-md border border-white/[0.05]">
                 {[
-                  { label: t("清白", "Clear"), tone: "emerald" as Tone, value: stats.clearChecks },
-                  { label: t("待检", "Pending"), tone: "cyan" as Tone, value: stats.pendingChecks },
-                  { label: t("复核", "Review"), tone: "amber" as Tone, value: stats.reviewChecks },
-                  { label: t("高危", "Risky"), tone: "rose" as Tone, value: stats.riskyChecks + stats.blockedChecks },
+                  { label: t("合规", "Clear"), tone: "emerald" as Tone, value: stats.clearChecks },
+                  { label: t("待检测", "Pending"), tone: "cyan" as Tone, value: stats.pendingChecks },
+                  { label: t("待复核", "Review"), tone: "amber" as Tone, value: stats.reviewChecks },
+                  { label: t("高风险", "Risky"), tone: "rose" as Tone, value: stats.riskyChecks + stats.blockedChecks },
                 ].map((item) => (
                   <div key={item.label} className={`border-r border-white/[0.05] p-3 last:border-r-0 ${toneStyles[item.tone].soft}`}>
                     <p className={`text-[11px] ${mutedText}`}>{item.label}</p>
@@ -441,10 +439,10 @@ export function DashboardOverview({ stats }: Props) {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                    {t("商品输出准备度", "Output readiness")}
+                    {t("商品发布准备度", "Listing Readiness")}
                   </p>
                   <p className={`mt-1 text-xs ${mutedText}`}>
-                    {t("草稿、套图、导出进度", "Drafts, mockups, and export progress")}
+                    {t("商品草稿、套图和导出进度", "Drafts, mockups, and export progress")}
                   </p>
                 </div>
                 <p className="text-2xl font-semibold tabular-nums text-cyan-300">{draftReadyPercent}%</p>
@@ -463,93 +461,6 @@ export function DashboardOverview({ stats }: Props) {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-        <section className={`dashboard-panel ui-enter ui-delay-3 rounded-[10px] border p-5 shadow-lg ${cardClass}`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${faintText}`}>ACTIVITY</p>
-              <h3 className={`mt-1 text-lg font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                {t("生产脉冲", "Production Pulse")}
-              </h3>
-            </div>
-            <span className={`rounded-full border px-3 py-1 text-xs ${isDark ? "border-white/[0.08] bg-white/[0.03] text-zinc-300" : "border-black/[0.08] bg-black/[0.03] text-zinc-600"}`}>
-              {t("轻量动画", "Light motion")}
-            </span>
-          </div>
-
-          <div className="dashboard-sparkline mt-6 flex h-36 items-end gap-2 rounded-[10px] border border-white/[0.06] bg-gradient-to-b from-cyan-400/[0.08] to-transparent p-4">
-            {sparklineHeights.map((height, index) => (
-              <span
-                key={`${height}-${index}`}
-                className="dashboard-spark-bar flex-1 rounded-t bg-gradient-to-t from-cyan-500 via-emerald-300 to-white"
-                style={{
-                  animationDelay: `${index * 75}ms`,
-                  height: `${Math.min(96, Math.max(18, height + (stats.todayUploads % 6) * 3))}%`,
-                  opacity: 0.28 + index * 0.045,
-                }}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className={`dashboard-panel ui-enter ui-delay-4 relative overflow-hidden rounded-[10px] border p-5 shadow-lg ${cardClass}`}>
-          <Image
-            src="/images/workflow-tech.png"
-            alt=""
-            fill
-            sizes="(max-width: 1280px) 100vw, 700px"
-            className="object-cover opacity-20"
-          />
-          <div className={`absolute inset-0 ${isDark ? "bg-gradient-to-r from-[#0f0f10] via-[#0f0f10]/88 to-[#0f0f10]/70" : "bg-gradient-to-r from-white via-white/92 to-white/80"}`} />
-          <div className="relative z-10">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className={`text-[11px] font-medium uppercase tracking-[0.14em] ${faintText}`}>OPERATION NOTES</p>
-                <h3 className={`mt-1 text-lg font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>
-                  {t("今天该看什么", "What to watch today")}
-                </h3>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-cyan-300">
-                <span className="ui-spinner ui-spinner-sm" aria-hidden="true" />
-                <span>{t("状态刷新中", "Status refreshing")}</span>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 md:grid-cols-3">
-              {[
-                {
-                  label: t("先处理队列", "Handle queue"),
-                  text: activeWork > 0
-                    ? t("有任务正在等待 worker，先观察图片任务页。", "Tasks are waiting for workers. Check the jobs page first.")
-                    : t("当前队列轻，可以继续上传或生成新素材。", "Queue is light. You can upload or generate more assets."),
-                },
-                {
-                  label: t("再看风险", "Review risk"),
-                  text: riskWork > 0
-                    ? t("存在待复核/高危结果，建议先处理侵权检测。", "Review or risky results exist. Handle infringement checks first.")
-                    : t("风险面板压力低，适合推进套图和导出。", "Risk pressure is low. Move on to mockups and export."),
-                },
-                {
-                  label: t("最后出品", "Ship output"),
-                  text: stats.readyDrafts > 0
-                    ? t("已有就绪草稿，可以进入商品输出流程。", "Ready drafts are available for product output.")
-                    : t("先完成素材处理和套图，再生成商品草稿。", "Finish processing and mockups before drafting products."),
-                },
-              ].map((item, index) => (
-                <div
-                  key={item.label}
-                  className={`dashboard-note rounded-[10px] border p-4 ${isDark ? "border-white/[0.07] bg-black/20" : "border-black/[0.07] bg-white/70"}`}
-                  style={{ animationDelay: `${index * 90}ms` }}
-                >
-                  <p className={`text-sm font-semibold ${isDark ? "text-white" : "text-zinc-950"}`}>{item.label}</p>
-                  <p className={`mt-2 text-xs leading-relaxed ${mutedText}`}>{item.text}</p>
-                </div>
-              ))}
             </div>
           </div>
         </section>
