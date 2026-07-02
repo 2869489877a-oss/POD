@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createAssetDeleteJob } from "@/lib/assets/delete-jobs";
+import { createAssetDeleteJob, getAssetDeleteJob } from "@/lib/assets/delete-jobs";
 import {
   deleteAssets,
   getAssetUsageSummary,
@@ -19,6 +19,15 @@ const COPYRIGHT_STATUSES = new Set([
   "risky",
   "forbidden",
 ]);
+const DEFAULT_ASSETS_LIMIT = 120;
+const MAX_ASSETS_LIMIT = 300;
+
+function getBoundedInt(searchParams: URLSearchParams, key: string, fallback: number, min: number, max: number) {
+  const raw = searchParams.get(key);
+  const value = raw ? Number(raw) : fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
 
 function getFilter(searchParams: URLSearchParams, key: string, allowedValues: Set<string>) {
   const value = searchParams.get(key);
@@ -43,7 +52,15 @@ export async function GET(request: Request) {
       "copyright_status",
       COPYRIGHT_STATUSES,
     );
+    const limit = getBoundedInt(url.searchParams, "limit", DEFAULT_ASSETS_LIMIT, 1, MAX_ASSETS_LIMIT);
+    const offset = getBoundedInt(url.searchParams, "offset", 0, 0, Number.MAX_SAFE_INTEGER);
     const supabase = createSupabaseServiceRoleClient();
+    const deleteJobId = url.searchParams.get("delete_job_id")?.trim();
+
+    if (deleteJobId) {
+      const job = await getAssetDeleteJob(supabase, deleteJobId);
+      return NextResponse.json({ job });
+    }
 
     let query = supabase
       .from("assets")
@@ -66,8 +83,10 @@ export async function GET(request: Request) {
           "created_at",
           "updated_at",
         ].join(","),
+        { count: "exact" },
       )
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (status) {
       query = query.eq("status", status);
@@ -77,7 +96,7 @@ export async function GET(request: Request) {
       query = query.eq("copyright_status", copyrightStatus);
     }
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
 
     if (error) {
       return NextResponse.json(
@@ -86,7 +105,12 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json({ assets: data ?? [] });
+    return NextResponse.json({
+      assets: data ?? [],
+      limit,
+      offset,
+      total: count ?? 0,
+    });
   } catch (error) {
     return NextResponse.json(
       { assets: [], error: error instanceof Error ? error.message : "读取素材失败" },

@@ -81,6 +81,20 @@ type DeleteAssetsResponse = {
   }>;
 };
 
+type AssetDeleteJobProgress = {
+  error_message: string | null;
+  failed_count: number;
+  id: string;
+  status: ResizeJobStatus;
+  success_count: number;
+  total_count: number;
+};
+
+type AssetDeleteJobResponse = {
+  error?: string;
+  job?: AssetDeleteJobProgress;
+};
+
 type WorkerStatusResponse = {
   blocked_job_types?: string[];
   error?: string;
@@ -244,6 +258,8 @@ const resizeJobStatusLabels: Record<ResizeJobStatus, { zh: string; en: string }>
 
 const RESIZE_POLL_INTERVAL_MS = 1000;
 const RESIZE_MAX_POLLS = 600;
+const DELETE_POLL_INTERVAL_MS = 1500;
+const DELETE_MAX_POLLS = 1200;
 const TERMINAL_RESIZE_STATUSES = new Set<ResizeJobStatus>(["completed", "failed", "partial_failed"]);
 
 function sleep(ms: number) {
@@ -568,6 +584,34 @@ export function AssetsGallery({
     });
   }
 
+  async function pollAssetDeleteJob(jobId: string) {
+    for (let poll = 0; poll < DELETE_MAX_POLLS; poll += 1) {
+      await sleep(DELETE_POLL_INTERVAL_MS);
+
+      const response = await fetch(`/api/assets?delete_job_id=${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      const data = (await response.json()) as AssetDeleteJobResponse;
+
+      if (!response.ok || data.error || !data.job) {
+        throw new Error(data.error ?? t("璇诲彇鍒犻櫎浠诲姟杩涘害澶辫触", "Failed to read delete job progress"));
+      }
+
+      const job = data.job;
+      const doneCount = job.success_count + job.failed_count;
+      setDeleteMessage(
+        t(
+          `鍚庡彴鍒犻櫎涓細${doneCount}/${job.total_count}锛屾垚鍔?${job.success_count}锛屽け璐?${job.failed_count}`,
+          `Deleting in background: ${doneCount}/${job.total_count}, ${job.success_count} succeeded, ${job.failed_count} failed`,
+        ),
+      );
+
+      if (TERMINAL_RESIZE_STATUSES.has(job.status)) {
+        return job;
+      }
+    }
+
+    throw new Error(t("鍒犻櫎浠诲姟浠嶅湪鍚庡彴杩愯锛岃绋嶅悗鍒锋柊", "Delete job is still running. Refresh later."));
+  }
+
   async function deleteAssetIds(assetIds: string[]) {
     if (assetIds.length === 0) {
       setError(t("请选择要删除的素材", "Please select assets to delete"));
@@ -628,20 +672,33 @@ export function AssetsGallery({
 
       setDeleteMessage(t(`删除成功 ${data.success_count ?? 0} 张，失败 ${data.failed_count ?? 0} 张`, `${data.success_count ?? 0} deleted, ${data.failed_count ?? 0} failed`));
 
-      if (data.queued) {
+      if (data.queued && data.job_id) {
         setDeleteMessage(
           t(
             `已加入后台删除队列：${data.success_count ?? assetIds.length} 张，任务 ${data.job_id ?? ""}`,
             `Queued ${data.success_count ?? assetIds.length} asset(s) for background deletion. Job ${data.job_id ?? ""}`,
           ),
         );
+        const job = await pollAssetDeleteJob(data.job_id);
+        setDeleteMessage(
+          t(
+            `删除任务完成，成功 ${job.success_count} 张，失败 ${job.failed_count} 张`,
+            `Delete job finished: ${job.success_count} succeeded, ${job.failed_count} failed`,
+          ),
+        );
+        if (job.failed_count > 0) {
+          setError(job.error_message ?? t("部分素材删除失败，请查看 worker 日志", "Some assets failed to delete. Check worker logs."));
+        }
+        setSelectedIds((current) => new Set(Array.from(current).filter((id) => !assetIds.includes(id))));
+        await fetchAssets(status, copyrightStatus, assetSource);
+        return;
       }
 
       if (failedResults.length > 0) {
         setError(failedResults.map((result) => `${result.filename ?? result.asset_id}: ${result.error ?? t("删除失败", "Delete failed")}`).join("\n"));
       }
 
-      if (successfulIds.size > 0) {
+      if (!data.queued && successfulIds.size > 0) {
         setAssets((current) => current.filter((asset) => !successfulIds.has(asset.id)));
         setTotal((current) => Math.max(0, current - successfulIds.size));
       }

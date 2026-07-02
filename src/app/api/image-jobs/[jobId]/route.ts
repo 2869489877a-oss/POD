@@ -5,6 +5,9 @@ import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+const DEFAULT_ITEMS_LIMIT = 200;
+const MAX_ITEMS_LIMIT = 500;
+
 type ImageJobDetailRow = {
   created_at: string;
   error_message: string | null;
@@ -79,6 +82,13 @@ function wantsSummary(request: Request) {
   return value === "1" || value === "true";
 }
 
+function getBoundedInt(searchParams: URLSearchParams, key: string, fallback: number, min: number, max: number) {
+  const raw = searchParams.get(key);
+  const value = raw ? Number(raw) : fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(value)));
+}
+
 async function countItemsByStatus(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
   jobId: string,
@@ -106,6 +116,9 @@ export async function GET(request: Request) {
 
   try {
     const supabase = createSupabaseServiceRoleClient();
+    const searchParams = new URL(request.url).searchParams;
+    const itemsLimit = getBoundedInt(searchParams, "items_limit", DEFAULT_ITEMS_LIMIT, 1, MAX_ITEMS_LIMIT);
+    const itemsOffset = getBoundedInt(searchParams, "items_offset", 0, 0, Number.MAX_SAFE_INTEGER);
     const { data: jobData, error: jobError } = await supabase
       .from("image_jobs")
       .select(
@@ -151,7 +164,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const { data: itemData, error: itemError } = await supabase
+    const { data: itemData, error: itemError, count: itemTotal } = await supabase
       .from("image_job_items")
       .select(
         [
@@ -165,9 +178,11 @@ export async function GET(request: Request) {
           "created_at",
           "updated_at",
         ].join(","),
+        { count: "exact" },
       )
       .eq("job_id", jobId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .range(itemsOffset, itemsOffset + itemsLimit - 1);
 
     if (itemError) {
       throw new Error(itemError.message);
@@ -237,6 +252,12 @@ export async function GET(request: Request) {
 
     const job = {
       ...jobRow,
+      item_page: {
+        has_more: itemsOffset + items.length < (itemTotal ?? items.length),
+        limit: itemsLimit,
+        offset: itemsOffset,
+        total: itemTotal ?? items.length,
+      },
       items: items.map((item) => {
         const derivative = derivativeByItemId.get(item.id);
         const mockup = mockupByItemId.get(item.id);

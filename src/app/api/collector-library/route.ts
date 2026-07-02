@@ -29,6 +29,24 @@ function stringValue(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function readBearerToken(header: string | null) {
+  if (!header) return "";
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : "";
+}
+
+function isCollectorUploadAuthorized(request: Request) {
+  const secret = process.env.COLLECTOR_UPLOAD_SECRET?.trim();
+  if (!secret) return true;
+
+  const provided =
+    request.headers.get("x-collector-upload-secret")?.trim() ||
+    request.headers.get("x-pod-collector-secret")?.trim() ||
+    readBearerToken(request.headers.get("authorization"));
+
+  return provided === secret;
+}
+
 function resultStatus(results: Array<{ success: boolean }>) {
   return results.some((result) => result.success) ? 200 : 400;
 }
@@ -36,6 +54,10 @@ function resultStatus(results: Array<{ success: boolean }>) {
 async function handleUpload(request: Request) {
   const startedAt = performance.now();
   let formData: FormData;
+
+  if (!isCollectorUploadAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized collector upload", results: [] }, { status: 401 });
+  }
 
   try {
     formData = await request.formData();

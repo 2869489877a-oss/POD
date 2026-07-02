@@ -22,6 +22,7 @@ type QueueMaintenanceResult = {
 
 const WORKER_IMAGE_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"] as const;
 const QUEUE_MAINTENANCE_LIMIT = 200;
+const IMAGE_JOB_DETAIL_ITEM_LIMIT = 200;
 const STALE_JOB_MINUTES = 45;
 
 type SingleRowQueueTable =
@@ -470,9 +471,22 @@ export async function fetchImageJobDetail(jobId: string): Promise<{ error: strin
       .from("image_job_items")
       .select("id, job_id, asset_id, input_url, output_url, status, error_message, created_at, updated_at")
       .eq("job_id", jobId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(IMAGE_JOB_DETAIL_ITEM_LIMIT);
 
-    return { error: null, job: { ...job, items: items ?? [] } };
+    return {
+      error: null,
+      job: {
+        ...job,
+        item_page: {
+          has_more: (job.total_count ?? 0) > (items?.length ?? 0),
+          limit: IMAGE_JOB_DETAIL_ITEM_LIMIT,
+          offset: 0,
+          total: job.total_count ?? items?.length ?? 0,
+        },
+        items: items ?? [],
+      },
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "读取任务详情失败", job: null };
   }

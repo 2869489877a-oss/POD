@@ -4,6 +4,7 @@
    Semantic design tokens — restrained big-tech dark theme (Vercel-like)
    --------------------------------------------------------------------------- */
 :root {
+  --font-inter: "Segoe UI";
   --accent: #06b6d4;
   --accent-strong: #0891b2;
   --accent-glow: rgba(6, 182, 212, 0.35);
