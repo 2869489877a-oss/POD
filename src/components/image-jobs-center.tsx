@@ -17,6 +17,8 @@ import { getDisplayImageSrc } from "@/lib/local-asset-url";
 
 const JOBS_PER_PAGE = 12;
 const ITEMS_PER_PAGE = 8;
+const WORKER_STATUS_POLL_INTERVAL_MS = 10_000;
+const SELECTED_JOB_SUMMARY_POLL_INTERVAL_MS = 3_000;
 
 export type ImageJobStatus =
   | "pending"
@@ -553,7 +555,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
 
     const pollTimer = window.setInterval(() => {
       void loadJobSummary(selectedJob.id).catch(() => undefined);
-    }, 1000);
+    }, SELECTED_JOB_SUMMARY_POLL_INTERVAL_MS);
 
     try {
       const data = await retryImageJob(selectedJob.id, targetIds);
@@ -621,7 +623,7 @@ export function ImageJobsCenter({ initialError = null, initialJobs }: ImageJobsC
       if (hasActiveJobs || hasActiveSelectedJob || hasWorkerQueue || isRetrying) {
         void refreshJobs();
       }
-    }, 3000);
+    }, WORKER_STATUS_POLL_INTERVAL_MS);
 
     return () => {
       window.clearTimeout(initialTimer);

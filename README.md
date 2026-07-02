@@ -161,12 +161,17 @@ Copy-Item E:\rembg-server\local-worker.env.example E:\rembg-server\local-worker.
 编辑 `local-worker.env`：
 
 ```env
+# Base URL: LOCAL_WORKER_BASE_URL/POD_AI_BASE_URL 优先，POD_API_URL 为兼容名。
 POD_API_URL=http://127.0.0.1:3000
 LOCAL_WORKER_SECRET=your-worker-secret
 LOCAL_WORKER_ID=bruce-local-worker
+# Job types: LOCAL_IMAGE_WORKER_JOB_TYPES 优先，LOCAL_WORKER_JOB_TYPES 为兼容名。
 LOCAL_WORKER_JOB_TYPES=cutout,print_extraction,mockup,resize,fission,infringement_check
+# Polling: LOCAL_IMAGE_WORKER_POLL_MS（毫秒）优先，POLL_INTERVAL_SECONDS（秒）为兼容名。
 POLL_INTERVAL_SECONDS=5
+# Request timeout uses seconds; default is 30.
 LOCAL_WORKER_REQUEST_TIMEOUT_SECONDS=120
+# Max input image size uses MB for remote downloads and local files; default is 25.
 LOCAL_WORKER_MAX_IMAGE_SIZE_MB=50
 LOCAL_REMBG_MODEL=isnet-general-use
 LOCAL_PRINT_TOLERANCE=25

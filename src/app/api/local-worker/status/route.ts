@@ -2,17 +2,33 @@ import { readFile } from "node:fs/promises";
 
 import { NextResponse } from "next/server";
 
+import { getCurrentProfile } from "@/lib/auth/profile";
+import { getLocalWorkerSecret } from "@/lib/local-worker/auth";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
 const IMAGE_WORKER_JOB_TYPES = ["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"] as const;
 const LOCAL_WORKER_JOB_TYPES = [...IMAGE_WORKER_JOB_TYPES, "asset_delete", "collector_operation", "export_images_zip", "ai_split_grid", "ai_apply_pattern", "ai_generate_image"] as const;
-const WORKER_STATUS_CACHE_TTL_MS = 2000;
+const WORKER_STATUS_CACHE_TTL_MS = 10000;
+const ACTIVE_IMAGE_JOB_STATUSES = ["pending", "processing"] as const;
+const QUEUE_IMAGE_JOB_STATUSES = ["pending", "processing", "failed", "partial_failed"] as const;
+const IMAGE_JOB_SUMMARY_LIMIT = 100;
 
 type LocalWorkerJobType = (typeof LOCAL_WORKER_JOB_TYPES)[number];
+type ImageWorkerJobType = (typeof IMAGE_WORKER_JOB_TYPES)[number];
 type SupabaseServiceClient = ReturnType<typeof createSupabaseServiceRoleClient>;
 type QueueStatus = "pending" | "processing" | "failed";
+type ImageJobQueueStatus = (typeof QUEUE_IMAGE_JOB_STATUSES)[number];
+type ImageJobQueueRow = {
+  failed_count: number;
+  id: string;
+  job_type: string;
+  status: ImageJobQueueStatus;
+  success_count: number;
+  total_count: number;
+  updated_at: string;
+};
 type WorkerStatusPayload = {
   blocked_job_types: LocalWorkerJobType[];
   expected_job_types: readonly LocalWorkerJobType[];
@@ -129,24 +145,6 @@ async function readWorkerState() {
   }
 }
 
-async function countImageItemsByTypeAndStatus(
-  supabase: SupabaseServiceClient,
-  jobType: (typeof IMAGE_WORKER_JOB_TYPES)[number],
-  status: QueueStatus,
-) {
-  const { count, error } = await supabase
-    .from("image_job_items")
-    .select("id,image_jobs!inner(job_type)", { count: "exact", head: true })
-    .eq("status", status)
-    .eq("image_jobs.job_type", jobType);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  return count ?? 0;
-}
-
 async function countRowsByStatus(
   supabase: SupabaseServiceClient,
   table: "asset_delete_jobs" | "collector_operation_jobs" | "export_records" | "ai_image_jobs" | "ai_split_grid_jobs" | "ai_apply_pattern_jobs",
@@ -185,6 +183,44 @@ function addQueueCount(
   queueByType[jobType][status] += count;
 }
 
+function normalizeImageWorkerJobType(value: unknown): ImageWorkerJobType | null {
+  return IMAGE_WORKER_JOB_TYPES.find((jobType) => jobType === value) ?? null;
+}
+
+function remainingImageJobItems(row: ImageJobQueueRow) {
+  return Math.max(0, Number(row.total_count ?? 0) - Number(row.success_count ?? 0) - Number(row.failed_count ?? 0));
+}
+
+function addImageJobSummary(
+  queue: ReturnType<typeof emptyQueueCounts>,
+  queueByType: Record<LocalWorkerJobType, ReturnType<typeof emptyQueueCounts>>,
+  row: ImageJobQueueRow,
+) {
+  const jobType = normalizeImageWorkerJobType(row.job_type);
+  if (!jobType) return;
+
+  const failedCount = Math.max(0, Number(row.failed_count ?? 0));
+  if (failedCount > 0) {
+    addQueueCount(queue, queueByType, jobType, "failed", failedCount);
+  }
+
+  if (row.status === "failed") {
+    const failedItems = failedCount > 0 ? 0 : Math.max(1, Number(row.total_count ?? 1));
+    if (failedItems > 0) {
+      addQueueCount(queue, queueByType, jobType, "failed", failedItems);
+    }
+    return;
+  }
+
+  if (row.status === "partial_failed") {
+    return;
+  }
+
+  const remaining = remainingImageJobItems(row);
+  if (remaining <= 0) return;
+  addQueueCount(queue, queueByType, jobType, row.status === "processing" ? "processing" : "pending", remaining);
+}
+
 async function readQueueStateByCounts() {
   const supabase = createSupabaseServiceRoleClient();
   const queue = {
@@ -199,31 +235,25 @@ async function readQueueStateByCounts() {
   >;
   const statuses: QueueStatus[] = ["pending", "processing", "failed"];
 
-  const { data: activeJobRows, error: activeJobError } = await supabase
+  const { data: imageJobRows, error: imageJobError } = await supabase
     .from("image_jobs")
     .select("id,job_type,status,total_count,success_count,failed_count,updated_at")
     .in("job_type", IMAGE_WORKER_JOB_TYPES)
-    .in("status", ["pending", "processing"])
+    .in("status", QUEUE_IMAGE_JOB_STATUSES)
     .order("updated_at", { ascending: false })
-    .limit(8);
+    .limit(IMAGE_JOB_SUMMARY_LIMIT);
 
-  if (activeJobError) {
-    throw new Error(activeJobError.message);
+  if (imageJobError) {
+    throw new Error(imageJobError.message);
   }
 
-  const imageCounts = await Promise.all(
-    IMAGE_WORKER_JOB_TYPES.flatMap((jobType) =>
-      statuses.map(async (status) => ({
-        count: await countImageItemsByTypeAndStatus(supabase, jobType, status),
-        jobType,
-        status,
-      })),
-    ),
-  );
-
-  for (const item of imageCounts) {
-    addQueueCount(queue, queueByType, item.jobType, item.status, item.count);
+  const imageJobs = ((imageJobRows ?? []) as unknown as ImageJobQueueRow[]);
+  for (const row of imageJobs) {
+    addImageJobSummary(queue, queueByType, row);
   }
+  const activeJobRows = imageJobs
+    .filter((row) => ACTIVE_IMAGE_JOB_STATUSES.includes(row.status as (typeof ACTIVE_IMAGE_JOB_STATUSES)[number]))
+    .slice(0, 8);
 
   const extraCounts = await Promise.all([
     ...statuses.map(async (status) => ({
@@ -262,25 +292,13 @@ async function readQueueStateByCounts() {
     addQueueCount(queue, queueByType, item.jobType, item.status, item.count);
   }
 
-  queue.active_jobs =
-    queue.pending +
-    queue.processing -
-    queueByType.cutout.pending -
-    queueByType.cutout.processing -
-    queueByType.print_extraction.pending -
-    queueByType.print_extraction.processing -
-    queueByType.mockup.pending -
-    queueByType.mockup.processing -
-    queueByType.resize.pending -
-    queueByType.resize.processing -
-    queueByType.fission.pending -
-    queueByType.fission.processing -
-    queueByType.infringement_check.pending -
-    queueByType.infringement_check.processing +
-    (activeJobRows?.length ?? 0);
+  const extraActiveJobs = extraCounts
+    .filter((item) => item.status === "pending" || item.status === "processing")
+    .reduce((sum, item) => sum + item.count, 0);
+  queue.active_jobs = activeJobRows.length + extraActiveJobs;
 
   return {
-    active_jobs: activeJobRows ?? [],
+    active_jobs: activeJobRows,
     queue,
     queue_by_type: queueByType,
   };
@@ -289,7 +307,36 @@ async function readQueueStateByCounts() {
 async function readQueueState() {
   return readQueueStateByCounts();
 }
+
+async function hasStatusAccess(request: Request) {
+  const secret = getLocalWorkerSecret();
+  const authorization = request.headers.get("authorization") ?? "";
+
+  if (secret && authorization === `Bearer ${secret}`) {
+    return true;
+  }
+
+  try {
+    const profile = await getCurrentProfile();
+    return profile?.status === "active";
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
+  if (!(await hasStatusAccess(request))) {
+    return NextResponse.json(
+      { error: "Unauthorized", ok: false },
+      {
+        status: 401,
+        headers: {
+          "cache-control": "no-store",
+        },
+      },
+    );
+  }
+
   const bypassCache = new URL(request.url).searchParams.get("fresh") === "1";
   if (!bypassCache && workerStatusCache && workerStatusCache.expiresAt > Date.now()) {
     return NextResponse.json(workerStatusCache.payload, {

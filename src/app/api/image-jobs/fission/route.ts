@@ -10,6 +10,7 @@ import {
   normalizeFissionStrength,
   normalizeFissionVariantCount,
 } from "@/lib/image-processing/fission-effects";
+import { getCurrentProfile } from "@/lib/auth/profile";
 import { createLocalWorkerImageJob } from "@/lib/local-worker/image-jobs";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
@@ -61,6 +62,14 @@ async function readRequestBody(request: Request): Promise<CreateFissionJobReques
 }
 
 export async function POST(request: Request) {
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (profile.status !== "active") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   let body: CreateFissionJobRequest;
 
   try {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -12,17 +12,24 @@ import JSZip from "jszip";
 import sharp from "sharp";
 
 loadWorkerEnvFile(".env.local");
+loadWorkerEnvFile("local-worker.env");
 loadWorkerEnvFile(".env");
 
 const BASE_URL = stripTrailingSlash(
   process.env.LOCAL_WORKER_BASE_URL ||
     process.env.POD_AI_BASE_URL ||
+    process.env.POD_API_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
     "http://127.0.0.1:3000",
 );
 const SECRET = (process.env.LOCAL_WORKER_SECRET || process.env.WORKER_SECRET || "").trim();
 const CONCURRENCY = clampInt(process.env.LOCAL_IMAGE_WORKER_CONCURRENCY, 1, 8, 3);
-const POLL_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_POLL_MS, 500, 60_000, 1500);
+const POLL_MS = clampInt(
+  process.env.LOCAL_IMAGE_WORKER_POLL_MS || secondsToMilliseconds(process.env.POLL_INTERVAL_SECONDS),
+  500,
+  60_000,
+  1500,
+);
 const IDLE_LOG_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_IDLE_LOG_MS, 10_000, 600_000, 60_000);
 const IMAGE_JOB_TYPES = new Set(["cutout", "print_extraction", "mockup", "resize", "fission", "infringement_check"]);
 const ASSET_DELETE_JOB_TYPE = "asset_delete";
@@ -57,6 +64,7 @@ const DEFAULT_JOB_TYPE_LIMITS = {
 };
 const JOB_TYPES = uniqueJobTypes(
   (process.env.LOCAL_IMAGE_WORKER_JOB_TYPES ||
+    process.env.LOCAL_WORKER_JOB_TYPES ||
     "cutout,print_extraction,mockup,resize,fission,infringement_check,asset_delete,collector_operation,export_images_zip,ai_split_grid,ai_apply_pattern,ai_generate_image")
     .split(",")
     .map((item) => item.trim())
@@ -73,7 +81,14 @@ const WORKER_STATE_FILE = path.resolve(
   process.env.LOCAL_WORKER_STATE_FILE || path.join(path.dirname(LOCAL_ASSETS_DIR), "worker-status.json"),
 );
 const HEARTBEAT_MS = clampInt(process.env.LOCAL_IMAGE_WORKER_HEARTBEAT_MS, 1000, 60_000, 5000);
-const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+const MAX_DOWNLOAD_MB = clampInt(process.env.LOCAL_WORKER_MAX_IMAGE_SIZE_MB, 1, 1024, 25);
+const MAX_DOWNLOAD_BYTES = MAX_DOWNLOAD_MB * 1024 * 1024;
+const REQUEST_TIMEOUT_MS = clampInt(
+  secondsToMilliseconds(process.env.LOCAL_WORKER_REQUEST_TIMEOUT_SECONDS),
+  1000,
+  600_000,
+  30_000,
+);
 const OCR_LANGS = process.env.OCR_LANGS?.trim() || "eng+chi_sim";
 const OCR_PSM = process.env.OCR_PSM?.trim() || "11";
 const OCR_TIMEOUT_MS = clampInt(process.env.OCR_TIMEOUT_MS, 5_000, 120_000, 25_000);
@@ -151,6 +166,15 @@ function clampInt(value, min, max, fallback) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return fallback;
   return Math.max(min, Math.min(max, Math.floor(numberValue)));
+}
+
+function secondsToMilliseconds(value) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue * 1000 : undefined;
+}
+
+function imageSizeLimitErrorMessage() {
+  return `Image exceeds ${MAX_DOWNLOAD_MB}MB`;
 }
 
 function uniqueJobTypes(items) {
@@ -366,11 +390,16 @@ function resolveLocalAssetPath(relativePath) {
 async function readImageBuffer(url) {
   const relativePath = localAssetRelativePathFromUrl(url);
   if (relativePath) {
-    return readFile(resolveLocalAssetPath(relativePath));
+    const localPath = resolveLocalAssetPath(relativePath);
+    const fileStat = await stat(localPath);
+    if (fileStat.size > MAX_DOWNLOAD_BYTES) {
+      throw new Error(imageSizeLimitErrorMessage());
+    }
+    return readFile(localPath);
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
@@ -385,12 +414,12 @@ async function readImageBuffer(url) {
 
     const length = Number(response.headers.get("content-length") || 0);
     if (Number.isFinite(length) && length > MAX_DOWNLOAD_BYTES) {
-      throw new Error("Image exceeds 25MB");
+      throw new Error(imageSizeLimitErrorMessage());
     }
 
     const buffer = Buffer.from(await response.arrayBuffer());
     if (buffer.byteLength > MAX_DOWNLOAD_BYTES) {
-      throw new Error("Image exceeds 25MB");
+      throw new Error(imageSizeLimitErrorMessage());
     }
 
     return buffer;
